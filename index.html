@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Place de Milan — Atelier volumétrique</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#101820;
+    --ink-2:#182430;
+    --paper:#eef1ee;
+    --line:#3f5568;
+    --blue:#5b8ab0;
+    --accent:#e0663f;
+    --muted:#7f93a3;
+
+    --res:#e0a24a;    /* résidentiel — ambre */
+    --bur:#5b8ab0;    /* bureaux — bleu plan */
+    --com:#d95a6c;    /* commerces — rouge brique */
+    --hot:#a06bd9;    /* hôtel — violet */
+    --ser:#4fae8f;    /* services — vert sarcelle */
+
+    --panel-w: 330px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--ink);color:var(--paper);font-family:'Inter',sans-serif;overflow:hidden;}
+  #app{position:fixed;inset:0;display:flex;}
+  #viewport{flex:1;position:relative;}
+  canvas{display:block;}
+
+  /* ---------- Header ribbon ---------- */
+  #ribbon{
+    position:absolute;top:0;left:0;right:0;z-index:5;
+    display:flex;align-items:center;gap:14px;
+    padding:12px 18px;
+    background:linear-gradient(180deg, rgba(16,24,32,.92), rgba(16,24,32,0));
+    pointer-events:none;
+  }
+  #ribbon > *{pointer-events:auto;}
+  #brand{display:flex;flex-direction:column;line-height:1.05;margin-right:8px;}
+  #brand b{font-family:'Space Grotesk',sans-serif;font-size:17px;letter-spacing:.02em;}
+  #brand span{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+
+  .tool-btn{
+    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:500;
+    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
+    padding:8px 14px;border-radius:3px;cursor:pointer;
+    display:flex;align-items:center;gap:8px;transition:all .12s ease;
+  }
+  .tool-btn:hover{border-color:var(--blue);color:#fff;}
+  .tool-btn.active{background:var(--accent);border-color:var(--accent);color:#1a0e08;font-weight:600;}
+  .tool-btn:disabled{opacity:.35;cursor:not-allowed;}
+  .tool-btn.ghost{background:transparent;}
+
+  #status-line{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
+    margin-left:auto;text-align:right;max-width:280px;
+  }
+  #status-line b{color:var(--accent);}
+
+  /* ---------- Draw hint ---------- */
+  #draw-hint{
+    position:absolute;bottom:22px;left:50%;transform:translateX(-50%);
+    background:var(--ink-2);border:1px solid #2a3946;border-radius:3px;
+    padding:9px 16px;font-family:'IBM Plex Mono',monospace;font-size:12px;
+    color:var(--paper);display:none;gap:14px;align-items:center;z-index:5;
+  }
+  #draw-hint.show{display:flex;}
+  #draw-hint kbd{background:#0b1116;border:1px solid #2a3946;border-radius:2px;padding:1px 6px;font-size:11px;}
+
+  /* ---------- Side panel ---------- */
+  #panel{
+    width:var(--panel-w);flex-shrink:0;background:var(--ink-2);
+    border-left:1px solid #23303b;display:flex;flex-direction:column;
+    overflow:hidden;
+  }
+  #panel-scroll{overflow-y:auto;flex:1;padding:16px;}
+  #panel-scroll::-webkit-scrollbar{width:8px;}
+  #panel-scroll::-webkit-scrollbar-thumb{background:#2a3946;border-radius:4px;}
+
+  .section-title{
+    font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
+    margin:22px 0 10px;display:flex;align-items:center;gap:8px;
+  }
+  .section-title:first-child{margin-top:0;}
+  .section-title::after{content:"";flex:1;height:1px;background:#23303b;}
+
+  .field{margin-bottom:10px;}
+  .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
+  .field input[type=text], .field input[type=number]{
+    width:100%;background:#0b1116;border:1px solid #23303b;color:var(--paper);
+    padding:7px 9px;border-radius:3px;font-family:'Inter',sans-serif;font-size:13px;
+  }
+  .field input:focus{outline:none;border-color:var(--blue);}
+  .row{display:flex;gap:8px;}
+  .row > .field{flex:1;}
+
+  .legend-item{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;color:var(--paper);}
+  .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+
+  /* building cards */
+  .bldg-card{
+    background:#0b1116;border:1px solid #23303b;border-radius:4px;
+    margin-bottom:10px;overflow:hidden;
+  }
+  .bldg-card.selected{border-color:var(--accent);}
+  .bldg-head{
+    display:flex;align-items:center;gap:8px;padding:9px 10px;cursor:pointer;
+  }
+  .bldg-head input{
+    background:transparent;border:none;color:var(--paper);font-family:'Space Grotesk',sans-serif;
+    font-size:13px;font-weight:600;flex:1;min-width:0;
+  }
+  .bldg-head input:focus{outline:none;}
+  .bldg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .bldg-meta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);padding:0 10px 9px;}
+  .bldg-body{padding:0 10px 12px;border-top:1px solid #1a242d;display:none;}
+  .bldg-body.open{display:block;}
+
+  .band-row{display:flex;gap:6px;align-items:center;margin:6px 0;font-size:11px;}
+  .band-row select{
+    background:#141c24;border:1px solid #23303b;color:var(--paper);border-radius:3px;
+    padding:5px 6px;font-size:11px;flex-shrink:0;
+  }
+  .band-row input[type=number]{width:44px;padding:5px 4px;font-size:11px;text-align:center;}
+  .band-row .x{color:var(--muted);flex-shrink:0;}
+  .mini-btn{
+    background:none;border:1px solid #2a3946;color:var(--muted);border-radius:3px;
+    width:22px;height:22px;cursor:pointer;flex-shrink:0;font-size:13px;line-height:1;
+  }
+  .mini-btn:hover{color:var(--paper);border-color:var(--blue);}
+  .mini-btn.danger:hover{border-color:var(--com);color:var(--com);}
+
+  .btn-row{display:flex;gap:6px;margin-top:10px;}
+  .small-action{
+    flex:1;font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;
+    letter-spacing:.04em;background:#141c24;border:1px solid #23303b;color:var(--muted);
+    padding:6px;border-radius:3px;cursor:pointer;
+  }
+  .small-action:hover{color:var(--paper);border-color:var(--blue);}
+  .small-action.danger:hover{color:var(--com);border-color:var(--com);}
+
+  #footer-actions{
+    padding:14px 16px;border-top:1px solid #23303b;display:flex;flex-direction:column;gap:8px;
+  }
+  .primary-btn{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;
+    background:var(--accent);border:none;color:#1a0e08;padding:10px;border-radius:3px;cursor:pointer;
+  }
+  .primary-btn:hover{filter:brightness(1.08);}
+  .secondary-row{display:flex;gap:8px;}
+  .secondary-row .tool-btn{flex:1;justify-content:center;font-size:11.5px;padding:8px;}
+
+  #empty-note{color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;}
+
+  input[type=file]{display:none;}
+
+  #calib-overlay{
+    position:absolute;inset:0;z-index:6;background:rgba(10,15,20,.72);
+    display:none;align-items:center;justify-content:center;
+  }
+  #calib-overlay.show{display:flex;}
+  #calib-box{
+    background:var(--ink-2);border:1px solid #2a3946;border-radius:6px;padding:22px 26px;
+    width:340px;font-family:'Inter',sans-serif;
+  }
+  #calib-box h3{font-family:'Space Grotesk',sans-serif;margin:0 0 6px;font-size:16px;}
+  #calib-box p{font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 14px;}
+
+  #compass{
+    position:absolute;top:70px;right:16px;z-index:5;width:46px;height:46px;
+    background:var(--ink-2);border:1px solid #2a3946;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;
+    font-size:11px;font-weight:700;color:var(--accent);pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="viewport">
+    <div id="ribbon">
+      <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
+      <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
+      <button class="tool-btn ghost" id="btn-basemap">Fond de plan</button>
+      <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
+      <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
+    </div>
+    <div id="compass">N↑</div>
+    <div id="draw-hint">
+      <span>Cliquez sur le sol pour poser les sommets du bâtiment</span>
+      <span><kbd>Entrée</kbd> valider</span>
+      <span><kbd>Échap</kbd> annuler</span>
+    </div>
+    <div id="calib-overlay">
+      <div id="calib-box">
+        <h3>Calibrer le fond de plan</h3>
+        <p id="calib-text">Cliquez deux points sur l'image dont vous connaissez la distance réelle (ex. deux angles de rue), puis indiquez cette distance en mètres.</p>
+        <div class="field" id="calib-dist-field" style="display:none">
+          <label>Distance réelle entre les deux points (m)</label>
+          <input type="number" id="calib-dist" value="50" min="1" step="0.5">
+        </div>
+        <div class="btn-row">
+          <button class="small-action" id="calib-cancel">Annuler</button>
+          <button class="primary-btn" id="calib-apply" style="display:none;flex:1">Appliquer l'échelle</button>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="file-basemap" accept="image/*">
+    <input type="file" id="file-load" accept="application/json">
+  </div>
+
+  <div id="panel">
+    <div id="panel-scroll">
+      <div class="section-title">Légende des usages</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--res)"></div>Résidentiel</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--bur)"></div>Bureaux</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--com)"></div>Commerces</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div>Hôtel</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div>Services / équipements</div>
+
+      <div class="section-title">Bâtiments <span id="bldg-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
+      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette.</div>
+      <div id="bldg-list"></div>
+    </div>
+    <div id="footer-actions">
+      <button class="primary-btn" id="btn-export-png">Exporter l'image (PNG)</button>
+      <div class="secondary-row">
+        <button class="tool-btn" id="btn-save-json">💾 Sauver le projet</button>
+        <button class="tool-btn" id="btn-load-json">📂 Charger</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const FLOOR_HEIGHT = 3.0; // metres
+const USAGE_COLORS = {
+  residentiel: 0xe0a24a,
+  bureaux:     0x5b8ab0,
+  commerces:   0xd95a6c,
+  hotel:       0xa06bd9,
+  services:    0x4fae8f
+};
+const USAGE_LABELS = {
+  residentiel: "Résidentiel",
+  bureaux: "Bureaux",
+  commerces: "Commerces",
+  hotel: "Hôtel",
+  services: "Services"
+};
+const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
+
+/* ============================================================
+   SCENE
+   ============================================================ */
+const viewport = document.getElementById('viewport');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101820);
+scene.fog = new THREE.Fog(0x101820, 260, 620);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 3000);
+camera.position.set(140, 130, 170);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+viewport.appendChild(renderer.domElement);
+
+function resize(){
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+}
+window.addEventListener('resize', resize);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,8,0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI*0.49;
+controls.minDistance = 15;
+controls.maxDistance = 700;
+
+// Lighting — soft overcast "plan de présentation" look
+scene.add(new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.9));
+const sun = new THREE.DirectionalLight(0xfff2df, 1.15);
+sun.position.set(120, 200, 60);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left = -180; sun.shadow.camera.right = 180;
+sun.shadow.camera.top = 180; sun.shadow.camera.bottom = -180;
+sun.shadow.camera.far = 500;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// Ground
+const groundGroup = new THREE.Group();
+scene.add(groundGroup);
+
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x1b2731, roughness: 1 });
+const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+ground.name = 'ground';
+groundGroup.add(ground);
+
+const grid = new THREE.GridHelper(GROUND_SIZE, GROUND_SIZE/5, 0x2a3946, 0x1e2932);
+grid.position.y = 0.02;
+groundGroup.add(grid);
+
+// Schematic îlot outline placeholder (rough rectangle) — purely indicative until a
+// real basemap / cadastral screenshot is loaded and calibrated by the user.
+const ilotOutlinePts = [
+  new THREE.Vector3(-55,0.05,-40), new THREE.Vector3(55,0.05,-40),
+  new THREE.Vector3(55,0.05,40), new THREE.Vector3(-55,0.05,40),
+  new THREE.Vector3(-55,0.05,-40)
+];
+const ilotOutline = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints(ilotOutlinePts),
+  new THREE.LineDashedMaterial({ color:0xe0663f, dashSize:2, gapSize:1.2 })
+);
+ilotOutline.computeLineDistances();
+groundGroup.add(ilotOutline);
+
+let gridVisible = true;
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let buildings = [];      // {id,name,points:[{x,z}],floors,bands:[{from,to,usage}],group,selected}
+let idCounter = 1;
+let drawing = false;
+let drawPoints = [];
+let drawMarkers = new THREE.Group();
+let previewLine = null;
+scene.add(drawMarkers);
+
+let selectedId = null;
+
+/* ============================================================
+   RAYCAST HELPERS
+   ============================================================ */
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+function groundPointFromEvent(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObject(ground)[0];
+  return hit ? hit.point : null;
+}
+
+/* ============================================================
+   DRAW MODE
+   ============================================================ */
+const btnDraw = document.getElementById('btn-draw');
+const drawHint = document.getElementById('draw-hint');
+
+function startDraw(){
+  drawing = true; drawPoints = [];
+  clearMarkers();
+  btnDraw.classList.add('active');
+  btnDraw.textContent = 'Dessin en cours…';
+  drawHint.classList.add('show');
+  controls.enabled = false; // left click reserved for placing points while drawing
+}
+function cancelDraw(){
+  drawing = false; drawPoints = [];
+  clearMarkers();
+  btnDraw.classList.remove('active');
+  btnDraw.textContent = '+ Nouveau bâtiment';
+  drawHint.classList.remove('show');
+  controls.enabled = true;
+}
+function clearMarkers(){
+  drawMarkers.clear();
+  if(previewLine){ scene.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
+}
+function refreshPreview(){
+  if(previewLine){ scene.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
+  if(drawPoints.length<2) return;
+  const pts = drawPoints.map(p=>new THREE.Vector3(p.x,0.15,p.z));
+  pts.push(pts[0].clone());
+  previewLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color:0xe0663f })
+  );
+  scene.add(previewLine);
+}
+function addDrawPoint(pt){
+  drawPoints.push({x:pt.x, z:pt.z});
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
+  m.position.set(pt.x,0.2,pt.z);
+  drawMarkers.add(m);
+  refreshPreview();
+}
+function finishDraw(){
+  if(drawPoints.length<3){ cancelDraw(); return; }
+  createBuilding(drawPoints.slice());
+  cancelDraw();
+}
+
+btnDraw.addEventListener('click', ()=> drawing ? cancelDraw() : startDraw());
+
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(!drawing) return;
+  if(calibrating){ handleCalibClick(ev); return; }
+  const pt = groundPointFromEvent(ev);
+  if(pt) addDrawPoint(pt);
+});
+window.addEventListener('keydown', (ev)=>{
+  if(!drawing) return;
+  if(ev.key==='Enter') finishDraw();
+  if(ev.key==='Escape') cancelDraw();
+});
+
+/* ============================================================
+   BUILDING MODEL
+   ============================================================ */
+function defaultBands(floors){
+  return [{from:1, to:floors, usage:'bureaux'}];
+}
+
+function createBuilding(pts, opts={}){
+  const b = {
+    id: idCounter++,
+    name: opts.name || `Bâtiment ${idCounter-1}`,
+    points: pts,
+    floors: opts.floors || 6,
+    bands: opts.bands || defaultBands(opts.floors || 6),
+    group: new THREE.Group(),
+    open: true
+  };
+  scene.add(b.group);
+  buildings.push(b);
+  selectedId = b.id;
+  rebuildMesh(b);
+  renderList();
+}
+
+function usageAtFloor(b, floor){
+  const band = b.bands.find(bd=>floor>=bd.from && floor<=bd.to);
+  return band ? band.usage : 'bureaux';
+}
+
+function rebuildMesh(b){
+  b.group.clear();
+  const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,p.z)));
+
+  for(let f=1; f<=b.floors; f++){
+    const usage = usageAtFloor(b, f);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_HEIGHT, bevelEnabled:false, curveSegments:1 });
+    geo.rotateX(-Math.PI/2);
+    const mat = new THREE.MeshStandardMaterial({
+      color: USAGE_COLORS[usage],
+      roughness: 0.75, metalness: 0.05
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = (f-1)*FLOOR_HEIGHT;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    b.group.add(mesh);
+
+    // slab edge line for a clean architectural-model look
+    const edges = new THREE.EdgesGeometry(geo, 25);
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity:0.35 }));
+    line.position.y = mesh.position.y;
+    b.group.add(line);
+  }
+
+  // selection halo
+  if(b.id === selectedId){
+    const outlinePts = b.points.map(p=>new THREE.Vector3(p.x,0.06,p.z));
+    outlinePts.push(outlinePts[0].clone());
+    const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:0xe0663f}));
+    b.group.add(halo);
+  }
+}
+
+function rebuildAll(){ buildings.forEach(rebuildMesh); }
+
+function deleteBuilding(id){
+  const b = buildings.find(x=>x.id===id);
+  if(!b) return;
+  scene.remove(b.group);
+  buildings = buildings.filter(x=>x.id!==id);
+  if(selectedId===id) selectedId = null;
+  renderList();
+}
+
+function selectBuilding(id){
+  selectedId = id;
+  rebuildAll();
+  renderList();
+}
+
+/* ============================================================
+   SIDE PANEL — building list & editors
+   ============================================================ */
+const bldgList = document.getElementById('bldg-list');
+const emptyNote = document.getElementById('empty-note');
+const bldgCount = document.getElementById('bldg-count');
+
+function renderList(){
+  bldgCount.textContent = buildings.length ? `(${buildings.length})` : '';
+  emptyNote.style.display = buildings.length ? 'none' : 'block';
+  bldgList.innerHTML = '';
+  buildings.forEach(b=>{
+    const card = document.createElement('div');
+    card.className = 'bldg-card' + (b.id===selectedId ? ' selected':'');
+
+    const head = document.createElement('div');
+    head.className = 'bldg-head';
+    const dot = document.createElement('div');
+    dot.className='bldg-dot';
+    dot.style.background = '#'+USAGE_COLORS[usageAtFloor(b, b.floors)].toString(16).padStart(6,'0');
+    const nameInput = document.createElement('input');
+    nameInput.value = b.name;
+    nameInput.addEventListener('click', e=>e.stopPropagation());
+    nameInput.addEventListener('input', ()=>{ b.name = nameInput.value; });
+    const caret = document.createElement('span');
+    caret.textContent = b.open ? '▾' : '▸';
+    caret.style.color = 'var(--muted)';
+    head.append(dot, nameInput, caret);
+    head.addEventListener('click', ()=>{
+      selectBuilding(b.id);
+      b.open = !b.open;
+      renderList();
+    });
+
+    const meta = document.createElement('div');
+    meta.className = 'bldg-meta';
+    meta.textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${(b.floors*FLOOR_HEIGHT).toFixed(0)} m`;
+
+    const body = document.createElement('div');
+    body.className = 'bldg-body' + (b.open ? ' open':'');
+
+    // floors field
+    const floorsField = document.createElement('div');
+    floorsField.className='field';
+    floorsField.innerHTML = `<label>Nombre d'étages (R+${Math.max(b.floors-1,0)})</label>`;
+    const floorsInput = document.createElement('input');
+    floorsInput.type='number'; floorsInput.min=1; floorsInput.max=60; floorsInput.value=b.floors;
+    floorsInput.addEventListener('change', ()=>{
+      let v = parseInt(floorsInput.value)||1;
+      v = Math.max(1, Math.min(60, v));
+      b.floors = v;
+      // clip bands to new floor count, ensure coverage
+      b.bands = b.bands.filter(bd=>bd.from<=v).map(bd=>({...bd, to:Math.min(bd.to,v)}));
+      if(!b.bands.length) b.bands = defaultBands(v);
+      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
+      if(lastTo < v) b.bands.push({from:lastTo+1, to:v, usage:'bureaux'});
+      rebuildMesh(b); renderList();
+    });
+    floorsField.appendChild(floorsInput);
+
+    // usage bands editor
+    const bandsTitle = document.createElement('div');
+    bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;';
+    bandsTitle.textContent = 'Répartition des usages par étage';
+    body.append(floorsField, bandsTitle);
+
+    b.bands.forEach((band, idx)=>{
+      const row = document.createElement('div');
+      row.className='band-row';
+      const fromInp = document.createElement('input');
+      fromInp.type='number'; fromInp.min=1; fromInp.max=b.floors; fromInp.value=band.from;
+      const x = document.createElement('span'); x.className='x'; x.textContent='→';
+      const toInp = document.createElement('input');
+      toInp.type='number'; toInp.min=1; toInp.max=b.floors; toInp.value=band.to;
+      const sel = document.createElement('select');
+      Object.entries(USAGE_LABELS).forEach(([k,label])=>{
+        const opt = document.createElement('option');
+        opt.value=k; opt.textContent=label; if(k===band.usage) opt.selected=true;
+        sel.appendChild(opt);
+      });
+      const del = document.createElement('button');
+      del.className='mini-btn danger'; del.textContent='✕';
+      del.addEventListener('click', ()=>{
+        b.bands.splice(idx,1);
+        if(!b.bands.length) b.bands = defaultBands(b.floors);
+        rebuildMesh(b); renderList();
+      });
+      function commit(){
+        band.from = Math.max(1, Math.min(parseInt(fromInp.value)||1, b.floors));
+        band.to = Math.max(band.from, Math.min(parseInt(toInp.value)||band.from, b.floors));
+        band.usage = sel.value;
+        rebuildMesh(b); renderList();
+      }
+      fromInp.addEventListener('change', commit);
+      toInp.addEventListener('change', commit);
+      sel.addEventListener('change', commit);
+      row.append(fromInp, x, toInp, sel, del);
+      body.appendChild(row);
+    });
+
+    const addBandBtn = document.createElement('button');
+    addBandBtn.className='small-action';
+    addBandBtn.textContent='+ Ajouter une tranche d\'usage';
+    addBandBtn.style.marginTop='6px';
+    addBandBtn.addEventListener('click', ()=>{
+      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
+      if(lastTo>=b.floors) return;
+      b.bands.push({from:lastTo+1, to:b.floors, usage:'residentiel'});
+      rebuildMesh(b); renderList();
+    });
+    body.appendChild(addBandBtn);
+
+    const actions = document.createElement('div');
+    actions.className='btn-row';
+    const focusBtn = document.createElement('button');
+    focusBtn.className='small-action'; focusBtn.textContent='Centrer la vue';
+    focusBtn.addEventListener('click', ()=> focusOn(b));
+    const delBtn = document.createElement('button');
+    delBtn.className='small-action danger'; delBtn.textContent='Supprimer';
+    delBtn.addEventListener('click', ()=> deleteBuilding(b.id));
+    actions.append(focusBtn, delBtn);
+    body.appendChild(actions);
+
+    card.append(head, meta, body);
+    bldgList.appendChild(card);
+  });
+}
+
+function focusOn(b){
+  const cx = b.points.reduce((s,p)=>s+p.x,0)/b.points.length;
+  const cz = b.points.reduce((s,p)=>s+p.z,0)/b.points.length;
+  const h = b.floors*FLOOR_HEIGHT;
+  controls.target.set(cx, h/2, cz);
+  const dist = Math.max(40, h*2.2);
+  camera.position.set(cx+dist*0.7, h*0.9+dist*0.5, cz+dist*0.7);
+}
+
+/* ============================================================
+   BASEMAP LOADING + CALIBRATION
+   ============================================================ */
+const btnBasemap = document.getElementById('btn-basemap');
+const fileBasemap = document.getElementById('file-basemap');
+const calibOverlay = document.getElementById('calib-overlay');
+const calibText = document.getElementById('calib-text');
+const calibDistField = document.getElementById('calib-dist-field');
+const calibDistInput = document.getElementById('calib-dist');
+const calibApplyBtn = document.getElementById('calib-apply');
+const calibCancelBtn = document.getElementById('calib-cancel');
+
+let calibrating = false;
+let calibPts = [];
+let basemapPlane = null;
+
+btnBasemap.addEventListener('click', ()=> fileBasemap.click());
+fileBasemap.addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const url = URL.createObjectURL(file);
+  new THREE.TextureLoader().load(url, (tex)=>{
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const img = tex.image;
+    const aspect = img.width/img.height;
+    const size = GROUND_SIZE*0.9;
+    const w = aspect>=1 ? size : size*aspect;
+    const h = aspect>=1 ? size/aspect : size;
+    if(basemapPlane){ groundGroup.remove(basemapPlane); basemapPlane.geometry.dispose(); }
+    const geo = new THREE.PlaneGeometry(w,h);
+    const mat = new THREE.MeshBasicMaterial({ map: tex });
+    basemapPlane = new THREE.Mesh(geo, mat);
+    basemapPlane.rotation.x = -Math.PI/2;
+    basemapPlane.position.y = 0.01;
+    basemapPlane.name = 'basemap';
+    groundGroup.add(basemapPlane);
+    startCalibration();
+  });
+});
+
+function startCalibration(){
+  calibrating = true; calibPts = [];
+  calibText.textContent = "Cliquez deux points sur le fond de plan dont vous connaissez la distance réelle (ex. deux angles de rue), puis indiquez cette distance en mètres.";
+  calibDistField.style.display='none';
+  calibApplyBtn.style.display='none';
+  calibOverlay.classList.add('show');
+  controls.enabled = false;
+}
+function handleCalibClick(){} // placeholder, real handler wired below with a dedicated listener
+
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(!calibrating) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  calibPts.push(pt);
+  if(calibPts.length===1){
+    calibText.textContent = "Cliquez le second point.";
+  } else if(calibPts.length===2){
+    calibText.textContent = "Deux points enregistrés.";
+    calibDistField.style.display='block';
+    calibApplyBtn.style.display='block';
+  }
+});
+
+calibApplyBtn.addEventListener('click', ()=>{
+  if(calibPts.length<2 || !basemapPlane) return;
+  const measured = calibPts[0].distanceTo(calibPts[1]);
+  const real = parseFloat(calibDistInput.value)||measured;
+  const scale = real/measured;
+  basemapPlane.scale.set(scale, scale, 1);
+  endCalibration();
+});
+calibCancelBtn.addEventListener('click', endCalibration);
+function endCalibration(){
+  calibrating=false; calibPts=[];
+  calibOverlay.classList.remove('show');
+  controls.enabled = true;
+}
+
+/* ============================================================
+   GRID TOGGLE
+   ============================================================ */
+document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
+  gridVisible = !gridVisible;
+  grid.visible = gridVisible;
+  ilotOutline.visible = gridVisible;
+});
+
+/* ============================================================
+   EXPORT PNG
+   ============================================================ */
+document.getElementById('btn-export-png').addEventListener('click', ()=>{
+  renderer.render(scene, camera);
+  const link = document.createElement('a');
+  link.download = `place-de-milan_proposition_${Date.now()}.png`;
+  link.href = renderer.domElement.toDataURL('image/png');
+  link.click();
+});
+
+/* ============================================================
+   SAVE / LOAD JSON
+   ============================================================ */
+document.getElementById('btn-save-json').addEventListener('click', ()=>{
+  const data = {
+    version: 1,
+    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands }))
+  };
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const link = document.createElement('a');
+  link.download = `place-de-milan_projet_${Date.now()}.json`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+});
+
+const fileLoad = document.getElementById('file-load');
+document.getElementById('btn-load-json').addEventListener('click', ()=> fileLoad.click());
+fileLoad.addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      buildings.forEach(b=>scene.remove(b.group));
+      buildings = [];
+      idCounter = 1;
+      (data.buildings||[]).forEach(b=> createBuilding(b.points, {name:b.name, floors:b.floors, bands:b.bands}));
+      selectedId = null;
+      rebuildAll(); renderList();
+    }catch(err){ alert("Fichier de projet invalide."); }
+  };
+  reader.readAsText(file);
+  fileLoad.value = '';
+});
+
+/* ============================================================
+   RENDER LOOP
+   ============================================================ */
+resize();
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+/* Seed one example building so the scene isn't empty on first load */
+createBuilding(
+  [{x:-25,z:-15},{x:15,z:-15},{x:15,z:15},{x:-25,z:15}],
+  { name:'Exemple — Tour mixte', floors:12,
+    bands:[
+      {from:1,to:2,usage:'commerces'},
+      {from:3,to:8,usage:'bureaux'},
+      {from:9,to:12,usage:'residentiel'}
+    ]}
+);
+selectedId = null; rebuildAll(); renderList();
+</script>
+</body>
+</html>
