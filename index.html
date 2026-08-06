@@ -466,7 +466,10 @@ function usageAtFloor(b, floor){
 
 function rebuildMesh(b){
   b.group.clear();
-  const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,p.z)));
+  // Note: THREE.ExtrudeGeometry + rotateX(-90°) to lay the shape flat mirrors
+  // the shape's local Y axis into world Z. We negate Z here so the built
+  // volume lines up exactly with the footprint the user traced on the ground.
+  const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,-p.z)));
 
   for(let f=1; f<=b.floors; f++){
     const usage = usageAtFloor(b, f);
