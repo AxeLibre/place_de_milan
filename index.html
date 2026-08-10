@@ -159,18 +159,6 @@
 
   input[type=file]{display:none;}
 
-  #calib-overlay{
-    position:absolute;inset:0;z-index:6;background:rgba(10,15,20,.72);
-    display:none;align-items:center;justify-content:center;
-  }
-  #calib-overlay.show{display:flex;}
-  #calib-box{
-    background:var(--ink-2);border:1px solid #2a3946;border-radius:6px;padding:22px 26px;
-    width:340px;font-family:'Inter',sans-serif;
-  }
-  #calib-box h3{font-family:'Space Grotesk',sans-serif;margin:0 0 6px;font-size:16px;}
-  #calib-box p{font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 14px;}
-
   #compass{
     position:absolute;top:70px;right:16px;z-index:5;width:46px;height:46px;
     background:var(--ink-2);border:1px solid #2a3946;border-radius:50%;
@@ -185,32 +173,27 @@
     <div id="ribbon">
       <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
-      <button class="tool-btn ghost" id="btn-basemap">Fond de plan</button>
+      <button class="tool-btn ghost" id="btn-extend-hall">Étendre le hall</button>
+      <button class="tool-btn ghost" id="btn-route">+ Voie de circulation</button>
+      <button class="tool-btn ghost" id="btn-load-glb">Charger maquette (.glb)</button>
       <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
     <div id="compass">N↑</div>
     <div id="draw-hint">
-      <span>Cliquez sur le sol pour poser les sommets du bâtiment</span>
+      <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
       <span><kbd>Entrée</kbd> valider</span>
       <span><kbd>Échap</kbd> annuler</span>
     </div>
-    <div id="calib-overlay">
-      <div id="calib-box">
-        <h3>Calibrer le fond de plan</h3>
-        <p id="calib-text">Cliquez deux points sur l'image dont vous connaissez la distance réelle (ex. deux angles de rue), puis indiquez cette distance en mètres.</p>
-        <div class="field" id="calib-dist-field" style="display:none">
-          <label>Distance réelle entre les deux points (m)</label>
-          <input type="number" id="calib-dist" value="50" min="1" step="0.5">
-        </div>
-        <div class="btn-row">
-          <button class="small-action" id="calib-cancel">Annuler</button>
-          <button class="primary-btn" id="calib-apply" style="display:none;flex:1">Appliquer l'échelle</button>
-        </div>
-      </div>
+    <div id="route-type-picker" style="position:absolute;bottom:70px;left:50%;transform:translateX(-50%);display:none;gap:6px;z-index:5;">
+      <button class="tool-btn ghost route-type-btn" data-type="tram">Tram</button>
+      <button class="tool-btn ghost route-type-btn" data-type="bus">Bus</button>
+      <button class="tool-btn ghost route-type-btn" data-type="voiture">Voiture</button>
+      <button class="tool-btn ghost route-type-btn" data-type="pieton">Piéton</button>
     </div>
-    <input type="file" id="file-basemap" accept="image/*">
     <input type="file" id="file-load" accept="application/json">
+    <input type="file" id="file-glb" accept=".glb,.gltf">
+    <input type="file" id="file-routes" accept="application/json">
   </div>
 
   <div id="panel">
@@ -223,8 +206,17 @@
       <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div>Services / équipements</div>
 
       <div class="section-title">Bâtiments <span id="bldg-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette.</div>
+      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette. Le tracé est contraint au polygone d'implantation.</div>
       <div id="bldg-list"></div>
+
+      <div class="section-title">Extensions du hall</div>
+      <div id="ext-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune extension. Cliquez sur <b style="color:var(--paper)">Étendre le hall</b>, puis sur la façade exposée du hall pour démarrer un tracé.</div>
+      <div id="ext-list"></div>
+
+      <div class="section-title">Circulation</div>
+      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Tracez-en une avec <b style="color:var(--paper)">+ Voie de circulation</b>, ou chargez un <b style="color:var(--paper)">routes.json</b> exporté de Blender.</div>
+      <button class="small-action" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
+      <div id="route-list"></div>
     </div>
     <div id="footer-actions">
       <button class="primary-btn" id="btn-export-png">Exporter l'image (PNG)</button>
@@ -247,6 +239,7 @@
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 /* ============================================================
    CONFIG
@@ -272,6 +265,7 @@ const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
    SCENE
    ============================================================ */
 const viewport = document.getElementById('viewport');
+const statusLine = document.getElementById('status-line');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101820);
 scene.fog = new THREE.Fog(0x101820, 260, 620);
@@ -328,8 +322,7 @@ const grid = new THREE.GridHelper(GROUND_SIZE, GROUND_SIZE/5, 0x2a3946, 0x1e2932
 grid.position.y = 0.02;
 groundGroup.add(grid);
 
-// Schematic îlot outline placeholder (rough rectangle) — purely indicative until a
-// real basemap / cadastral screenshot is loaded and calibrated by the user.
+// Contour d'îlot de secours (rectangle) — remplacé dès que Polygone_Implantation est chargé.
 const ilotOutlinePts = [
   new THREE.Vector3(-55,0.05,-40), new THREE.Vector3(55,0.05,-40),
   new THREE.Vector3(55,0.05,40), new THREE.Vector3(-55,0.05,40),
@@ -343,6 +336,234 @@ ilotOutline.computeLineDistances();
 groundGroup.add(ilotOutline);
 
 let gridVisible = true;
+
+/* ============================================================
+   MAQUETTE BLENDER — polygone d'implantation / hall de gare / quartier
+   ============================================================
+   Le .glb attendu contient 3 objets nommés :
+     - "Polygone_Implantation" (mesh plat, N-gone non trianglé de préférence)
+     - "Hall_Gare"             (volume 3D, toit arrondi, façade exposée vers +Y Blender → +Z glTF)
+     - "Quartier"              (volume 3D, contexte bâti existant)
+   Tant qu'aucun .glb n'est chargé, une maquette de démonstration procédurale
+   (mêmes noms d'objets) est construite pour que tous les outils soient
+   testables immédiatement, puis remplacée par la vraie maquette au chargement.
+   ============================================================ */
+// La normale de façade n'est plus déduite d'un axe local Blender/glTF (source
+// d'erreurs selon les options d'export) : elle est calculée dynamiquement,
+// horizontale, du centre du hall vers le centre du polygone d'implantation —
+// c'est-à-dire "la façade qui regarde la place", ce qui est toujours vrai
+// géométriquement quelle que soit la convention d'axes du fichier.
+let hallFacadeWorldNormal = new THREE.Vector3(0,0,1); // valeur par défaut avant chargement
+
+let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
+scene.add(siteRoot);
+let polygonMesh = null;   // THREE.Mesh du polygone d'implantation
+let hallMesh = null;      // THREE.Mesh du hall de gare
+let quartierGroup = null; // THREE.Object3D du contexte bâti
+let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
+
+function clearSite(){
+  siteRoot.clear();
+  polygonMesh = null; hallMesh = null; quartierGroup = null;
+}
+
+// Extrait le contour XZ réel d'un mesh plat trianglé, en chaînant les arêtes
+// de bord (arêtes utilisées par un seul triangle). Fonctionne aussi pour des
+// emprises concaves (en L, etc.), contrairement à une simple enveloppe convexe.
+function extractBoundaryXZ(mesh){
+  mesh.updateWorldMatrix(true,false);
+  const pos = mesh.geometry.attributes.position;
+  const idx = mesh.geometry.index;
+  const v = new THREE.Vector3();
+  const world = [];
+  for(let i=0;i<pos.count;i++){
+    v.fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
+    world.push({x:v.x, z:v.z});
+  }
+  if(!idx){
+    // mesh non indexé (ex. N-gone unique déjà en boucle) : on prend les sommets tels quels
+    return world;
+  }
+  const triCount = idx.count/3;
+  const edgeCount = new Map(); // "a-b" (a<b) -> {count, a, b}
+  const key = (a,b)=> a<b ? `${a}_${b}` : `${b}_${a}`;
+  for(let t=0;t<triCount;t++){
+    const a = idx.getX(t*3), b = idx.getX(t*3+1), c = idx.getX(t*3+2);
+    [[a,b],[b,c],[c,a]].forEach(([p,q])=>{
+      const k = key(p,q);
+      if(edgeCount.has(k)) edgeCount.get(k).count++;
+      else edgeCount.set(k, {count:1, a:p, b:q});
+    });
+  }
+  const boundaryEdges = [...edgeCount.values()].filter(e=>e.count===1);
+  if(!boundaryEdges.length) return convexHullXZ(dedupe(world));
+  // chaîne les arêtes de bord en une boucle ordonnée
+  const adjacency = new Map();
+  boundaryEdges.forEach(e=>{
+    if(!adjacency.has(e.a)) adjacency.set(e.a, []);
+    if(!adjacency.has(e.b)) adjacency.set(e.b, []);
+    adjacency.get(e.a).push(e.b);
+    adjacency.get(e.b).push(e.a);
+  });
+  const start = boundaryEdges[0].a;
+  const loopIdx = [start];
+  const visited = new Set([start]);
+  let current = start, prev = -1;
+  while(true){
+    const neighbors = adjacency.get(current) || [];
+    const next = neighbors.find(n=> n!==prev);
+    if(next===undefined || visited.has(next)) break;
+    loopIdx.push(next); visited.add(next);
+    prev = current; current = next;
+  }
+  const loop = loopIdx.map(i=>world[i]);
+  return loop.length>=3 ? loop : convexHullXZ(dedupe(world));
+}
+function dedupe(pts){
+  const uniq = [];
+  for(const p of pts){ if(!uniq.some(q=>Math.hypot(q.x-p.x,q.z-p.z)<0.01)) uniq.push(p); }
+  return uniq;
+}
+function convexHullXZ(pts){
+  if(pts.length<3) return pts;
+  const s = pts.slice().sort((a,b)=> a.x-b.x || a.z-b.z);
+  const cross=(o,a,b)=>(a.x-o.x)*(b.z-o.z)-(a.z-o.z)*(b.x-o.x);
+  const lower=[]; for(const p of s){ while(lower.length>=2 && cross(lower[lower.length-2],lower[lower.length-1],p)<=0) lower.pop(); lower.push(p); }
+  const upper=[]; for(let i=s.length-1;i>=0;i--){ const p=s[i]; while(upper.length>=2 && cross(upper[upper.length-2],upper[upper.length-1],p)<=0) upper.pop(); upper.push(p); }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+
+function updateBuildZoneVisual(){
+  scene.remove(ilotOutline);
+  const pts = buildZone.map(p=>new THREE.Vector3(p.x,0.05,p.z));
+  pts.push(pts[0].clone());
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  ilotOutline.geometry.dispose();
+  ilotOutline.geometry = geo;
+  ilotOutline.computeLineDistances();
+  groundGroup.add(ilotOutline);
+}
+
+function findByNameCI(root, name){
+  const target = name.toLowerCase();
+  let found = null;
+  root.traverse(o=>{ if(!found && o.name && o.name.toLowerCase()===target) found = o; });
+  return found;
+}
+function onSiteLoaded(){
+  polygonMesh = findByNameCI(siteRoot, 'Polygone_Implantation');
+  hallMesh    = findByNameCI(siteRoot, 'Hall_Gare');
+  quartierGroup = findByNameCI(siteRoot, 'Quartier');
+  if(polygonMesh){
+    polygonMesh.visible = false;
+    buildZone = extractBoundaryXZ(polygonMesh);
+    updateBuildZoneVisual();
+  }
+  if(hallMesh){
+    hallMesh.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    if(polygonMesh && buildZone.length>=3){
+      const hallBox = new THREE.Box3().setFromObject(hallMesh);
+      const hallCenter = hallBox.getCenter(new THREE.Vector3());
+      const polyCenter = buildZone.reduce((s,p)=>({x:s.x+p.x, z:s.z+p.z}), {x:0,z:0});
+      polyCenter.x /= buildZone.length; polyCenter.z /= buildZone.length;
+      hallFacadeWorldNormal = new THREE.Vector3(polyCenter.x - hallCenter.x, 0, polyCenter.z - hallCenter.z).normalize();
+    }
+  }
+  if(quartierGroup){
+    quartierGroup.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+  }
+  rebuildAll(); renderList();
+}
+
+function buildDemoSite(){
+  clearSite();
+  // Polygone d'implantation (plat, N-gone)
+  const polyPts = [{x:-42,z:-30},{x:20,z:-34},{x:38,z:-6},{x:22,z:26},{x:-30,z:22},{x:-44,z:-4}];
+  const shape = new THREE.Shape(polyPts.map(p=>new THREE.Vector2(p.x,-p.z)));
+  const polyGeo = new THREE.ShapeGeometry(shape);
+  polyGeo.rotateX(-Math.PI/2);
+  const poly = new THREE.Mesh(polyGeo, new THREE.MeshBasicMaterial({color:0xe0663f, visible:false}));
+  poly.name = 'Polygone_Implantation';
+  siteRoot.add(poly);
+
+  // Hall de gare : bloc + toit arrondi (demi-cylindre), façade exposée vers +Z (le polygone est en -Z du hall)
+  const hallGroup = new THREE.Group(); hallGroup.name = 'Hall_Gare';
+  hallGroup.position.set(-10, 0, -62);
+  const hallMat = new THREE.MeshStandardMaterial({color:0x8fa4b3, roughness:0.6, metalness:0.1});
+  const hallW=34, hallD=26, hallH=9;
+  const base = new THREE.Mesh(new THREE.BoxGeometry(hallW, hallH, hallD), hallMat);
+  base.position.set(0, hallH/2, 0);
+  hallGroup.add(base);
+  const roof = new THREE.Mesh(new THREE.CylinderGeometry(hallW/2, hallW/2, hallD, 24, 1, false, 0, Math.PI), hallMat);
+  roof.rotation.z = Math.PI/2; roof.rotation.y = Math.PI/2;
+  roof.position.set(0, hallH, 0);
+  hallGroup.add(roof);
+  siteRoot.add(hallGroup);
+
+  // Quartier existant : quelques volumes schématiques autour
+  const qGroup = new THREE.Group(); qGroup.name = 'Quartier';
+  const qMat = new THREE.MeshStandardMaterial({color:0x2c3b47, roughness:0.9});
+  const blocks = [[-80,20,18,26,14],[60,10,20,20,22],[10,60,30,16,12],[-60,-50,22,20,16]];
+  blocks.forEach(([x,z,w,d,h])=>{
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), qMat);
+    m.position.set(x, h/2, z);
+    qGroup.add(m);
+  });
+  siteRoot.add(qGroup);
+
+  onSiteLoaded();
+
+  // Contenu de démonstration (uniquement en mode maquette procédurale de secours)
+  createBuilding(
+    [{x:-25,z:-15},{x:15,z:-15},{x:15,z:15},{x:-25,z:15}],
+    { name:'Exemple — Tour mixte', floors:12,
+      bands:[
+        {from:1,to:2,usage:'commerces'},
+        {from:3,to:8,usage:'bureaux'},
+        {from:9,to:12,usage:'residentiel'}
+      ]}
+  );
+  createRoute([{x:-70,y:0.15,z:-45},{x:-20,y:0.15,z:-45},{x:20,y:0.15,z:-45},{x:60,y:0.15,z:-45}], 'tram', 'Tram — Cours Part-Dieu');
+  createRoute([{x:-70,y:0.15,z:34},{x:0,y:0.15,z:34},{x:60,y:0.15,z:34}], 'bus', 'Bus — ligne C');
+  createRoute([{x:-50,y:0.15,z:-38},{x:34,y:0.15,z:-38},{x:44,y:0.15,z:0},{x:26,y:0.15,z:30},{x:-40,y:0.15,z:26},{x:-50,y:0.15,z:-10},{x:-50,y:0.15,z:-38}], 'voiture', 'Voirie — boucle place');
+  createRoute([{x:-30,y:0.15,z:-55},{x:-10,y:0.15,z:-40},{x:5,y:0.15,z:-10},{x:0,y:0.15,z:15}], 'pieton', 'Piétons — parvis gare');
+  selectedId = null; rebuildAll(); renderList();
+}
+
+const gltfLoader = new GLTFLoader();
+const SITE_GLB_URL = './place_de_milan.glb'; // nom attendu à côté de ce fichier index.html
+function loadSiteFromGLB(url, onFail){
+  gltfLoader.load(url, (gltf)=>{
+    clearSite();
+    siteRoot.add(gltf.scene);
+    // Correction automatique Z-up → Y-up : si l'export Blender n'a pas appliqué
+    // la conversion d'axe (option "+Y Up" décochée), la hauteur du bâti se
+    // retrouve sur Z au lieu de Y. On le détecte en comparant l'étendue verticale
+    // (généralement bien plus petite que l'étendue horizontale d'un quartier) sur
+    // chacun des deux axes, et on corrige par une rotation si besoin.
+    const box = new THREE.Box3().setFromObject(gltf.scene);
+    const size = box.getSize(new THREE.Vector3());
+    if(size.z < size.y){
+      gltf.scene.rotation.x = -Math.PI/2;
+      flashStatus("Maquette Z-up détectée — rotation automatique appliquée");
+    }
+    onSiteLoaded();
+    flashStatus(`Maquette chargée (${url})`);
+  }, undefined, (err)=>{
+    console.warn("Chargement du .glb impossible :", err);
+    if(onFail) onFail(err); else alert("Impossible de charger le .glb (voir la console).");
+  });
+}
+
+const fileGlb = document.getElementById('file-glb');
+document.getElementById('btn-load-glb').addEventListener('click', ()=> fileGlb.click());
+fileGlb.addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  loadSiteFromGLB(URL.createObjectURL(file));
+  fileGlb.value = '';
+});
 
 /* ============================================================
    STATE
@@ -408,7 +629,41 @@ function refreshPreview(){
   );
   scene.add(previewLine);
 }
+function pointInPolygon(pt, poly){
+  let inside = false;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const xi=poly[i].x, zi=poly[i].z, xj=poly[j].x, zj=poly[j].z;
+    const intersect = ((zi>pt.z)!==(zj>pt.z)) &&
+      (pt.x < (xj-xi)*(pt.z-zi)/(zj-zi)+xi);
+    if(intersect) inside = !inside;
+  }
+  return inside;
+}
+// Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
+// reste dans le polygone d'implantation, en échantillonnant chaque arête.
+function polygonFullyInsideZone(pts, zone){
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const steps = Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1.0));
+    for(let s=0;s<=steps;s++){
+      const t=s/steps;
+      const p = {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t};
+      if(!pointInPolygon(p, zone)) return false;
+    }
+  }
+  return true;
+}
+function flashStatus(msg){
+  statusLine.dataset.orig = statusLine.dataset.orig || statusLine.textContent;
+  statusLine.innerHTML = `<b>${msg}</b>`;
+  clearTimeout(flashStatus._t);
+  flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
+}
 function addDrawPoint(pt){
+  if(buildZone.length>=3 && !pointInPolygon(pt, buildZone)){
+    flashStatus("Point hors du polygone d'implantation — refusé");
+    return;
+  }
   drawPoints.push({x:pt.x, z:pt.z});
   const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
   m.position.set(pt.x,0.2,pt.z);
@@ -417,15 +672,22 @@ function addDrawPoint(pt){
 }
 function finishDraw(){
   if(drawPoints.length<3){ cancelDraw(); return; }
+  if(buildZone.length>=3 && !polygonFullyInsideZone(drawPoints, buildZone)){
+    flashStatus("Emprise hors polygone d'implantation — tracé refusé");
+    cancelDraw();
+    return;
+  }
   createBuilding(drawPoints.slice());
   cancelDraw();
 }
 
-btnDraw.addEventListener('click', ()=> drawing ? cancelDraw() : startDraw());
+btnDraw.addEventListener('click', ()=>{
+  if(extending || routing) return;
+  drawing ? cancelDraw() : startDraw();
+});
 
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!drawing) return;
-  if(calibrating){ handleCalibClick(ev); return; }
   const pt = groundPointFromEvent(ev);
   if(pt) addDrawPoint(pt);
 });
@@ -434,6 +696,250 @@ window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Enter') finishDraw();
   if(ev.key==='Escape') cancelDraw();
 });
+
+/* ============================================================
+   EXTENSION DU HALL DE GARE
+   ============================================================
+   Étape 1 : clic sur la façade exposée du hall (normale locale +Z)
+             → on tranche le mesh du hall par un plan parallèle à la
+             façade pour extraire automatiquement son profil (contour),
+             quelle que soit sa forme réelle (arche, toit arrondi...).
+   Étape 2 : clic successifs au sol / sur les bâtiments / le quartier
+             pour tracer le chemin (droit ou courbe) de l'extension.
+   Étape 3 : Entrée → on "loft" le profil le long du chemin (repères
+             de Frenet), avec un fuseau de hauteur/largeur réglable.
+   ============================================================ */
+let extending = false;
+let extPickedProfile = null; // {points:[Vector3 local autour du centroïde], centroid, normal}
+let extPathPoints = [];      // Vector3 monde
+let extMarkers = new THREE.Group(); scene.add(extMarkers);
+let extPreviewLine = null;
+let extensions = []; // {id, name, mesh, group}
+let extIdCounter = 1;
+let extScaleStart = 1.0, extScaleEnd = 1.0, extHeightOffset = 0;
+
+const btnExtend = document.getElementById('btn-extend-hall');
+const drawHintText = document.getElementById('draw-hint-text');
+
+function startExtend(){
+  if(drawing || routing) return;
+  if(!hallMesh){ alert("Aucun objet 'Hall_Gare' trouvé dans la maquette chargée."); return; }
+  extending = true; extPickedProfile = null; extPathPoints = [];
+  extMarkers.clear();
+  btnExtend.classList.add('active'); btnExtend.textContent = 'Extension : cliquez la façade…';
+  drawHint.classList.add('show');
+  drawHintText.textContent = "Cliquez la façade exposée du hall pour démarrer l'extension";
+  controls.enabled = false;
+}
+function cancelExtend(){
+  extending = false; extPickedProfile = null; extPathPoints = [];
+  extMarkers.clear();
+  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
+  btnExtend.classList.remove('active'); btnExtend.textContent = 'Étendre le hall';
+  drawHint.classList.remove('show');
+  drawHintText.textContent = 'Cliquez sur le sol pour poser les sommets du bâtiment';
+  controls.enabled = true;
+}
+
+// Tranche un mesh (monde) par un plan et renvoie le plus grand contour fermé obtenu.
+function sliceMeshByPlane(mesh, planePoint, planeNormal){
+  mesh.updateWorldMatrix(true,false);
+  const geo = mesh.geometry;
+  const pos = geo.attributes.position;
+  const idx = geo.index;
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+  const a=new THREE.Vector3(), b=new THREE.Vector3(), c=new THREE.Vector3();
+  const segs = [];
+  const triCount = idx ? idx.count/3 : pos.count/3;
+  const getVertex=(i)=>{
+    const ii = idx ? idx.getX(i) : i;
+    return new THREE.Vector3().fromBufferAttribute(pos, ii).applyMatrix4(mesh.matrixWorld);
+  };
+  const edgeIntersect=(p1,p2)=>{
+    const d1 = plane.distanceToPoint(p1), d2 = plane.distanceToPoint(p2);
+    if((d1>0 && d2>0) || (d1<0 && d2<0)) return null;
+    if(Math.abs(d1-d2)<1e-9) return null;
+    const t = d1/(d1-d2);
+    return p1.clone().lerp(p2, t);
+  };
+  for(let t=0;t<triCount;t++){
+    a.copy(getVertex(t*3)); b.copy(getVertex(t*3+1)); c.copy(getVertex(t*3+2));
+    const pts = [edgeIntersect(a,b), edgeIntersect(b,c), edgeIntersect(c,a)].filter(Boolean);
+    if(pts.length===2) segs.push([pts[0], pts[1]]);
+  }
+  if(!segs.length) return null;
+  // chaîne les segments en boucles (par proximité des extrémités)
+  const used = new Array(segs.length).fill(false);
+  const loops = [];
+  for(let i=0;i<segs.length;i++){
+    if(used[i]) continue;
+    used[i]=true;
+    const loop = [segs[i][0], segs[i][1]];
+    let extended = true;
+    while(extended){
+      extended = false;
+      for(let j=0;j<segs.length;j++){
+        if(used[j]) continue;
+        const [p,q] = segs[j];
+        const tail = loop[loop.length-1];
+        if(tail.distanceTo(p)<0.05){ loop.push(q); used[j]=true; extended=true; }
+        else if(tail.distanceTo(q)<0.05){ loop.push(p); used[j]=true; extended=true; }
+      }
+    }
+    loops.push(loop);
+  }
+  // le plus grand contour (par nombre de points) = le profil principal de la façade
+  loops.sort((a,b)=>b.length-a.length);
+  return loops[0];
+}
+
+function pickHallFacade(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const meshes = [];
+  hallMesh.traverse(o=>{ if(o.isMesh) meshes.push(o); });
+  const hits = raycaster.intersectObjects(meshes, true);
+  if(!hits.length){ flashStatus("Aucune surface du hall touchée"); return; }
+  const hit = hits[0];
+  const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+  const facadeWorldNormal = hallFacadeWorldNormal;
+  if(worldNormal.dot(facadeWorldNormal) < 0.6){
+    flashStatus("Cliquez la façade exposée (+Y Blender) du hall, pas une autre paroi");
+    return;
+  }
+  // tranche légèrement en retrait pour capter le contour plein de la façade
+  const planePoint = hit.point.clone().addScaledVector(facadeWorldNormal, -0.05);
+  const loop = sliceMeshByPlane(hallMesh, planePoint, facadeWorldNormal);
+  if(!loop || loop.length<3){ flashStatus("Profil de façade introuvable — cliquez ailleurs sur la façade"); return; }
+  const centroid = loop.reduce((s,p)=>s.add(p), new THREE.Vector3()).multiplyScalar(1/loop.length);
+  extPickedProfile = { points: loop.map(p=>p.clone().sub(centroid)), centroid, normal: facadeWorldNormal };
+  const marker = new THREE.Line(new THREE.BufferGeometry().setFromPoints([...loop, loop[0]]), new THREE.LineBasicMaterial({color:0x4fae8f}));
+  extMarkers.add(marker);
+  extPathPoints = [centroid.clone()];
+  drawHintText.textContent = "Tracez le chemin de l'extension, Entrée pour valider (Échap annule)";
+  flashStatus("Façade capturée — tracez le chemin de l'extension");
+}
+
+function refreshExtPreview(){
+  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
+  if(extPathPoints.length<2) return;
+  extPreviewLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(extPathPoints), new THREE.LineBasicMaterial({color:0x4fae8f}));
+  scene.add(extPreviewLine);
+}
+
+function extendPathPointFromEvent(ev){
+  // Autorise à cliquer sur le sol, les bâtiments existants ou le quartier
+  // (pour permettre à l'extension de "grimper" au-dessus / de viser une façade cible).
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const targets = [ground];
+  buildings.forEach(b=> b.group.traverse(o=>{ if(o.isMesh) targets.push(o); }));
+  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) targets.push(o); });
+  const hit = raycaster.intersectObjects(targets, true)[0];
+  return hit ? hit.point.clone() : null;
+}
+
+// Construit la géométrie loftée : profil balayé le long d'une courbe (repères de Frenet),
+// avec un fuseau d'échelle et un décalage de hauteur réglables.
+function buildLoftGeometry(profile, pathPoints, segments=48){
+  const curve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.25);
+  const frames = curve.computeFrenetFrames(segments, false);
+  const ring = profile.points; // Vector3 locaux autour du centroïde, dans le plan de la façade
+  const positions = [], indices = [];
+  for(let s=0;s<=segments;s++){
+    const t = s/segments;
+    const center = curve.getPointAt(t).clone();
+    center.y += extHeightOffset * t;
+    const scale = THREE.MathUtils.lerp(extScaleStart, extScaleEnd, t);
+    const normal = frames.normals[s], binormal = frames.binormals[s];
+    for(const p of ring){
+      // reprojette chaque point du profil (exprimé dans le plan facade d'origine)
+      // dans le repère local (normal/binormal) de la courbe au paramètre t
+      const local = p.clone().multiplyScalar(scale);
+      const projN = local.dot(normal), projB = local.dot(binormal);
+      const worldPt = center.clone().addScaledVector(normal, projN).addScaledVector(binormal, projB);
+      positions.push(worldPt.x, worldPt.y, worldPt.z);
+    }
+  }
+  const ringLen = ring.length;
+  for(let s=0;s<segments;s++){
+    for(let i=0;i<ringLen;i++){
+      const a = s*ringLen+i, b = s*ringLen+((i+1)%ringLen);
+      const c = (s+1)*ringLen+i, d = (s+1)*ringLen+((i+1)%ringLen);
+      indices.push(a,c,b, b,c,d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function finishExtend(){
+  if(!extPickedProfile || extPathPoints.length<2){ cancelExtend(); return; }
+  const geo = buildLoftGeometry(extPickedProfile, extPathPoints);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x9fb8c4, roughness:0.55, metalness:0.1,
+    transparent:true, opacity:0.96, depthWrite:true
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.renderOrder = 2; // s'affiche par-dessus les bâtiments qu'elle traverse visuellement
+  const group = new THREE.Group();
+  group.add(mesh);
+  scene.add(group);
+  const ext = { id: extIdCounter++, name:`Extension hall ${extIdCounter-1}`, mesh, group };
+  extensions.push(ext);
+  renderExtList();
+  cancelExtend();
+}
+
+btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExtend());
+
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(!extending) return;
+  if(!extPickedProfile){ pickHallFacade(ev); return; }
+  const pt = extendPathPointFromEvent(ev);
+  if(pt){ extPathPoints.push(pt); refreshExtPreview(); }
+});
+window.addEventListener('keydown', (ev)=>{
+  if(!extending) return;
+  if(ev.key==='Enter') finishExtend();
+  if(ev.key==='Escape') cancelExtend();
+});
+
+function deleteExtension(id){
+  const e = extensions.find(x=>x.id===id);
+  if(!e) return;
+  scene.remove(e.group);
+  e.mesh.geometry.dispose(); e.mesh.material.dispose();
+  extensions = extensions.filter(x=>x.id!==id);
+  renderExtList();
+}
+function renderExtList(){
+  const list = document.getElementById('ext-list');
+  const empty = document.getElementById('ext-empty-note');
+  empty.style.display = extensions.length ? 'none' : 'block';
+  list.innerHTML = '';
+  extensions.forEach(e=>{
+    const card = document.createElement('div');
+    card.className = 'bldg-card';
+    card.style.padding = '9px 10px';
+    card.style.display = 'flex'; card.style.alignItems='center'; card.style.gap='8px';
+    const label = document.createElement('span');
+    label.textContent = e.name; label.style.flex='1'; label.style.fontSize='12.5px';
+    const del = document.createElement('button');
+    del.className='mini-btn danger'; del.textContent='✕';
+    del.addEventListener('click', ()=> deleteExtension(e.id));
+    card.append(label, del);
+    list.appendChild(card);
+  });
+}
 
 /* ============================================================
    BUILDING MODEL
@@ -655,85 +1161,6 @@ function focusOn(b){
 }
 
 /* ============================================================
-   BASEMAP LOADING + CALIBRATION
-   ============================================================ */
-const btnBasemap = document.getElementById('btn-basemap');
-const fileBasemap = document.getElementById('file-basemap');
-const calibOverlay = document.getElementById('calib-overlay');
-const calibText = document.getElementById('calib-text');
-const calibDistField = document.getElementById('calib-dist-field');
-const calibDistInput = document.getElementById('calib-dist');
-const calibApplyBtn = document.getElementById('calib-apply');
-const calibCancelBtn = document.getElementById('calib-cancel');
-
-let calibrating = false;
-let calibPts = [];
-let basemapPlane = null;
-
-btnBasemap.addEventListener('click', ()=> fileBasemap.click());
-fileBasemap.addEventListener('change', (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const url = URL.createObjectURL(file);
-  new THREE.TextureLoader().load(url, (tex)=>{
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const img = tex.image;
-    const aspect = img.width/img.height;
-    const size = GROUND_SIZE*0.9;
-    const w = aspect>=1 ? size : size*aspect;
-    const h = aspect>=1 ? size/aspect : size;
-    if(basemapPlane){ groundGroup.remove(basemapPlane); basemapPlane.geometry.dispose(); }
-    const geo = new THREE.PlaneGeometry(w,h);
-    const mat = new THREE.MeshBasicMaterial({ map: tex });
-    basemapPlane = new THREE.Mesh(geo, mat);
-    basemapPlane.rotation.x = -Math.PI/2;
-    basemapPlane.position.y = 0.01;
-    basemapPlane.name = 'basemap';
-    groundGroup.add(basemapPlane);
-    startCalibration();
-  });
-});
-
-function startCalibration(){
-  calibrating = true; calibPts = [];
-  calibText.textContent = "Cliquez deux points sur le fond de plan dont vous connaissez la distance réelle (ex. deux angles de rue), puis indiquez cette distance en mètres.";
-  calibDistField.style.display='none';
-  calibApplyBtn.style.display='none';
-  calibOverlay.classList.add('show');
-  controls.enabled = false;
-}
-function handleCalibClick(){} // placeholder, real handler wired below with a dedicated listener
-
-renderer.domElement.addEventListener('click', (ev)=>{
-  if(!calibrating) return;
-  const pt = groundPointFromEvent(ev);
-  if(!pt) return;
-  calibPts.push(pt);
-  if(calibPts.length===1){
-    calibText.textContent = "Cliquez le second point.";
-  } else if(calibPts.length===2){
-    calibText.textContent = "Deux points enregistrés.";
-    calibDistField.style.display='block';
-    calibApplyBtn.style.display='block';
-  }
-});
-
-calibApplyBtn.addEventListener('click', ()=>{
-  if(calibPts.length<2 || !basemapPlane) return;
-  const measured = calibPts[0].distanceTo(calibPts[1]);
-  const real = parseFloat(calibDistInput.value)||measured;
-  const scale = real/measured;
-  basemapPlane.scale.set(scale, scale, 1);
-  endCalibration();
-});
-calibCancelBtn.addEventListener('click', endCalibration);
-function endCalibration(){
-  calibrating=false; calibPts=[];
-  calibOverlay.classList.remove('show');
-  controls.enabled = true;
-}
-
-/* ============================================================
    GRID TOGGLE
    ============================================================ */
 document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
@@ -790,27 +1217,213 @@ fileLoad.addEventListener('change', (e)=>{
 });
 
 /* ============================================================
+   CIRCULATION — tram / bus / voiture / piéton
+   ============================================================
+   Une "voie" = une courbe (CatmullRomCurve3). On peut la tracer à la
+   souris (comme un bâtiment mais en polyligne ouverte) ou en charger
+   depuis un routes.json exporté de Blender (courbes Bézier → points).
+   Chaque voie reçoit un pool de piétons/véhicules animés le long de
+   la courbe via curve.getPointAt(t), rendus en instanced mesh low-poly.
+   ============================================================ */
+const ROUTE_TYPES = {
+  tram:   { label:'Tram',    color:0x5b8ab0, speed:6,  count:2,  scale:[2.6,2.6,9]  },
+  bus:    { label:'Bus',     color:0x4fae8f, speed:5,  count:2,  scale:[2.2,2.4,6]  },
+  voiture:{ label:'Voiture', color:0xe0a24a, speed:8,  count:5,  scale:[1.7,1.3,3.4]},
+  pieton: { label:'Piéton',  color:0xd95a6c, speed:1.2,count:14, scale:[0.5,1.6,0.5]}
+};
+let routing = false;
+let routeDrawPoints = [];
+let routeMarkers = new THREE.Group(); scene.add(routeMarkers);
+let routePreviewLine = null;
+let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,offset}]}
+let routeIdCounter = 1;
+let pendingRouteType = 'voiture';
+
+const btnRoute = document.getElementById('btn-route');
+const routeTypePicker = document.getElementById('route-type-picker');
+routeTypePicker.querySelectorAll('.route-type-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    pendingRouteType = btn.dataset.type;
+    routeTypePicker.querySelectorAll('.route-type-btn').forEach(b=>b.classList.toggle('active', b===btn));
+  });
+});
+
+function startRoute(){
+  if(drawing || extending) return;
+  routing = true; routeDrawPoints = [];
+  routeMarkers.clear();
+  btnRoute.classList.add('active'); btnRoute.textContent='Voie : cliquez les points…';
+  routeTypePicker.style.display = 'flex';
+  routeTypePicker.querySelectorAll('.route-type-btn').forEach(b=>b.classList.toggle('active', b.dataset.type===pendingRouteType));
+  drawHint.classList.add('show');
+  drawHintText.textContent = "Cliquez pour poser les points de la voie (2 min.), Entrée pour valider";
+  controls.enabled = false;
+}
+function cancelRoute(){
+  routing = false; routeDrawPoints = [];
+  routeMarkers.clear();
+  if(routePreviewLine){ scene.remove(routePreviewLine); routePreviewLine.geometry.dispose(); routePreviewLine=null; }
+  btnRoute.classList.remove('active'); btnRoute.textContent='+ Voie de circulation';
+  routeTypePicker.style.display = 'none';
+  drawHint.classList.remove('show');
+  controls.enabled = true;
+}
+function addRoutePoint(pt){
+  routeDrawPoints.push({x:pt.x,y:pt.y||0.15,z:pt.z});
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.6,10,10), new THREE.MeshBasicMaterial({color:ROUTE_TYPES[pendingRouteType].color}));
+  m.position.set(pt.x, (pt.y||0)+0.15, pt.z);
+  routeMarkers.add(m);
+  if(routePreviewLine){ scene.remove(routePreviewLine); routePreviewLine.geometry.dispose(); }
+  routePreviewLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(routeDrawPoints.map(p=>new THREE.Vector3(p.x,p.y,p.z))),
+    new THREE.LineBasicMaterial({color:ROUTE_TYPES[pendingRouteType].color})
+  );
+  scene.add(routePreviewLine);
+}
+function finishRoute(){
+  if(routeDrawPoints.length<2){ cancelRoute(); return; }
+  createRoute(routeDrawPoints.slice(), pendingRouteType);
+  cancelRoute();
+}
+
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(!routing) return;
+  const pt = extendPathPointFromEvent(ev); // sol + bâtiments + quartier : pratique pour suivre une rue en pente/pont
+  if(pt) addRoutePoint(pt);
+});
+window.addEventListener('keydown', (ev)=>{
+  if(!routing) return;
+  if(ev.key==='Enter') finishRoute();
+  if(ev.key==='Escape') cancelRoute();
+});
+btnRoute.addEventListener('click', ()=> routing ? cancelRoute() : startRoute());
+
+function createRoute(points, type, name){
+  const cfg = ROUTE_TYPES[type] || ROUTE_TYPES.voiture;
+  const vec = points.map(p=>new THREE.Vector3(p.x, p.y||0.15, p.z));
+  const curve = new THREE.CatmullRomCurve3(vec, false, 'catmullrom', 0.2);
+
+  const geo = new THREE.BoxGeometry(...cfg.scale);
+  const mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
+  const count = cfg.count;
+  const inst = new THREE.InstancedMesh(geo, mat, count);
+  inst.castShadow = true;
+  scene.add(inst);
+
+  const agents = [];
+  for(let i=0;i<count;i++) agents.push({ t: i/count, speed: cfg.speed * (0.9+Math.random()*0.2) });
+
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
+  scene.add(line);
+
+  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, line, agents };
+  routes.push(route);
+  renderRouteList();
+  return route;
+}
+
+const dummy = new THREE.Object3D();
+function tickAgents(dt){
+  for(const r of routes){
+    const len = r.curve.getLength();
+    if(len<=0) continue;
+    r.agents.forEach((a,i)=>{
+      a.t = (a.t + (a.speed*dt)/len) % 1;
+      const pos = r.curve.getPointAt(a.t);
+      const tangent = r.curve.getTangentAt(a.t);
+      dummy.position.copy(pos);
+      dummy.position.y += 0.05;
+      dummy.lookAt(pos.clone().add(tangent));
+      // léger bruit latéral pour les piétons (foule moins "sur des rails")
+      if(r.type==='pieton'){
+        const lateral = Math.sin(a.t*40 + i*7) * 0.4;
+        const side = new THREE.Vector3(-tangent.z,0,tangent.x);
+        dummy.position.addScaledVector(side, lateral);
+      }
+      dummy.updateMatrix();
+      r.instancedMesh.setMatrixAt(i, dummy.matrix);
+    });
+    r.instancedMesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+function deleteRoute(id){
+  const r = routes.find(x=>x.id===id);
+  if(!r) return;
+  scene.remove(r.instancedMesh); scene.remove(r.line);
+  r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
+  r.line.geometry.dispose(); r.line.material.dispose();
+  routes = routes.filter(x=>x.id!==id);
+  renderRouteList();
+}
+function renderRouteList(){
+  const list = document.getElementById('route-list');
+  const empty = document.getElementById('route-empty-note');
+  empty.style.display = routes.length ? 'none' : 'block';
+  list.innerHTML = '';
+  routes.forEach(r=>{
+    const card = document.createElement('div');
+    card.className='bldg-card';
+    card.style.padding='9px 10px'; card.style.display='flex'; card.style.alignItems='center'; card.style.gap='8px';
+    const dot = document.createElement('div');
+    dot.className='bldg-dot';
+    dot.style.background = '#'+ROUTE_TYPES[r.type].color.toString(16).padStart(6,'0');
+    const label = document.createElement('span');
+    label.textContent = `${r.name} · ${ROUTE_TYPES[r.type].label}`;
+    label.style.flex='1'; label.style.fontSize='12.5px';
+    const del = document.createElement('button');
+    del.className='mini-btn danger'; del.textContent='✕';
+    del.addEventListener('click', ()=> deleteRoute(r.id));
+    card.append(dot, label, del);
+    list.appendChild(card);
+  });
+}
+
+// Charge un routes.json exporté de Blender : { "Route_Tram_1":[[x,y,z],...], "Route_Bus_A":[...], ... }
+// Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
+const fileRoutes = document.getElementById('file-routes');
+document.getElementById('btn-load-routes').addEventListener('click', ()=> fileRoutes.click());
+fileRoutes.addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      Object.entries(data).forEach(([name, pts])=>{
+        const key = name.toLowerCase();
+        let type = 'voiture';
+        for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
+        const points = pts.map(p=>({x:p[0], y:p[1]||0.15, z:p[2]}));
+        createRoute(points, type, name);
+      });
+    }catch(err){ alert("routes.json invalide : "+err.message); }
+  };
+  reader.readAsText(file);
+  fileRoutes.value = '';
+});
+
+/* ============================================================
    RENDER LOOP
    ============================================================ */
 resize();
+const clock = new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
   controls.update();
+  tickAgents(dt);
   renderer.render(scene, camera);
 }
 animate();
 
-/* Seed one example building so the scene isn't empty on first load */
-createBuilding(
-  [{x:-25,z:-15},{x:15,z:-15},{x:15,z:15},{x:-25,z:15}],
-  { name:'Exemple — Tour mixte', floors:12,
-    bands:[
-      {from:1,to:2,usage:'commerces'},
-      {from:3,to:8,usage:'bureaux'},
-      {from:9,to:12,usage:'residentiel'}
-    ]}
-);
-selectedId = null; rebuildAll(); renderList();
+// Charge la vraie maquette si le fichier est présent à côté de index.html ;
+// sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
+// et voies d'exemple inclus dans buildDemoSite()).
+loadSiteFromGLB(SITE_GLB_URL, ()=>{
+  flashStatus("place_de_milan.glb introuvable — maquette de démonstration chargée");
+  buildDemoSite();
+});
 </script>
 </body>
 </html>
