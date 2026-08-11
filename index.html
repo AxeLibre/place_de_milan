@@ -165,6 +165,20 @@
     display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;
     font-size:11px;font-weight:700;color:var(--accent);pointer-events:none;
   }
+  #site-status-banner{
+    position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:6;
+    max-width:560px;display:none;gap:8px;align-items:flex-start;
+    background:var(--ink-2);border:1px solid #2a3946;border-left:3px solid var(--accent);
+    border-radius:3px;padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+    line-height:1.5;color:var(--paper);
+  }
+  #site-status-banner.show{display:flex;}
+  #site-status-banner.ok{border-left-color:var(--ser);}
+  #site-status-banner button{
+    background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;
+    margin-left:8px;flex-shrink:0;
+  }
+  #site-status-banner button:hover{color:var(--paper);}
 </style>
 </head>
 <body>
@@ -180,6 +194,7 @@
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
     <div id="compass">N↑</div>
+    <div id="site-status-banner"></div>
     <div id="draw-hint">
       <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
       <span><kbd>Entrée</kbd> valider</span>
@@ -445,6 +460,76 @@ function updateBuildZoneVisual(){
   groundGroup.add(ilotOutline);
 }
 
+// Extrait la ligne centrale d'un mesh "tube" (courbe convertie en maillage plein
+// avec une section constante) en détectant automatiquement la taille des anneaux
+// via les sauts de distance périodiques entre sommets consécutifs du buffer.
+function extractTubeCenterline(mesh){
+  mesh.updateWorldMatrix(true,false);
+  const pos = mesh.geometry.attributes.position;
+  const world = [];
+  const v = new THREE.Vector3();
+  for(let i=0;i<pos.count;i++){ world.push(v.clone().fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld).clone()); }
+  if(world.length<4) return null;
+  const dists = [];
+  for(let i=0;i<world.length-1;i++) dists.push(world[i].distanceTo(world[i+1]));
+  const sorted = dists.slice().sort((a,b)=>a-b);
+  const median = sorted[Math.floor(sorted.length/2)] || 0.001;
+  const threshold = Math.max(median*5, 0.02);
+  const bigJumps = [];
+  dists.forEach((d,i)=>{ if(d>threshold) bigJumps.push(i); });
+  let ringSize = null;
+  if(bigJumps.length>2){
+    const gaps = [];
+    for(let i=1;i<bigJumps.length;i++) gaps.push(bigJumps[i]-bigJumps[i-1]);
+    if(gaps.every(g=>g===gaps[0])) ringSize = gaps[0];
+  }
+  if(!ringSize) return null; // section non constante : pas un tube d'extrusion simple
+  const centerline = [];
+  for(let r=0; r*ringSize < world.length; r++){
+    const start = r*ringSize, end = Math.min(start+ringSize, world.length);
+    const c = new THREE.Vector3();
+    for(let i=start;i<end;i++) c.add(world[i]);
+    c.multiplyScalar(1/(end-start));
+    centerline.push({x:c.x, y:c.y, z:c.z});
+  }
+  return centerline;
+}
+
+// Balaie la maquette chargée à la recherche d'objets "Route_*" (tracés de
+// circulation modélisés dans Blender) et les convertit automatiquement en
+// voies de circulation. Gère à la fois un mesh "tube" plein (extrait sa ligne
+// centrale) et un futur export en ligne simple (LINE_STRIP, pris tel quel).
+function autoImportRoutesFromSite(){
+  clearRoutes();
+  const found = [], noGeometry = [], unrecognized = [];
+  siteRoot.traverse(o=>{
+    if(!o.name || !/^route[_-]/i.test(o.name)) return;
+    const mesh = o.isMesh ? o : (o.children.find(c=>c.isMesh) || null);
+    const key = o.name.toLowerCase();
+    let type = null;
+    for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
+    if(!type){ unrecognized.push(o.name); type = 'voiture'; }
+    if(!mesh){ noGeometry.push(o.name); return; }
+    let pts = null;
+    if(mesh.geometry.index === null && (mesh.geometry.attributes.position.count < 200)){
+      // mesh non indexé de faible résolution : probablement déjà une ligne simple
+      mesh.updateWorldMatrix(true,false);
+      pts = [];
+      const v = new THREE.Vector3();
+      for(let i=0;i<mesh.geometry.attributes.position.count;i++){
+        pts.push(v.clone().fromBufferAttribute(mesh.geometry.attributes.position,i).applyMatrix4(mesh.matrixWorld).clone());
+        pts[pts.length-1] = {x:pts[pts.length-1].x, y:pts[pts.length-1].y, z:pts[pts.length-1].z};
+      }
+    } else {
+      pts = extractTubeCenterline(mesh);
+    }
+    if(!pts || pts.length<2){ noGeometry.push(o.name); return; }
+    createRoute(pts, type, o.name);
+    found.push(o.name);
+  });
+  return { found, noGeometry, unrecognized };
+}
+
 function findByNameCI(root, name){
   const target = name.toLowerCase();
   let found = null;
@@ -473,7 +558,16 @@ function onSiteLoaded(){
   if(quartierGroup){
     quartierGroup.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
   }
+  const routeReport = autoImportRoutesFromSite();
   rebuildAll(); renderList();
+
+  const bits = [];
+  bits.push(polygonMesh ? `polygone : ${buildZone.length} sommets` : `<span style="color:var(--com)">polygone d'implantation introuvable</span>`);
+  bits.push(hallMesh ? `hall : ok` : `<span style="color:var(--com)">hall introuvable</span>`);
+  bits.push(quartierGroup ? `quartier : ok` : `<span style="color:var(--com)">quartier introuvable</span>`);
+  if(routeReport.found.length) bits.push(`${routeReport.found.length} voie(s) importée(s) : ${routeReport.found.join(', ')}`);
+  if(routeReport.noGeometry.length) bits.push(`<span style="color:var(--com)">${routeReport.noGeometry.length} voie(s) sans géométrie exploitable (${routeReport.noGeometry.join(', ')}) — reconvertis ces courbes en mesh (section constante ou bevel=0) côté Blender, ou utilise "Charger routes.json"</span>`);
+  return bits.join(' · ');
 }
 
 function buildDemoSite(){
@@ -531,6 +625,14 @@ function buildDemoSite(){
   selectedId = null; rebuildAll(); renderList();
 }
 
+function showSiteBanner(html, ok=false){
+  const el = document.getElementById('site-status-banner');
+  el.innerHTML = html + `<button aria-label="fermer">✕</button>`;
+  el.classList.add('show');
+  el.classList.toggle('ok', ok);
+  el.querySelector('button').addEventListener('click', ()=> el.classList.remove('show'));
+}
+
 const gltfLoader = new GLTFLoader();
 const SITE_GLB_URL = './place_de_milan.glb'; // nom attendu à côté de ce fichier index.html
 function loadSiteFromGLB(url, onFail){
@@ -544,14 +646,18 @@ function loadSiteFromGLB(url, onFail){
     // chacun des deux axes, et on corrige par une rotation si besoin.
     const box = new THREE.Box3().setFromObject(gltf.scene);
     const size = box.getSize(new THREE.Vector3());
+    let corrected = false;
     if(size.z < size.y){
       gltf.scene.rotation.x = -Math.PI/2;
-      flashStatus("Maquette Z-up détectée — rotation automatique appliquée");
+      corrected = true;
     }
-    onSiteLoaded();
-    flashStatus(`Maquette chargée (${url})`);
+    const report = onSiteLoaded();
+    showSiteBanner(
+      `<div><b>Maquette chargée</b> (${url})${corrected ? ' — rotation Z-up→Y-up appliquée automatiquement' : ''}.<br>${report}</div>`,
+      true
+    );
   }, undefined, (err)=>{
-    console.warn("Chargement du .glb impossible :", err);
+    console.warn("Chargement du .glb impossible :", url, err);
     if(onFail) onFail(err); else alert("Impossible de charger le .glb (voir la console).");
   });
 }
@@ -1299,6 +1405,7 @@ window.addEventListener('keydown', (ev)=>{
 btnRoute.addEventListener('click', ()=> routing ? cancelRoute() : startRoute());
 
 function createRoute(points, type, name){
+  if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
   const cfg = ROUTE_TYPES[type] || ROUTE_TYPES.voiture;
   const vec = points.map(p=>new THREE.Vector3(p.x, p.y||0.15, p.z));
   const curve = new THREE.CatmullRomCurve3(vec, false, 'catmullrom', 0.2);
@@ -1347,6 +1454,15 @@ function tickAgents(dt){
   }
 }
 
+function clearRoutes(){
+  routes.forEach(r=>{
+    scene.remove(r.instancedMesh); scene.remove(r.line);
+    r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
+    r.line.geometry.dispose(); r.line.material.dispose();
+  });
+  routes = [];
+  renderRouteList();
+}
 function deleteRoute(id){
   const r = routes.find(x=>x.id===id);
   if(!r) return;
@@ -1390,13 +1506,19 @@ fileRoutes.addEventListener('change', (e)=>{
   reader.onload = ()=>{
     try{
       const data = JSON.parse(reader.result);
+      const empty = [], created = [];
       Object.entries(data).forEach(([name, pts])=>{
+        if(!pts || pts.length<2){ empty.push(name); return; }
         const key = name.toLowerCase();
         let type = 'voiture';
         for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
         const points = pts.map(p=>({x:p[0], y:p[1]||0.15, z:p[2]}));
         createRoute(points, type, name);
+        created.push(name);
       });
+      if(empty.length){
+        showSiteBanner(`<div>routes.json : ${created.length} voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')} — le script d'export Blender n'a rien trouvé pour ces courbes (voir mon message pour le script corrigé).</span></div>`);
+      }
     }catch(err){ alert("routes.json invalide : "+err.message); }
   };
   reader.readAsText(file);
@@ -1419,9 +1541,18 @@ animate();
 
 // Charge la vraie maquette si le fichier est présent à côté de index.html ;
 // sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
-// et voies d'exemple inclus dans buildDemoSite()).
-loadSiteFromGLB(SITE_GLB_URL, ()=>{
-  flashStatus("place_de_milan.glb introuvable — maquette de démonstration chargée");
+// et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
+loadSiteFromGLB(SITE_GLB_URL, (err)=>{
+  const isFileProtocol = location.protocol === 'file:';
+  showSiteBanner(`
+    <div>
+      <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL})${err && err.message ? ' — '+err.message : ''}.<br>
+      ${isFileProtocol
+        ? "Cette page est ouverte en double-clic (protocole file://), qui bloque le chargement automatique du .glb par le navigateur. Lance un serveur local depuis le dossier contenant les deux fichiers : <code>python -m http.server 8000</code>, puis ouvre <code>http://localhost:8000</code>."
+        : "Vérifie que <code>place_de_milan.glb</code> est bien placé exactement à côté de <code>index.html</code>, avec ce nom précis (respecte la casse)."}
+      <br>En attendant, une maquette de démonstration est affichée — utilise <b>Charger maquette (.glb)</b> pour charger le fichier manuellement.
+    </div>
+  `);
   buildDemoSite();
 });
 </script>
