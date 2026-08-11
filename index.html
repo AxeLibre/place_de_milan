@@ -400,6 +400,7 @@ let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback
 function clearSite(){
   siteRoot.clear();
   polygonMesh = null; hallMesh = null; quartierGroup = null;
+  treeTemplate = null; // sera recapturé depuis la nouvelle maquette au prochain arbre planté
 }
 
 // Extrait le contour XZ réel d'un mesh plat trianglé, en chaînant les arêtes
@@ -611,6 +612,7 @@ function onSiteLoaded(){
   polygonMesh = findByNameCI(siteRoot, 'Polygone_Implantation');
   hallMesh    = findByNameCI(siteRoot, 'Hall_Gare');
   quartierGroup = findByNameCI(siteRoot, 'Quartier');
+  fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
   if(polygonMesh){
     polygonMesh.visible = false;
     buildZone = extractBoundaryXZ(polygonMesh);
@@ -1120,6 +1122,75 @@ function renderExtList(){
 }
 
 /* ============================================================
+   MATÉRIAUX PROCÉDURAUX — remplace les shaders Blender qui ne survivent
+   pas à l'export glTF (nodes procéduraux non baqués) par des équivalents
+   three.js. Ciblés par nom de matériau : "aluminium", "ppy", "ppx" ; tout
+   autre matériau qui ressort noir/sans texture (signe classique d'un
+   shader procédural non exporté) reçoit un repli neutre générique.
+   ============================================================ */
+function makeStripeTexture(){
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,size,size); // transparent entre les bandes
+  ctx.fillStyle = '#f2f2f0';
+  const stripes = 4, stripeW = size/(stripes*2);
+  for(let i=0;i<stripes;i++) ctx.fillRect(i*stripeW*2, 0, stripeW, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.center.set(0.5,0.5);
+  return tex;
+}
+// axis 'y' = bandes dans le sens Y Blender (Z glTF), piéton marche selon X.
+// axis 'x' = bandes dans le sens X Blender (X glTF), piéton marche selon Z.
+// Si l'orientation ressort inversée à l'usage, il suffit d'inverser ces deux rotations.
+function makeCrosswalkMaterial(axis, name){
+  const tex = makeStripeTexture();
+  tex.rotation = axis==='x' ? Math.PI/2 : 0;
+  tex.repeat.set(6,6);
+  return new THREE.MeshStandardMaterial({
+    name, map:tex, alphaMap:tex, transparent:false, alphaTest:0.5,
+    roughness:0.9, metalness:0.0, side:THREE.DoubleSide
+  });
+}
+function isLikelyBrokenShader(m){
+  if(!m || m.map) return false; // a déjà une texture -> probablement correctement exporté
+  if(!m.color) return false;
+  const c = m.color;
+  return c.r<0.04 && c.g<0.04 && c.b<0.04; // noir/quasi-noir sans texture = shader procédural perdu à l'export
+}
+function fixProceduralMaterials(){
+  const seen = new Map(); // uuid -> matériau de remplacement (ou null si inchangé)
+  siteRoot.traverse(o=>{
+    if(!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const nextMats = mats.map(m=>{
+      if(!m) return m;
+      if(seen.has(m.uuid)) return seen.get(m.uuid) || m;
+      const name = (m.name||'').toLowerCase();
+      let replacement = null;
+      if(name.includes('alumin')){
+        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0xb7bcc2, metalness:0.9, roughness:0.35 });
+      } else if(name.includes('ppy')){
+        replacement = makeCrosswalkMaterial('y', m.name);
+      } else if(name.includes('ppx')){
+        replacement = makeCrosswalkMaterial('x', m.name);
+      } else if(isLikelyBrokenShader(m)){
+        const guessGreen = /feuill|leaf|vert|green|arbre|tree|icosph|folia/.test(name);
+        replacement = new THREE.MeshStandardMaterial({
+          name:m.name, color: guessGreen ? 0x4a7c4e : 0x8d8f92,
+          roughness: guessGreen ? 0.85 : 0.6, flatShading: guessGreen
+        });
+      }
+      seen.set(m.uuid, replacement);
+      return replacement || m;
+    });
+    o.material = Array.isArray(o.material) ? nextMats : nextMats[0];
+  });
+}
+
+/* ============================================================
    ARBRES — plantation contrainte au polygone d'implantation
    ============================================================
    Le gabarit visuel est cloné du premier objet "Icosphère*" trouvé
@@ -1213,9 +1284,16 @@ renderer.domElement.addEventListener('click', (ev)=>{
     if(hitTree){ removeTree(hitTree.id); return; }
   }
 
-  // sinon, on tente de planter un nouvel arbre au point cliqué
-  const targets = polygonMesh ? [polygonMesh] : [ground];
-  const hit = raycaster.intersectObjects(targets, true)[0];
+  // sinon, on tente de planter un nouvel arbre au point cliqué. On ne raycaste
+  // JAMAIS le polygone d'implantation lui-même pour la hauteur (il est invisible
+  // et pas forcément à la même élévation que le sol visible du quartier — c'est
+  // ce qui enfonçait les arbres) : seul son contour 2D (buildZone) sert au test
+  // d'appartenance. La hauteur vient du premier sol *visible* touché par le rayon.
+  const groundTargets = [];
+  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
+  if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
+  groundTargets.push(ground);
+  const hit = raycaster.intersectObjects(groundTargets, true)[0];
   if(!hit){ flashStatus("Cliquez dans le polygone d'implantation"); return; }
   if(buildZone.length>=3 && !pointInPolygon({x:hit.point.x, z:hit.point.z}, buildZone)){
     flashStatus("Les arbres ne peuvent être plantés que dans le polygone d'implantation");
@@ -1509,10 +1587,10 @@ fileLoad.addEventListener('change', (e)=>{
    la courbe via curve.getPointAt(t), rendus en instanced mesh low-poly.
    ============================================================ */
 const ROUTE_TYPES = {
-  tram:   { label:'Tram',    color:0xf0f0f0, speed:6,  count:2,  scale:[2.6,2.6,9]  },
-  bus:    { label:'Bus',     color:0xcc0000, speed:5,  count:2,  scale:[2.2,2.4,6]  },
-  voiture:{ label:'Voiture', color:0x000b3d, speed:8,  count:5,  scale:[1.7,1.3,3.4]},
-  pieton: { label:'Pieton',  color:0x010101, speed:1.2,count:14, scale:[0.5,1.6,0.5]}
+  tram:   { label:'Tram',    color:0x5b8ab0, speed:6,  count:2,  scale:[2.6,2.6,9]  },
+  bus:    { label:'Bus',     color:0x4fae8f, speed:5,  count:2,  scale:[2.2,2.4,6]  },
+  voiture:{ label:'Voiture', color:0xe0a24a, speed:8,  count:5,  scale:[1.7,1.3,3.4]},
+  pieton: { label:'Piéton',  color:0xd95a6c, speed:1.2,count:14, scale:[0.5,1.6,0.5]}
 };
 let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,offset}]}
 let routeIdCounter = 1;
@@ -1627,6 +1705,33 @@ function renderRouteList(){
     list.appendChild(card);
   });
 }
+
+// Admin : sélecteurs de couleur par type de véhicule/piéton — met à jour la
+// config ET tous les InstancedMesh déjà créés pour ce type, en direct.
+function renderVehicleColorControls(){
+  const container = document.getElementById('vehicle-colors');
+  container.innerHTML = '';
+  Object.entries(ROUTE_TYPES).forEach(([type,cfg])=>{
+    const row = document.createElement('div');
+    row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px';
+    const label = document.createElement('span');
+    label.textContent = cfg.label; label.style.flex='1'; label.style.fontSize='12px';
+    const input = document.createElement('input');
+    input.type='color';
+    input.value = '#'+cfg.color.toString(16).padStart(6,'0');
+    input.style.width='40px'; input.style.height='26px'; input.style.border='1px solid #2a3946';
+    input.style.borderRadius='3px'; input.style.background='none'; input.style.cursor='pointer';
+    input.addEventListener('input', ()=>{
+      const hex = parseInt(input.value.slice(1), 16);
+      ROUTE_TYPES[type].color = hex;
+      routes.forEach(r=>{ if(r.type===type) r.instancedMesh.material.color.setHex(hex); });
+      renderRouteList(); // rafraîchit le pastille de couleur dans la liste
+    });
+    row.append(label, input);
+    container.appendChild(row);
+  });
+}
+renderVehicleColorControls();
 
 // Charge un routes.json exporté de Blender : { "Route_Tram_1":[[x,y,z],...], "Route_Bus_A":[...], ... }
 // Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
