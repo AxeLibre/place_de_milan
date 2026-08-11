@@ -331,11 +331,17 @@ const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI/2;
 ground.receiveShadow = true;
 ground.name = 'ground';
+// La maquette (polygone/hall/quartier) fournit désormais le sol visuel réel ;
+// ce plan ne sert plus que de surface invisible pour le raycast (placement des
+// bâtiments, tracé des voies, etc.) — il ne doit plus s'afficher à l'écran.
+ground.visible = false;
 groundGroup.add(ground);
 
-const grid = new THREE.GridHelper(GROUND_SIZE, GROUND_SIZE/5, 0x2a3946, 0x1e2932);
-grid.position.y = 0.02;
-groundGroup.add(grid);
+// Grille de sol : reconstruite dynamiquement pour ne jamais dépasser le
+// polygone d'implantation (voir rebuildGrid(), appelée dès que buildZone change).
+const gridGroup = new THREE.Group();
+gridGroup.position.y = 0.02;
+groundGroup.add(gridGroup);
 
 // Contour d'îlot de secours (rectangle) — remplacé dès que Polygone_Implantation est chargé.
 const ilotOutlinePts = [
@@ -458,7 +464,58 @@ function updateBuildZoneVisual(){
   ilotOutline.geometry = geo;
   ilotOutline.computeLineDistances();
   groundGroup.add(ilotOutline);
+  rebuildGrid();
 }
+
+// Reconstruit une grille de sol qui ne dépasse jamais le polygone d'implantation :
+// chaque ligne (horizontale/verticale) est échantillonnée finement et découpée en
+// segments "dedans / dehors" via un test point-in-polygon (fonctionne aussi pour
+// une emprise concave, pas seulement un rectangle).
+function rebuildGrid(){
+  gridGroup.clear();
+  if(buildZone.length<3) return;
+  const xs = buildZone.map(p=>p.x), zs = buildZone.map(p=>p.z);
+  const minX=Math.min(...xs), maxX=Math.max(...xs), minZ=Math.min(...zs), maxZ=Math.max(...zs);
+  const span = Math.max(maxX-minX, maxZ-minZ);
+  if(span<=0) return;
+  const step = span/24;        // ~24 mailles sur le plus grand côté, quelle que soit l'échelle
+  const sampleStep = step/12;  // finesse de la découpe dedans/dehors
+  const positions = [];
+  const pushRun=(a,b,fixedIsX,fixedVal)=>{
+    if(fixedIsX) positions.push(fixedVal,0,a, fixedVal,0,b);
+    else positions.push(a,0,fixedVal, b,0,fixedVal);
+  };
+  // lignes verticales (X fixe, on balaie Z)
+  for(let x=Math.ceil(minX/step)*step; x<=maxX; x+=step){
+    let runStart=null, prevZ=null;
+    for(let z=minZ; z<=maxZ+sampleStep; z+=sampleStep){
+      const zc = Math.min(z,maxZ);
+      const inside = pointInPolygon({x,z:zc}, buildZone);
+      if(inside && runStart===null) runStart=zc;
+      if(!inside && runStart!==null){ pushRun(runStart, prevZ, true, x); runStart=null; }
+      prevZ = zc;
+    }
+    if(runStart!==null) pushRun(runStart, maxZ, true, x);
+  }
+  // lignes horizontales (Z fixe, on balaie X)
+  for(let z=Math.ceil(minZ/step)*step; z<=maxZ; z+=step){
+    let runStart=null, prevX=null;
+    for(let x=minX; x<=maxX+sampleStep; x+=sampleStep){
+      const xc = Math.min(x,maxX);
+      const inside = pointInPolygon({x:xc,z}, buildZone);
+      if(inside && runStart===null) runStart=xc;
+      if(!inside && runStart!==null){ pushRun(runStart, prevX, false, z); runStart=null; }
+      prevX = xc;
+    }
+    if(runStart!==null) pushRun(runStart, maxX, false, z);
+  }
+  if(!positions.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({color:0x2a3946}));
+  gridGroup.add(lines);
+}
+rebuildGrid(); // grille initiale sur le contour de secours, avant chargement de la maquette
 
 // Extrait la ligne centrale d'un mesh "tube" (courbe convertie en maillage plein
 // avec une section constante) en détectant automatiquement la taille des anneaux
@@ -1271,7 +1328,7 @@ function focusOn(b){
    ============================================================ */
 document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
   gridVisible = !gridVisible;
-  grid.visible = gridVisible;
+  gridGroup.visible = gridVisible;
   ilotOutline.visible = gridVisible;
 });
 
@@ -1506,19 +1563,18 @@ fileRoutes.addEventListener('change', (e)=>{
   reader.onload = ()=>{
     try{
       const data = JSON.parse(reader.result);
+      clearRoutes(); // routes.json remplace l'ensemble des voies existantes (évite les doublons avec l'import auto depuis le .glb)
       const empty = [], created = [];
       Object.entries(data).forEach(([name, pts])=>{
         if(!pts || pts.length<2){ empty.push(name); return; }
         const key = name.toLowerCase();
         let type = 'voiture';
         for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
-        const points = pts.map(p=>({x:p[0], y:p[1]||0.15, z:p[2]}));
+        const points = pts.map(p=>({x:p[0], y:(p[1]??0.15), z:p[2]}));
         createRoute(points, type, name);
         created.push(name);
       });
-      if(empty.length){
-        showSiteBanner(`<div>routes.json : ${created.length} voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')} — le script d'export Blender n'a rien trouvé pour ces courbes (voir mon message pour le script corrigé).</span></div>`);
-      }
+      showSiteBanner(`<div>routes.json : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
     }catch(err){ alert("routes.json invalide : "+err.message); }
   };
   reader.readAsText(file);
