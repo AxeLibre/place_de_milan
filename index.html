@@ -1638,10 +1638,10 @@ fileLoad.addEventListener('change', (e)=>{
    la courbe via curve.getPointAt(t), rendus en instanced mesh low-poly.
    ============================================================ */
 const ROUTE_TYPES = {
-  tram:   { label:'Tram',    color:0xe8e6e6, speed:6,  count:1,  scale:[2,2.6,9]  },
+  tram:   { label:'Tram',    color:0xe8e6e6, speed:8,  count:1,  scale:[2,2.6,9]  },
   bus:    { label:'Bus',     color:0xe01b1b, speed:5,  count:3,  scale:[2,2.4,6]  },
-  voiture:{ label:'Voiture', color:0x5b8bb0, speed:8,  count:6,  scale:[1.5,1.3,3.4]},
-  pieton: { label:'Piéton',  color:0x050505, speed:1.2,count:20, scale:[0.3,1.5,0.3]}
+  voiture:{ label:'Voiture', color:0x5b8bb0, speed:10,  count:6,  scale:[1.5,1.3,3.4]},
+  pieton: { label:'Piéton',  color:0x050505, speed:1.5,count:20, scale:[0.3,1.5,0.3]}
 };
 let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,offset}]}
 let routeIdCounter = 1;
