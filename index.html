@@ -239,6 +239,9 @@
 
       <div class="section-title admin-only">Admin · couleurs véhicules</div>
       <div class="admin-only" id="vehicle-colors" style="flex-direction:column;gap:8px;margin-bottom:16px;"></div>
+
+      <div class="section-title admin-only">Admin · passages piétons</div>
+      <div class="admin-only" id="crosswalk-controls" style="flex-direction:column;gap:12px;margin-bottom:16px;"></div>
     </div>
     <div id="footer-actions">
       <button class="primary-btn" id="btn-export-png">Exporter l'image (PNG)</button>
@@ -400,6 +403,7 @@ let hallFacadeWorldNormal = new THREE.Vector3(0,0,1); // valeur par défaut avan
 let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
 scene.add(siteRoot);
 let polygonMesh = null;   // THREE.Mesh du polygone d'implantation
+let siteUpCorrected = false; // true si une rotation Z-up→Y-up a été appliquée à la maquette chargée
 let hallMesh = null;      // THREE.Mesh du hall de gare
 let quartierGroup = null; // THREE.Object3D du contexte bâti
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
@@ -408,6 +412,7 @@ function clearSite(){
   siteRoot.clear();
   polygonMesh = null; hallMesh = null; quartierGroup = null;
   treeTemplate = null; // sera recapturé depuis la nouvelle maquette au prochain arbre planté
+  siteUpCorrected = false;
 }
 
 // Extrait le contour XZ réel d'un mesh plat trianglé, en chaînant les arêtes
@@ -620,6 +625,7 @@ function onSiteLoaded(){
   hallMesh    = findByNameCI(siteRoot, 'Hall_Gare');
   quartierGroup = findByNameCI(siteRoot, 'Quartier');
   fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
+  renderCrosswalkControls();
   if(polygonMesh){
     polygonMesh.visible = false;
     buildZone = extractBoundaryXZ(polygonMesh);
@@ -730,6 +736,7 @@ function loadSiteFromGLB(url, onFail){
     if(size.z < size.y){
       gltf.scene.rotation.x = -Math.PI/2;
       corrected = true;
+      siteUpCorrected = true; // mémorisé pour appliquer la même correction aux gabarits clonés (arbres, etc.)
     }
     const report = onSiteLoaded();
     showSiteBanner(
@@ -1136,30 +1143,37 @@ function renderExtList(){
    shader procédural non exporté) reçoit un repli neutre générique.
    ============================================================ */
 function makeStripeTexture(){
-  const size = 256;
+  // Un seul motif "moitié blanche / moitié transparente" : c'est texture.repeat
+  // (réglable indépendamment par axe) qui crée l'alternance de bandes, pas le
+  // canvas — évite un double effet d'échelle (motif × répétition) difficile à
+  // calibrer.
+  const size = 64;
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,size,size); // transparent entre les bandes
+  ctx.clearRect(0,0,size,size); // transparent
   ctx.fillStyle = '#f2f2f0';
-  const stripes = 4, stripeW = size/(stripes*2);
-  for(let i=0;i<stripes;i++) ctx.fillRect(i*stripeW*2, 0, stripeW, size);
+  ctx.fillRect(0, 0, size/2, size); // moitié blanche opaque
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.center.set(0.5,0.5);
   return tex;
 }
-// axis 'y' = bandes dans le sens Y Blender (Z glTF), piéton marche selon X.
-// axis 'x' = bandes dans le sens X Blender (X glTF), piéton marche selon Z.
-// Si l'orientation ressort inversée à l'usage, il suffit d'inverser ces deux rotations.
+const crosswalkMaterials = { x:null, y:null }; // référencés par le panneau admin pour ajustement live
+// axis 'y' (ppy) : bandes répétées le long de U (repeat.x), piéton marche selon X.
+// axis 'x' (ppx) : bandes répétées le long de V (repeat.y), piéton marche selon Z.
+// Ce sont des valeurs de départ raisonnables : le panneau admin (mode ?admin=1)
+// permet d'ajuster répétition U/V et rotation en direct sans toucher au code,
+// le temps de caler exactement sur l'UV réelle du mesh Blender.
 function makeCrosswalkMaterial(axis, name){
   const tex = makeStripeTexture();
-  tex.rotation = axis==='x' ? Math.PI/2 : 0;
-  tex.repeat.set(6,6);
-  return new THREE.MeshStandardMaterial({
+  if(axis==='x') tex.repeat.set(1, 8); else tex.repeat.set(8, 1);
+  const mat = new THREE.MeshStandardMaterial({
     name, map:tex, alphaMap:tex, transparent:false, alphaTest:0.5,
     roughness:0.9, metalness:0.0, side:THREE.DoubleSide
   });
+  crosswalkMaterials[axis] = mat;
+  return mat;
 }
 function isLikelyBrokenShader(m){
   if(!m || m.map) return false; // a déjà une texture -> probablement correctement exporté
@@ -1222,6 +1236,13 @@ function findIcosphereTemplate(){
     // dans la scène rajoute l'offset d'origine par-dessus la nouvelle position et
     // envoie l'arbre à des dizaines de mètres de là où on a cliqué.
     const geo = found.geometry.clone();
+    // Les arbres qu'on plante vivent dans treesGroup, hors de la hiérarchie de
+    // gltf.scene — ils n'héritent donc PAS de la rotation Z-up→Y-up appliquée à
+    // la maquette. Sans ce correctif, ils gardent l'orientation locale d'origine
+    // (Z vers le haut) et se retrouvent couchés sur le côté une fois posés dans
+    // notre monde Y-up. On applique donc la même rotation directement à la
+    // géométrie du gabarit, une fois pour toutes, avant de la recentrer.
+    if(siteUpCorrected) geo.rotateX(-Math.PI/2);
     geo.computeBoundingBox();
     const bb = geo.boundingBox;
     const cx = (bb.min.x+bb.max.x)/2, cz = (bb.min.z+bb.max.z)/2, baseY = bb.min.y;
@@ -1758,6 +1779,50 @@ function renderVehicleColorControls(){
   });
 }
 renderVehicleColorControls();
+
+// Admin : réglages live des passages piétons (répétition U/V + rotation), car
+// on ne peut pas connaître l'UV réelle du mesh Blender depuis ici — plus rapide
+// de caler ça à l'oeil que de deviner à l'aveugle dans le code.
+function renderCrosswalkControls(){
+  const container = document.getElementById('crosswalk-controls');
+  if(!container) return;
+  container.innerHTML = '';
+  [['y','ppy'], ['x','ppx']].forEach(([axis,label])=>{
+    const mat = crosswalkMaterials[axis];
+    const box = document.createElement('div');
+    box.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+    const title = document.createElement('div');
+    title.textContent = mat ? label : `${label} (absent de la maquette)`;
+    title.style.cssText = 'font-size:11px;color:var(--muted);';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
+
+    const mkNumber = (val)=>{
+      const inp = document.createElement('input');
+      inp.type='number'; inp.min=1; inp.max=40; inp.step=1; inp.value=val;
+      inp.style.cssText = 'width:46px;background:var(--ink);border:1px solid #2a3946;color:var(--paper);border-radius:3px;padding:3px 4px;font-size:11px;';
+      return inp;
+    };
+    const labelSpan = (t)=>{ const s=document.createElement('span'); s.textContent=t; s.style.cssText='font-size:10px;color:var(--muted);'; return s; };
+
+    const repU = mkNumber(mat ? mat.map.repeat.x : (axis==='x'?1:8));
+    const repV = mkNumber(mat ? mat.map.repeat.y : (axis==='x'?8:1));
+    const rotBtn = document.createElement('button');
+    rotBtn.className='mini-btn'; rotBtn.textContent='⟳90°'; rotBtn.style.width='auto'; rotBtn.style.padding='0 8px';
+    rotBtn.title = 'Pivote le motif de 90° (si les bandes ne suivent toujours pas le bon axe après ajustement U/V)';
+
+    if(mat){
+      repU.addEventListener('input', ()=>{ mat.map.repeat.x = parseFloat(repU.value)||1; });
+      repV.addEventListener('input', ()=>{ mat.map.repeat.y = parseFloat(repV.value)||1; });
+      rotBtn.addEventListener('click', ()=>{ mat.map.rotation += Math.PI/2; });
+    } else {
+      [repU, repV, rotBtn].forEach(el=> el.disabled = true);
+    }
+    row.append(labelSpan('U'), repU, labelSpan('V'), repV, rotBtn);
+    box.append(title, row);
+    container.appendChild(box);
+  });
+}
 
 // Charge un routes.json exporté de Blender : { "Route_Tram_1":[[x,y,z],...], "Route_Bus_A":[...], ... }
 // Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
