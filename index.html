@@ -262,6 +262,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 /* ============================================================
    CONFIG
@@ -307,6 +308,12 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 viewport.appendChild(renderer.domElement);
+
+// Environnement neutre généré (pas de HDRI à charger) : indispensable pour que les
+// matériaux métalliques (aluminium brossé, etc.) aient de vrais reflets et ne
+// paraissent pas ternes/plats sous un simple éclairage direct+ambiant.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 function resize(){
   const w = viewport.clientWidth, h = viewport.clientHeight;
@@ -1171,7 +1178,12 @@ function fixProceduralMaterials(){
       const name = (m.name||'').toLowerCase();
       let replacement = null;
       if(name.includes('alumin')){
-        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0xb7bcc2, metalness:0.9, roughness:0.35 });
+        // aluminium brossé : très métallique, brillant, mais un léger grain (roughness modérée
+        // plutôt qu'un miroir parfait) pour évoquer les micro-stries du brossage.
+        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0xc7cbce, metalness:1.0, roughness:0.22, envMapIntensity:1.4 });
+      } else if(name.includes('route')){
+        // enrobé/asphalte : gris très foncé, quasi noir, mat.
+        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x16171a, roughness:0.95, metalness:0.0 });
       } else if(name.includes('ppy')){
         replacement = makeCrosswalkMaterial('y', m.name);
       } else if(name.includes('ppx')){
