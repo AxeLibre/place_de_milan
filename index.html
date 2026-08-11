@@ -1215,7 +1215,19 @@ function findIcosphereTemplate(){
   let found = null;
   siteRoot.traverse(o=>{ if(!found && o.isMesh && /icosph/i.test(o.name)) found = o; });
   if(found){
-    treeTemplate = { geometry: found.geometry, material: found.material, baseScale: found.scale.clone() };
+    // On clone et RECENTRE systématiquement la géométrie sur sa propre base locale
+    // (X/Z centrés, Y=0 au point le plus bas). C'est indispensable si l'export
+    // Blender a "appliqué" la position mondiale directement dans les sommets
+    // (cas fréquent) : sans ça, réutiliser found.geometry telle quelle ailleurs
+    // dans la scène rajoute l'offset d'origine par-dessus la nouvelle position et
+    // envoie l'arbre à des dizaines de mètres de là où on a cliqué.
+    const geo = found.geometry.clone();
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const cx = (bb.min.x+bb.max.x)/2, cz = (bb.min.z+bb.max.z)/2, baseY = bb.min.y;
+    geo.translate(-cx, -baseY, -cz);
+    const worldScale = found.getWorldScale(new THREE.Vector3()); // capture aussi un éventuel scale porté par un parent
+    treeTemplate = { geometry: geo, material: found.material, baseScale: worldScale };
   } else {
     treeTemplate = {
       geometry: new THREE.IcosahedronGeometry(1.4, 0),
@@ -1296,12 +1308,14 @@ renderer.domElement.addEventListener('click', (ev)=>{
     if(hitTree){ removeTree(hitTree.id); return; }
   }
 
-  // sinon, on tente de planter un nouvel arbre au point cliqué. On ne raycaste
-  // JAMAIS le polygone d'implantation lui-même pour la hauteur (il est invisible
-  // et pas forcément à la même élévation que le sol visible du quartier — c'est
-  // ce qui enfonçait les arbres) : seul son contour 2D (buildZone) sert au test
-  // d'appartenance. La hauteur vient du premier sol *visible* touché par le rayon.
+  // sinon, on tente de planter un nouvel arbre au point cliqué. Le polygone
+  // d'implantation représente la vraie surface de la place (plaza vide sans
+  // maillage de "quartier" dessus) : il DOIT faire partie des cibles de raycast,
+  // sinon un clic dans une zone ouverte ne touche rien et retombe sur le plan
+  // de secours à Y=0, qui peut être à des dizaines de mètres du vrai niveau du
+  // sol une fois la maquette mise à l'échelle/translatée.
   const groundTargets = [];
+  if(polygonMesh) groundTargets.push(polygonMesh);
   if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
   if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
   groundTargets.push(ground);
