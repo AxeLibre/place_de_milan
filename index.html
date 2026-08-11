@@ -158,6 +158,12 @@
   #empty-note{color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;}
 
   input[type=file]{display:none;}
+  /* Réglages "coulisses" (chargement manuel de la maquette/des voies, inversion de
+     sens) — masqués pour les visiteurs, visibles uniquement en mode admin (?admin=1). */
+  .admin-only{display:none;}
+  body.is-admin .admin-only{display:flex;}
+  button.admin-only{display:none;}
+  body.is-admin button.admin-only{display:inline-flex;}
 
   #compass{
     position:absolute;top:70px;right:16px;z-index:5;width:46px;height:46px;
@@ -189,7 +195,7 @@
       <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
       <button class="tool-btn ghost" id="btn-extend-hall">Étendre le hall</button>
       <button class="tool-btn ghost" id="btn-route">+ Voie de circulation</button>
-      <button class="tool-btn ghost" id="btn-load-glb">Charger maquette (.glb)</button>
+      <button class="tool-btn ghost admin-only" id="btn-load-glb">Charger maquette (.glb)</button>
       <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
@@ -230,7 +236,7 @@
 
       <div class="section-title">Circulation</div>
       <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Tracez-en une avec <b style="color:var(--paper)">+ Voie de circulation</b>, ou chargez un <b style="color:var(--paper)">routes.json</b> exporté de Blender.</div>
-      <button class="small-action" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
+      <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
       <div id="route-list"></div>
     </div>
     <div id="footer-actions">
@@ -279,6 +285,13 @@ const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
 /* ============================================================
    SCENE
    ============================================================ */
+// Mode admin : réglages "coulisses" (chargement manuel .glb/routes.json, sens des
+// voies) réservés à la maintenance du site, invisibles pour les visiteurs du forum.
+// Activation : ajouter ?admin=1 à l'URL.
+if(new URLSearchParams(location.search).get('admin')==='1'){
+  document.body.classList.add('is-admin');
+}
+
 const viewport = document.getElementById('viewport');
 const statusLine = document.getElementById('status-line');
 const scene = new THREE.Scene();
@@ -1530,6 +1543,21 @@ function deleteRoute(id){
   routes = routes.filter(x=>x.id!==id);
   renderRouteList();
 }
+// Inverse le sens de circulation d'une voie : on inverse simplement l'ordre des
+// points du tracé et on reconstruit la courbe — les agents repartent de zéro
+// sur cette nouvelle courbe (répartis régulièrement comme à la création).
+function reverseRoute(id){
+  const r = routes.find(x=>x.id===id);
+  if(!r) return;
+  r.points = r.points.slice().reverse();
+  r.curve = new THREE.CatmullRomCurve3(
+    r.points.map(p=>new THREE.Vector3(p.x, p.y!==undefined?p.y:0.15, p.z)),
+    false, 'catmullrom', 0.2
+  );
+  r.agents.forEach((a,i)=>{ a.t = i/r.agents.length; });
+  renderRouteList();
+  flashStatus(`Sens inversé : ${r.name}`);
+}
 function renderRouteList(){
   const list = document.getElementById('route-list');
   const empty = document.getElementById('route-empty-note');
@@ -1545,10 +1573,14 @@ function renderRouteList(){
     const label = document.createElement('span');
     label.textContent = `${r.name} · ${ROUTE_TYPES[r.type].label}`;
     label.style.flex='1'; label.style.fontSize='12.5px';
+    const rev = document.createElement('button');
+    rev.className='mini-btn admin-only'; rev.textContent='⇄'; rev.title='Inverser le sens de circulation';
+    rev.style.display = document.body.classList.contains('is-admin') ? 'flex' : 'none';
+    rev.addEventListener('click', ()=> reverseRoute(r.id));
     const del = document.createElement('button');
     del.className='mini-btn danger'; del.textContent='✕';
     del.addEventListener('click', ()=> deleteRoute(r.id));
-    card.append(dot, label, del);
+    card.append(dot, label, rev, del);
     list.appendChild(card);
   });
 }
