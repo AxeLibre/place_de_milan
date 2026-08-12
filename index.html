@@ -17,11 +17,11 @@
     --accent:#e0663f;
     --muted:#7f93a3;
 
-    --res:#e0a24a;    /* résidentiel — ambre */
-    --bur:#5b8ab0;    /* bureaux — bleu plan */
-    --com:#d95a6c;    /* commerces — rouge brique */
-    --hot:#a06bd9;    /* hôtel — violet */
-    --ser:#4fae8f;    /* services — vert sarcelle */
+    --res:#e0a24a;
+    --bur:#5b8ab0;
+    --com:#d95a6c;
+    --hot:#a06bd9;
+    --ser:#4fae8f;
 
     --panel-w: 330px;
   }
@@ -31,7 +31,6 @@
   #viewport{flex:1;position:relative;}
   canvas{display:block;}
 
-  /* ---------- Header ribbon ---------- */
   #ribbon{
     position:absolute;top:0;left:0;right:0;z-index:5;
     display:flex;align-items:center;gap:14px;
@@ -61,7 +60,6 @@
   }
   #status-line b{color:var(--accent);}
 
-  /* ---------- Draw hint ---------- */
   #draw-hint{
     position:absolute;bottom:22px;left:50%;transform:translateX(-50%);
     background:var(--ink-2);border:1px solid #2a3946;border-radius:3px;
@@ -71,7 +69,6 @@
   #draw-hint.show{display:flex;}
   #draw-hint kbd{background:#0b1116;border:1px solid #2a3946;border-radius:2px;padding:1px 6px;font-size:11px;}
 
-  /* ---------- Side panel ---------- */
   #panel{
     width:var(--panel-w);flex-shrink:0;background:var(--ink-2);
     border-left:1px solid #23303b;display:flex;flex-direction:column;
@@ -102,7 +99,6 @@
   .legend-item{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;color:var(--paper);}
   .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
 
-  /* building cards */
   .bldg-card{
     background:#0b1116;border:1px solid #23303b;border-radius:4px;
     margin-bottom:10px;overflow:hidden;
@@ -158,8 +154,6 @@
   #empty-note{color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;}
 
   input[type=file]{display:none;}
-  /* Réglages "coulisses" (chargement manuel de la maquette/des voies, inversion de
-     sens) — masqués pour les visiteurs, visibles uniquement en mode admin (?admin=1). */
   .admin-only{display:none;}
   body.is-admin .admin-only{display:flex;}
   button.admin-only{display:none;}
@@ -185,6 +179,59 @@
     margin-left:8px;flex-shrink:0;
   }
   #site-status-banner button:hover{color:var(--paper);}
+
+  /* Pivot controls */
+  .pivot-controls{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    padding:6px 0;
+    border-top:1px solid #1a242d;
+    margin-top:6px;
+  }
+  .pivot-row{
+    display:flex;
+    gap:6px;
+    align-items:center;
+    font-size:10.5px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .pivot-row input[type=number]{
+    width:50px;
+    background:#0b1116;
+    border:1px solid #23303b;
+    color:var(--paper);
+    border-radius:3px;
+    padding:3px 4px;
+    font-size:10.5px;
+  }
+  .pivot-row .coord-label{
+    color:var(--muted);
+    width:12px;
+    text-align:center;
+    font-weight:600;
+  }
+  .pivot-row .coord-label.x{color:#e0663f;}
+  .pivot-row .coord-label.y{color:#4fae8f;}
+  .pivot-row .coord-label.z{color:#5b8ab0;}
+
+  .ext-controls{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    margin-top:6px;
+  }
+  .ext-controls .row{display:flex;gap:6px;align-items:center;}
+  .ext-controls label{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+  .ext-controls input[type=number]{
+    width:50px;
+    background:#0b1116;
+    border:1px solid #23303b;
+    color:var(--paper);
+    border-radius:3px;
+    padding:3px 4px;
+    font-size:10.5px;
+  }
 </style>
 </head>
 <body>
@@ -193,7 +240,7 @@
     <div id="ribbon">
       <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
-      <button class="tool-btn ghost" id="btn-extend-hall">Étendre le hall</button>
+      <button class="tool-btn" id="btn-extend-hall">Étendre le hall</button>
       <button class="tool-btn ghost" id="btn-tree">+ Arbre</button>
       <button class="tool-btn ghost admin-only" id="btn-load-glb">Charger maquette (.glb)</button>
       <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
@@ -270,7 +317,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 /* ============================================================
    CONFIG
    ============================================================ */
-const FLOOR_HEIGHT = 3.0; // metres
+const FLOOR_HEIGHT = 3.0;
 const USAGE_COLORS = {
   residentiel: 0xe0a24a,
   bureaux:     0x5b8ab0,
@@ -285,14 +332,11 @@ const USAGE_LABELS = {
   hotel: "Hôtel",
   services: "Services"
 };
-const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
+const GROUND_SIZE = 260;
 
 /* ============================================================
    SCENE
    ============================================================ */
-// Mode admin : réglages "coulisses" (chargement manuel .glb/routes.json, sens des
-// voies) réservés à la maintenance du site, invisibles pour les visiteurs du forum.
-// Activation : ajouter ?admin=1 à l'URL.
 if(new URLSearchParams(location.search).get('admin')==='1'){
   document.body.classList.add('is-admin');
 }
@@ -312,9 +356,6 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 viewport.appendChild(renderer.domElement);
 
-// Environnement neutre généré (pas de HDRI à charger) : indispensable pour que les
-// matériaux métalliques (aluminium brossé, etc.) aient de vrais reflets et ne
-// paraissent pas ternes/plats sous un simple éclairage direct+ambiant.
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
@@ -333,7 +374,6 @@ controls.maxPolarAngle = Math.PI*0.49;
 controls.minDistance = 15;
 controls.maxDistance = 700;
 
-// Lighting — soft overcast "plan de présentation" look
 scene.add(new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.9));
 const sun = new THREE.DirectionalLight(0xfff2df, 1.15);
 sun.position.set(120, 200, 60);
@@ -345,7 +385,6 @@ sun.shadow.camera.far = 500;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-// Ground
 const groundGroup = new THREE.Group();
 scene.add(groundGroup);
 
@@ -355,19 +394,13 @@ const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI/2;
 ground.receiveShadow = true;
 ground.name = 'ground';
-// La maquette (polygone/hall/quartier) fournit désormais le sol visuel réel ;
-// ce plan ne sert plus que de surface invisible pour le raycast (placement des
-// bâtiments, tracé des voies, etc.) — il ne doit plus s'afficher à l'écran.
 ground.visible = false;
 groundGroup.add(ground);
 
-// Grille de sol : reconstruite dynamiquement pour ne jamais dépasser le
-// polygone d'implantation (voir rebuildGrid(), appelée dès que buildZone change).
 const gridGroup = new THREE.Group();
 gridGroup.position.y = 0.02;
 groundGroup.add(gridGroup);
 
-// Contour d'îlot de secours (rectangle) — remplacé dès que Polygone_Implantation est chargé.
 const ilotOutlinePts = [
   new THREE.Vector3(-55,0.05,-40), new THREE.Vector3(55,0.05,-40),
   new THREE.Vector3(55,0.05,40), new THREE.Vector3(-55,0.05,40),
@@ -383,41 +416,29 @@ groundGroup.add(ilotOutline);
 let gridVisible = true;
 
 /* ============================================================
-   MAQUETTE BLENDER — polygone d'implantation / hall de gare / quartier
-   ============================================================
-   Le .glb attendu contient 3 objets nommés :
-     - "Polygone_Implantation" (mesh plat, N-gone non trianglé de préférence)
-     - "Hall_Gare"             (volume 3D, toit arrondi, façade exposée vers +Y Blender → +Z glTF)
-     - "Quartier"              (volume 3D, contexte bâti existant)
-   Tant qu'aucun .glb n'est chargé, une maquette de démonstration procédurale
-   (mêmes noms d'objets) est construite pour que tous les outils soient
-   testables immédiatement, puis remplacée par la vraie maquette au chargement.
+   MAQUETTE BLENDER
    ============================================================ */
-// La normale de façade n'est plus déduite d'un axe local Blender/glTF (source
-// d'erreurs selon les options d'export) : elle est calculée dynamiquement,
-// horizontale, du centre du hall vers le centre du polygone d'implantation —
-// c'est-à-dire "la façade qui regarde la place", ce qui est toujours vrai
-// géométriquement quelle que soit la convention d'axes du fichier.
-let hallFacadeWorldNormal = new THREE.Vector3(0,0,1); // valeur par défaut avant chargement
+let hallFacadeWorldNormal = new THREE.Vector3(0,0,1);
 
 let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
 scene.add(siteRoot);
-let polygonMesh = null;   // THREE.Mesh du polygone d'implantation
-let siteUpCorrected = false; // true si une rotation Z-up→Y-up a été appliquée à la maquette chargée
-let hallMesh = null;      // THREE.Mesh du hall de gare
-let quartierGroup = null; // THREE.Object3D du contexte bâti
-let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
+let polygonMesh = null;
+let siteUpCorrected = false;
+let hallMesh = null;
+let quartierGroup = null;
+let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z}));
 
 function clearSite(){
   siteRoot.clear();
   polygonMesh = null; hallMesh = null; quartierGroup = null;
-  treeTemplate = null; // sera recapturé depuis la nouvelle maquette au prochain arbre planté
+  treeTemplate = null;
   siteUpCorrected = false;
+  // On garde les extensions existantes ? Non, on les efface aussi car elles dépendent du hall
+  extensions.forEach(e => { scene.remove(e.group); if(e.mesh) { e.mesh.geometry.dispose(); e.mesh.material.dispose(); } });
+  extensions = [];
+  renderExtList();
 }
 
-// Extrait le contour XZ réel d'un mesh plat trianglé, en chaînant les arêtes
-// de bord (arêtes utilisées par un seul triangle). Fonctionne aussi pour des
-// emprises concaves (en L, etc.), contrairement à une simple enveloppe convexe.
 function extractBoundaryXZ(mesh){
   mesh.updateWorldMatrix(true,false);
   const pos = mesh.geometry.attributes.position;
@@ -428,12 +449,9 @@ function extractBoundaryXZ(mesh){
     v.fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
     world.push({x:v.x, z:v.z});
   }
-  if(!idx){
-    // mesh non indexé (ex. N-gone unique déjà en boucle) : on prend les sommets tels quels
-    return world;
-  }
+  if(!idx) return world;
   const triCount = idx.count/3;
-  const edgeCount = new Map(); // "a-b" (a<b) -> {count, a, b}
+  const edgeCount = new Map();
   const key = (a,b)=> a<b ? `${a}_${b}` : `${b}_${a}`;
   for(let t=0;t<triCount;t++){
     const a = idx.getX(t*3), b = idx.getX(t*3+1), c = idx.getX(t*3+2);
@@ -445,7 +463,6 @@ function extractBoundaryXZ(mesh){
   }
   const boundaryEdges = [...edgeCount.values()].filter(e=>e.count===1);
   if(!boundaryEdges.length) return convexHullXZ(dedupe(world));
-  // chaîne les arêtes de bord en une boucle ordonnée
   const adjacency = new Map();
   boundaryEdges.forEach(e=>{
     if(!adjacency.has(e.a)) adjacency.set(e.a, []);
@@ -494,10 +511,6 @@ function updateBuildZoneVisual(){
   rebuildGrid();
 }
 
-// Reconstruit une grille de sol qui ne dépasse jamais le polygone d'implantation :
-// chaque ligne (horizontale/verticale) est échantillonnée finement et découpée en
-// segments "dedans / dehors" via un test point-in-polygon (fonctionne aussi pour
-// une emprise concave, pas seulement un rectangle).
 function rebuildGrid(){
   gridGroup.clear();
   if(buildZone.length<3) return;
@@ -505,14 +518,13 @@ function rebuildGrid(){
   const minX=Math.min(...xs), maxX=Math.max(...xs), minZ=Math.min(...zs), maxZ=Math.max(...zs);
   const span = Math.max(maxX-minX, maxZ-minZ);
   if(span<=0) return;
-  const step = span/24;        // ~24 mailles sur le plus grand côté, quelle que soit l'échelle
-  const sampleStep = step/12;  // finesse de la découpe dedans/dehors
+  const step = span/24;
+  const sampleStep = step/12;
   const positions = [];
   const pushRun=(a,b,fixedIsX,fixedVal)=>{
     if(fixedIsX) positions.push(fixedVal,0,a, fixedVal,0,b);
     else positions.push(a,0,fixedVal, b,0,fixedVal);
   };
-  // lignes verticales (X fixe, on balaie Z)
   for(let x=Math.ceil(minX/step)*step; x<=maxX; x+=step){
     let runStart=null, prevZ=null;
     for(let z=minZ; z<=maxZ+sampleStep; z+=sampleStep){
@@ -524,7 +536,6 @@ function rebuildGrid(){
     }
     if(runStart!==null) pushRun(runStart, maxZ, true, x);
   }
-  // lignes horizontales (Z fixe, on balaie X)
   for(let z=Math.ceil(minZ/step)*step; z<=maxZ; z+=step){
     let runStart=null, prevX=null;
     for(let x=minX; x<=maxX+sampleStep; x+=sampleStep){
@@ -542,11 +553,8 @@ function rebuildGrid(){
   const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({color:0x2a3946}));
   gridGroup.add(lines);
 }
-rebuildGrid(); // grille initiale sur le contour de secours, avant chargement de la maquette
+rebuildGrid();
 
-// Extrait la ligne centrale d'un mesh "tube" (courbe convertie en maillage plein
-// avec une section constante) en détectant automatiquement la taille des anneaux
-// via les sauts de distance périodiques entre sommets consécutifs du buffer.
 function extractTubeCenterline(mesh){
   mesh.updateWorldMatrix(true,false);
   const pos = mesh.geometry.attributes.position;
@@ -567,7 +575,7 @@ function extractTubeCenterline(mesh){
     for(let i=1;i<bigJumps.length;i++) gaps.push(bigJumps[i]-bigJumps[i-1]);
     if(gaps.every(g=>g===gaps[0])) ringSize = gaps[0];
   }
-  if(!ringSize) return null; // section non constante : pas un tube d'extrusion simple
+  if(!ringSize) return null;
   const centerline = [];
   for(let r=0; r*ringSize < world.length; r++){
     const start = r*ringSize, end = Math.min(start+ringSize, world.length);
@@ -579,10 +587,6 @@ function extractTubeCenterline(mesh){
   return centerline;
 }
 
-// Balaie la maquette chargée à la recherche d'objets "Route_*" (tracés de
-// circulation modélisés dans Blender) et les convertit automatiquement en
-// voies de circulation. Gère à la fois un mesh "tube" plein (extrait sa ligne
-// centrale) et un futur export en ligne simple (LINE_STRIP, pris tel quel).
 function autoImportRoutesFromSite(){
   clearRoutes();
   const found = [], noGeometry = [], unrecognized = [];
@@ -596,7 +600,6 @@ function autoImportRoutesFromSite(){
     if(!mesh){ noGeometry.push(o.name); return; }
     let pts = null;
     if(mesh.geometry.index === null && (mesh.geometry.attributes.position.count < 200)){
-      // mesh non indexé de faible résolution : probablement déjà une ligne simple
       mesh.updateWorldMatrix(true,false);
       pts = [];
       const v = new THREE.Vector3();
@@ -624,7 +627,7 @@ function onSiteLoaded(){
   polygonMesh = findByNameCI(siteRoot, 'Polygone_Implantation');
   hallMesh    = findByNameCI(siteRoot, 'Hall_Gare');
   quartierGroup = findByNameCI(siteRoot, 'Quartier');
-  fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
+  fixProceduralMaterials();
   renderCrosswalkControls();
   if(polygonMesh){
     polygonMesh.visible = false;
@@ -658,7 +661,6 @@ function onSiteLoaded(){
 
 function buildDemoSite(){
   clearSite();
-  // Polygone d'implantation (plat, N-gone)
   const polyPts = [{x:-42,z:-30},{x:20,z:-34},{x:38,z:-6},{x:22,z:26},{x:-30,z:22},{x:-44,z:-4}];
   const shape = new THREE.Shape(polyPts.map(p=>new THREE.Vector2(p.x,-p.z)));
   const polyGeo = new THREE.ShapeGeometry(shape);
@@ -667,7 +669,6 @@ function buildDemoSite(){
   poly.name = 'Polygone_Implantation';
   siteRoot.add(poly);
 
-  // Hall de gare : bloc + toit arrondi (demi-cylindre), façade exposée vers +Z (le polygone est en -Z du hall)
   const hallGroup = new THREE.Group(); hallGroup.name = 'Hall_Gare';
   hallGroup.position.set(-10, 0, -62);
   const hallMat = new THREE.MeshStandardMaterial({color:0x8fa4b3, roughness:0.6, metalness:0.1});
@@ -681,7 +682,6 @@ function buildDemoSite(){
   hallGroup.add(roof);
   siteRoot.add(hallGroup);
 
-  // Quartier existant : quelques volumes schématiques autour
   const qGroup = new THREE.Group(); qGroup.name = 'Quartier';
   const qMat = new THREE.MeshStandardMaterial({color:0x2c3b47, roughness:0.9});
   const blocks = [[-80,20,18,26,14],[60,10,20,20,22],[10,60,30,16,12],[-60,-50,22,20,16]];
@@ -694,7 +694,6 @@ function buildDemoSite(){
 
   onSiteLoaded();
 
-  // Contenu de démonstration (uniquement en mode maquette procédurale de secours)
   createBuilding(
     [{x:-25,z:-15},{x:15,z:-15},{x:15,z:15},{x:-25,z:15}],
     { name:'Exemple — Tour mixte', floors:12,
@@ -720,30 +719,25 @@ function showSiteBanner(html, ok=false){
 }
 
 const gltfLoader = new GLTFLoader();
-const SITE_GLB_URL = './place_de_milan.glb'; // nom attendu à côté de ce fichier index.html
+const SITE_GLB_URL = './place_de_milan.glb';
 function loadSiteFromGLB(url, onFail){
   gltfLoader.load(url, (gltf)=>{
     clearSite();
     siteRoot.add(gltf.scene);
-    // Correction automatique Z-up → Y-up : si l'export Blender n'a pas appliqué
-    // la conversion d'axe (option "+Y Up" décochée), la hauteur du bâti se
-    // retrouve sur Z au lieu de Y. On le détecte en comparant l'étendue verticale
-    // (généralement bien plus petite que l'étendue horizontale d'un quartier) sur
-    // chacun des deux axes, et on corrige par une rotation si besoin.
     const box = new THREE.Box3().setFromObject(gltf.scene);
     const size = box.getSize(new THREE.Vector3());
     let corrected = false;
     if(size.z < size.y){
       gltf.scene.rotation.x = -Math.PI/2;
       corrected = true;
-      siteUpCorrected = true; // mémorisé pour appliquer la même correction aux gabarits clonés (arbres, etc.)
+      siteUpCorrected = true;
     }
     const report = onSiteLoaded();
     showSiteBanner(
       `<div><b>Maquette chargée</b> (${url})${corrected ? ' — rotation Z-up→Y-up appliquée automatiquement' : ''}.<br>${report}</div>`,
       true
     );
-    tryAutoLoadRoutes(); // toujours après la maquette : évite que son résultat soit écrasé par l'import auto (souvent infructueux) des Route_* du .glb
+    tryAutoLoadRoutes();
   }, undefined, (err)=>{
     console.warn("Chargement du .glb impossible :", url, err);
     if(onFail) onFail(err); else alert("Impossible de charger le .glb (voir la console).");
@@ -762,7 +756,7 @@ fileGlb.addEventListener('change', (e)=>{
 /* ============================================================
    STATE
    ============================================================ */
-let buildings = [];      // {id,name,points:[{x,z}],floors,bands:[{from,to,usage}],group,selected}
+let buildings = [];
 let idCounter = 1;
 let drawing = false;
 let drawPoints = [];
@@ -798,7 +792,7 @@ function startDraw(){
   btnDraw.classList.add('active');
   btnDraw.textContent = 'Dessin en cours…';
   drawHint.classList.add('show');
-  controls.enabled = false; // left click reserved for placing points while drawing
+  controls.enabled = false;
 }
 function cancelDraw(){
   drawing = false; drawPoints = [];
@@ -833,8 +827,6 @@ function pointInPolygon(pt, poly){
   }
   return inside;
 }
-// Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
-// reste dans le polygone d'implantation, en échantillonnant chaque arête.
 function polygonFullyInsideZone(pts, zone){
   for(let i=0;i<pts.length;i++){
     const a = pts[i], b = pts[(i+1)%pts.length];
@@ -892,25 +884,22 @@ window.addEventListener('keydown', (ev)=>{
 });
 
 /* ============================================================
-   EXTENSION DU HALL DE GARE
-   ============================================================
-   Étape 1 : clic sur la façade exposée du hall (normale locale +Z)
-             → on tranche le mesh du hall par un plan parallèle à la
-             façade pour extraire automatiquement son profil (contour),
-             quelle que soit sa forme réelle (arche, toit arrondi...).
-   Étape 2 : clic successifs au sol / sur les bâtiments / le quartier
-             pour tracer le chemin (droit ou courbe) de l'extension.
-   Étape 3 : Entrée → on "loft" le profil le long du chemin (repères
-             de Frenet), avec un fuseau de hauteur/largeur réglable.
+   EXTENSION DU HALL DE GARE — Version améliorée avec pivots modifiables
    ============================================================ */
 let extending = false;
-let extPickedProfile = null; // {points:[Vector3 local autour du centroïde], centroid, normal}
-let extPathPoints = [];      // Vector3 monde
+let extPickedProfile = null;
+let extPathPivots = [];     // [{x,y,z}, ...] les points de contrôle du chemin
 let extMarkers = new THREE.Group(); scene.add(extMarkers);
 let extPreviewLine = null;
-let extensions = []; // {id, name, mesh, group}
+let extPivotGizmos = [];    // Meshes pour les poignées de contrôle
+let extensions = [];
 let extIdCounter = 1;
 let extScaleStart = 1.0, extScaleEnd = 1.0, extHeightOffset = 0;
+let extSegments = 32;
+let editingExtId = null;    // id de l'extension en cours d'édition
+let extPathPreview = null;  // ligne d'aperçu du chemin
+let extGizmoGroup = new THREE.Group();
+scene.add(extGizmoGroup);
 
 const btnExtend = document.getElementById('btn-extend-hall');
 const drawHintText = document.getElementById('draw-hint-text');
@@ -918,24 +907,29 @@ const drawHintText = document.getElementById('draw-hint-text');
 function startExtend(){
   if(drawing) return;
   if(!hallMesh){ alert("Aucun objet 'Hall_Gare' trouvé dans la maquette chargée."); return; }
-  extending = true; extPickedProfile = null; extPathPoints = [];
+  extending = true; extPickedProfile = null; extPathPivots = [];
   extMarkers.clear();
-  btnExtend.classList.add('active'); btnExtend.textContent = 'Extension : cliquez la façade…';
+  extGizmoGroup.clear();
+  btnExtend.classList.add('active');
+  btnExtend.textContent = 'Extension : cliquez la façade…';
   drawHint.classList.add('show');
   drawHintText.textContent = "Cliquez la façade exposée du hall pour démarrer l'extension";
   controls.enabled = false;
 }
+
 function cancelExtend(){
-  extending = false; extPickedProfile = null; extPathPoints = [];
+  extending = false; extPickedProfile = null; extPathPivots = [];
   extMarkers.clear();
+  extGizmoGroup.clear();
   if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-  btnExtend.classList.remove('active'); btnExtend.textContent = 'Étendre le hall';
+  btnExtend.classList.remove('active');
+  btnExtend.textContent = 'Étendre le hall';
   drawHint.classList.remove('show');
   drawHintText.textContent = 'Cliquez sur le sol pour poser les sommets du bâtiment';
   controls.enabled = true;
+  editingExtId = null;
 }
 
-// Tranche un mesh (monde) par un plan et renvoie le plus grand contour fermé obtenu.
 function sliceMeshByPlane(mesh, planePoint, planeNormal){
   mesh.updateWorldMatrix(true,false);
   const geo = mesh.geometry;
@@ -962,7 +956,6 @@ function sliceMeshByPlane(mesh, planePoint, planeNormal){
     if(pts.length===2) segs.push([pts[0], pts[1]]);
   }
   if(!segs.length) return null;
-  // chaîne les segments en boucles (par proximité des extrémités)
   const used = new Array(segs.length).fill(false);
   const loops = [];
   for(let i=0;i<segs.length;i++){
@@ -982,7 +975,6 @@ function sliceMeshByPlane(mesh, planePoint, planeNormal){
     }
     loops.push(loop);
   }
-  // le plus grand contour (par nombre de points) = le profil principal de la façade
   loops.sort((a,b)=>b.length-a.length);
   return loops[0];
 }
@@ -1000,32 +992,31 @@ function pickHallFacade(ev){
   const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
   const facadeWorldNormal = hallFacadeWorldNormal;
   if(worldNormal.dot(facadeWorldNormal) < 0.6){
-    flashStatus("Cliquez la façade exposée (+Y Blender) du hall, pas une autre paroi");
+    flashStatus("Cliquez la façade exposée du hall, pas une autre paroi");
     return;
   }
-  // tranche légèrement en retrait pour capter le contour plein de la façade
   const planePoint = hit.point.clone().addScaledVector(facadeWorldNormal, -0.05);
   const loop = sliceMeshByPlane(hallMesh, planePoint, facadeWorldNormal);
   if(!loop || loop.length<3){ flashStatus("Profil de façade introuvable — cliquez ailleurs sur la façade"); return; }
   const centroid = loop.reduce((s,p)=>s.add(p), new THREE.Vector3()).multiplyScalar(1/loop.length);
   extPickedProfile = { points: loop.map(p=>p.clone().sub(centroid)), centroid, normal: facadeWorldNormal };
-  const marker = new THREE.Line(new THREE.BufferGeometry().setFromPoints([...loop, loop[0]]), new THREE.LineBasicMaterial({color:0x4fae8f}));
+  const marker = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([...loop, loop[0]]),
+    new THREE.LineBasicMaterial({ color:0x4fae8f })
+  );
   extMarkers.add(marker);
-  extPathPoints = [centroid.clone()];
-  drawHintText.textContent = "Tracez le chemin de l'extension, Entrée pour valider (Échap annule)";
-  flashStatus("Façade capturée — tracez le chemin de l'extension");
+  
+  // Premier pivot = position du hall + un peu d'offset
+  const startPivot = centroid.clone().addScaledVector(facadeWorldNormal, 3);
+  startPivot.y = 2; // hauteur de départ raisonnable
+  extPathPivots = [startPivot];
+  drawHintText.textContent = "Cliquez pour ajouter des pivots · Entrée pour valider · Échap annule";
+  flashStatus("Façade capturée — placez des pivots pour tracer le chemin");
+  updatePivotVisuals();
 }
 
-function refreshExtPreview(){
-  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-  if(extPathPoints.length<2) return;
-  extPreviewLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(extPathPoints), new THREE.LineBasicMaterial({color:0x4fae8f}));
-  scene.add(extPreviewLine);
-}
-
-function extendPathPointFromEvent(ev){
-  // Autorise à cliquer sur le sol, les bâtiments existants ou le quartier
-  // (pour permettre à l'extension de "grimper" au-dessus / de viser une façade cible).
+function addPivotFromEvent(ev){
+  // Raycast sur le sol pour déterminer la position
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
@@ -1034,32 +1025,78 @@ function extendPathPointFromEvent(ev){
   buildings.forEach(b=> b.group.traverse(o=>{ if(o.isMesh) targets.push(o); }));
   if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) targets.push(o); });
   const hit = raycaster.intersectObjects(targets, true)[0];
-  return hit ? hit.point.clone() : null;
+  if(!hit) return;
+  
+  const pt = hit.point.clone();
+  // On ajuste la hauteur par rapport au dernier pivot
+  const lastPivot = extPathPivots[extPathPivots.length-1];
+  if(lastPivot) {
+    // Si le clic est sur une surface verticale (bâtiment), on prend la hauteur du point cliqué
+    // Sinon, on propose une hauteur constante basée sur le dernier pivot
+    if(hit.face && Math.abs(hit.face.normal.y) < 0.3) {
+      // Surface verticale : on garde la hauteur du point cliqué
+      pt.y = hit.point.y;
+    } else {
+      // Surface horizontale : on utilise la hauteur du dernier pivot avec un léger offset
+      pt.y = lastPivot.y + (Math.random() - 0.5) * 0.5;
+    }
+  }
+  extPathPivots.push(pt);
+  updatePivotVisuals();
 }
 
-// Construit la géométrie loftée : profil balayé le long d'une courbe (repères de Frenet),
-// avec un fuseau d'échelle et un décalage de hauteur réglables.
-function buildLoftGeometry(profile, pathPoints, segments=48){
-  const curve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.25);
+function updatePivotVisuals(){
+  extMarkers.clear();
+  extGizmoGroup.clear();
+  extPivotGizmos = [];
+
+  // Dessine les pivots
+  extPathPivots.forEach((p, i) => {
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.6, 12, 12),
+      new THREE.MeshBasicMaterial({ color: i === 0 ? 0x4fae8f : 0xe0663f })
+    );
+    sphere.position.copy(p);
+    sphere.userData.pivotIndex = i;
+    extMarkers.add(sphere);
+    extPivotGizmos.push(sphere);
+  });
+
+  // Ligne du chemin
+  if(extPathPivots.length > 1) {
+    if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
+    extPreviewLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(extPathPivots),
+      new THREE.LineBasicMaterial({ color: 0x4fae8f, linewidth: 2 })
+    );
+    scene.add(extPreviewLine);
+  }
+}
+
+function createExtensionFromPivots(profile, pivots, name){
+  // Construit la géométrie loftée à partir des pivots
+  const curve = new THREE.CatmullRomCurve3(pivots, false, 'catmullrom', 0.3);
+  const segments = extSegments;
   const frames = curve.computeFrenetFrames(segments, false);
-  const ring = profile.points; // Vector3 locaux autour du centroïde, dans le plan de la façade
+  const ring = profile.points;
+  
   const positions = [], indices = [];
-  for(let s=0;s<=segments;s++){
+  const ringLen = ring.length;
+  
+  for(let s=0; s<=segments; s++){
     const t = s/segments;
     const center = curve.getPointAt(t).clone();
-    center.y += extHeightOffset * t;
+    // La hauteur est maintenant déterminée par la position Y des pivots
     const scale = THREE.MathUtils.lerp(extScaleStart, extScaleEnd, t);
     const normal = frames.normals[s], binormal = frames.binormals[s];
     for(const p of ring){
-      // reprojette chaque point du profil (exprimé dans le plan facade d'origine)
-      // dans le repère local (normal/binormal) de la courbe au paramètre t
       const local = p.clone().multiplyScalar(scale);
       const projN = local.dot(normal), projB = local.dot(binormal);
       const worldPt = center.clone().addScaledVector(normal, projN).addScaledVector(binormal, projB);
       positions.push(worldPt.x, worldPt.y, worldPt.z);
     }
   }
-  const ringLen = ring.length;
+  
   for(let s=0;s<segments;s++){
     for(let i=0;i<ringLen;i++){
       const a = s*ringLen+i, b = s*ringLen+((i+1)%ringLen);
@@ -1067,28 +1104,48 @@ function buildLoftGeometry(profile, pathPoints, segments=48){
       indices.push(a,c,b, b,c,d);
     }
   }
+  
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
   geo.setIndex(indices);
   geo.computeVertexNormals();
-  return geo;
-}
-
-function finishExtend(){
-  if(!extPickedProfile || extPathPoints.length<2){ cancelExtend(); return; }
-  const geo = buildLoftGeometry(extPickedProfile, extPathPoints);
+  
   const mat = new THREE.MeshStandardMaterial({
     color: 0x9fb8c4, roughness:0.55, metalness:0.1,
     transparent:true, opacity:0.96, depthWrite:true
   });
+  
   const mesh = new THREE.Mesh(geo, mat);
   mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.renderOrder = 2; // s'affiche par-dessus les bâtiments qu'elle traverse visuellement
+  mesh.renderOrder = 2;
+  
   const group = new THREE.Group();
   group.add(mesh);
   scene.add(group);
-  const ext = { id: extIdCounter++, name:`Extension hall ${extIdCounter-1}`, mesh, group };
+  
+  const ext = {
+    id: extIdCounter++,
+    name: name || `Extension hall ${extIdCounter-1}`,
+    pivots: pivots.map(p => p.clone()),
+    profile: profile,
+    mesh: mesh,
+    group: group,
+    scaleStart: extScaleStart,
+    scaleEnd: extScaleEnd,
+    segments: extSegments
+  };
   extensions.push(ext);
+  renderExtList();
+  return ext;
+}
+
+function finishExtend(){
+  if(!extPickedProfile || extPathPivots.length < 2){ 
+    flashStatus("Il faut au moins 2 pivots pour créer une extension");
+    cancelExtend(); 
+    return; 
+  }
+  const ext = createExtensionFromPivots(extPickedProfile, extPathPivots);
   renderExtList();
   cancelExtend();
 }
@@ -1098,73 +1155,112 @@ btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExten
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!extending) return;
   if(!extPickedProfile){ pickHallFacade(ev); return; }
-  const pt = extendPathPointFromEvent(ev);
-  if(pt){ extPathPoints.push(pt); refreshExtPreview(); }
+  addPivotFromEvent(ev);
 });
+
 window.addEventListener('keydown', (ev)=>{
   if(!extending) return;
   if(ev.key==='Enter') finishExtend();
   if(ev.key==='Escape') cancelExtend();
 });
 
+// Fonction pour rééditer une extension existante
+function editExtension(id){
+  const ext = extensions.find(e => e.id === id);
+  if(!ext) return;
+  editingExtId = id;
+  extPathPivots = ext.pivots.map(p => p.clone());
+  extPickedProfile = ext.profile;
+  extScaleStart = ext.scaleStart || 1;
+  extScaleEnd = ext.scaleEnd || 1;
+  extSegments = ext.segments || 32;
+  
+  // Supprime l'extension existante
+  scene.remove(ext.group);
+  ext.mesh.geometry.dispose();
+  ext.mesh.material.dispose();
+  extensions = extensions.filter(e => e.id !== id);
+  
+  // Passe en mode édition
+  extending = true;
+  btnExtend.classList.add('active');
+  btnExtend.textContent = 'Édition en cours…';
+  drawHint.classList.add('show');
+  drawHintText.textContent = "Déplacez les pivots (bleus) · Ajoutez-en en cliquant · Entrée pour valider";
+  controls.enabled = false;
+  updatePivotVisuals();
+  renderExtList();
+}
+
+// Supprimer une extension
 function deleteExtension(id){
   const e = extensions.find(x=>x.id===id);
   if(!e) return;
   scene.remove(e.group);
-  e.mesh.geometry.dispose(); e.mesh.material.dispose();
+  e.mesh.geometry.dispose(); 
+  e.mesh.material.dispose();
   extensions = extensions.filter(x=>x.id!==id);
   renderExtList();
 }
+
 function renderExtList(){
   const list = document.getElementById('ext-list');
   const empty = document.getElementById('ext-empty-note');
   empty.style.display = extensions.length ? 'none' : 'block';
   list.innerHTML = '';
+  
   extensions.forEach(e=>{
     const card = document.createElement('div');
     card.className = 'bldg-card';
     card.style.padding = '9px 10px';
-    card.style.display = 'flex'; card.style.alignItems='center'; card.style.gap='8px';
+    card.style.display = 'flex'; 
+    card.style.alignItems='center'; 
+    card.style.gap='8px';
+    card.style.flexWrap = 'wrap';
+    
     const label = document.createElement('span');
-    label.textContent = e.name; label.style.flex='1'; label.style.fontSize='12.5px';
+    label.textContent = e.name; 
+    label.style.flex='1'; 
+    label.style.fontSize='12.5px';
+    
+    const editBtn = document.createElement('button');
+    editBtn.className = 'mini-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Modifier les pivots';
+    editBtn.style.color = 'var(--blue)';
+    editBtn.addEventListener('click', ()=> editExtension(e.id));
+    
     const del = document.createElement('button');
-    del.className='mini-btn danger'; del.textContent='✕';
+    del.className = 'mini-btn danger'; 
+    del.textContent = '✕';
     del.addEventListener('click', ()=> deleteExtension(e.id));
-    card.append(label, del);
+    
+    const info = document.createElement('span');
+    info.textContent = `${e.pivots.length} pivots`;
+    info.style.cssText = 'font-size:10px;color:var(--muted);font-family:IBM Plex Mono,monospace;';
+    
+    card.append(label, info, editBtn, del);
     list.appendChild(card);
   });
 }
 
 /* ============================================================
-   MATÉRIAUX PROCÉDURAUX — remplace les shaders Blender qui ne survivent
-   pas à l'export glTF (nodes procéduraux non baqués) par des équivalents
-   three.js. Ciblés par nom de matériau : "aluminium", "ppy", "ppx" ; tout
-   autre matériau qui ressort noir/sans texture (signe classique d'un
-   shader procédural non exporté) reçoit un repli neutre générique.
+   MATÉRIAUX PROCÉDURAUX
    ============================================================ */
 function makeStripeTexture(){
-  // Un seul motif "moitié blanche / moitié transparente" : c'est texture.repeat
-  // (réglable indépendamment par axe) qui crée l'alternance de bandes, pas le
-  // canvas — évite un double effet d'échelle (motif × répétition) difficile à
-  // calibrer.
   const size = 64;
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,size,size); // transparent
+  ctx.clearRect(0,0,size,size);
   ctx.fillStyle = '#f2f2f0';
-  ctx.fillRect(0, 0, size/2, size); // moitié blanche opaque
+  ctx.fillRect(0, 0, size/2, size);
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.center.set(0.5,0.5);
   return tex;
 }
-const crosswalkMaterials = { x:null, y:null }; // référencés par le panneau admin pour ajustement live
-// axis 'y' (ppy) : bandes répétées le long de U (repeat.x), piéton marche selon X.
-// axis 'x' (ppx) : bandes répétées le long de V (repeat.y), piéton marche selon Z.
-// Ce sont des valeurs de départ raisonnables : le panneau admin (mode ?admin=1)
-// permet d'ajuster répétition U/V et rotation en direct sans toucher au code,
-// le temps de caler exactement sur l'UV réelle du mesh Blender.
+const crosswalkMaterials = { x:null, y:null };
 function makeCrosswalkMaterial(axis, name){
   const tex = makeStripeTexture();
   if(axis==='x') tex.repeat.set(1, 8); else tex.repeat.set(8, 1);
@@ -1176,13 +1272,13 @@ function makeCrosswalkMaterial(axis, name){
   return mat;
 }
 function isLikelyBrokenShader(m){
-  if(!m || m.map) return false; // a déjà une texture -> probablement correctement exporté
+  if(!m || m.map) return false;
   if(!m.color) return false;
   const c = m.color;
-  return c.r<0.04 && c.g<0.04 && c.b<0.04; // noir/quasi-noir sans texture = shader procédural perdu à l'export
+  return c.r<0.04 && c.g<0.04 && c.b<0.04;
 }
 function fixProceduralMaterials(){
-  const seen = new Map(); // uuid -> matériau de remplacement (ou null si inchangé)
+  const seen = new Map();
   siteRoot.traverse(o=>{
     if(!o.isMesh || !o.material) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -1192,19 +1288,14 @@ function fixProceduralMaterials(){
       const name = (m.name||'').toLowerCase();
       let replacement = null;
       if(name.includes('alumin')){
-        // aluminium brossé : très métallique, brillant, mais un léger grain (roughness modérée
-        // plutôt qu'un miroir parfait) pour évoquer les micro-stries du brossage.
         replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0xc7cbce, metalness:1.0, roughness:0.22, envMapIntensity:1.4 });
       } else if(name.includes('route')){
-        // enrobé/asphalte : gris très foncé, quasi noir, mat.
         replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x16171a, roughness:0.95, metalness:0.0 });
       } else if(name.includes('ppy')){
         replacement = makeCrosswalkMaterial('y', m.name);
       } else if(name.includes('ppx')){
         replacement = makeCrosswalkMaterial('x', m.name);
       } else if(name.includes('feuill')){
-        // remplacement systématique, qu'il ait l'air "cassé" ou non (le diagnostic
-        // heuristique noir/sans-texture ne suffisait pas à le détecter à coup sûr).
         replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x4a7c4e, roughness:0.85, flatShading:true });
       } else if(isLikelyBrokenShader(m)){
         const guessGreen = /leaf|vert|green|arbre|tree|icosph|folia/.test(name);
@@ -1221,37 +1312,20 @@ function fixProceduralMaterials(){
 }
 
 /* ============================================================
-   ARBRES — plantation contrainte au polygone d'implantation
-   ============================================================
-   Le gabarit visuel est cloné du premier objet "Icosphère*" trouvé
-   dans la maquette chargée (repli sur un icosaèdre généré si absent,
-   ex. en mode démo). Un clic dans le polygone plante un arbre ; un
-   clic sur un arbre existant le retire.
+   ARBRES
    ============================================================ */
-let treeTemplate = null; // {geometry, material, baseScale}
+let treeTemplate = null;
 function findIcosphereTemplate(){
   let found = null;
   siteRoot.traverse(o=>{ if(!found && o.isMesh && /icosph/i.test(o.name)) found = o; });
   if(found){
-    // On clone et RECENTRE systématiquement la géométrie sur sa propre base locale
-    // (X/Z centrés, Y=0 au point le plus bas). C'est indispensable si l'export
-    // Blender a "appliqué" la position mondiale directement dans les sommets
-    // (cas fréquent) : sans ça, réutiliser found.geometry telle quelle ailleurs
-    // dans la scène rajoute l'offset d'origine par-dessus la nouvelle position et
-    // envoie l'arbre à des dizaines de mètres de là où on a cliqué.
     const geo = found.geometry.clone();
-    // Les arbres qu'on plante vivent dans treesGroup, hors de la hiérarchie de
-    // gltf.scene — ils n'héritent donc PAS de la rotation Z-up→Y-up appliquée à
-    // la maquette. Sans ce correctif, ils gardent l'orientation locale d'origine
-    // (Z vers le haut) et se retrouvent couchés sur le côté une fois posés dans
-    // notre monde Y-up. On applique donc la même rotation directement à la
-    // géométrie du gabarit, une fois pour toutes, avant de la recentrer.
     if(siteUpCorrected) geo.rotateX(-Math.PI/2);
     geo.computeBoundingBox();
     const bb = geo.boundingBox;
     const cx = (bb.min.x+bb.max.x)/2, cz = (bb.min.z+bb.max.z)/2, baseY = bb.min.y;
     geo.translate(-cx, -baseY, -cz);
-    const worldScale = found.getWorldScale(new THREE.Vector3()); // capture aussi un éventuel scale porté par un parent
+    const worldScale = found.getWorldScale(new THREE.Vector3());
     treeTemplate = { geometry: geo, material: found.material, baseScale: worldScale };
   } else {
     treeTemplate = {
@@ -1326,19 +1400,12 @@ renderer.domElement.addEventListener('click', (ev)=>{
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
 
-  // clic sur un arbre existant : on le retire
   const treeHit = raycaster.intersectObjects(trees.map(t=>t.mesh))[0];
   if(treeHit){
     const hitTree = trees.find(t=>t.mesh===treeHit.object);
     if(hitTree){ removeTree(hitTree.id); return; }
   }
 
-  // sinon, on tente de planter un nouvel arbre au point cliqué. Le polygone
-  // d'implantation représente la vraie surface de la place (plaza vide sans
-  // maillage de "quartier" dessus) : il DOIT faire partie des cibles de raycast,
-  // sinon un clic dans une zone ouverte ne touche rien et retombe sur le plan
-  // de secours à Y=0, qui peut être à des dizaines de mètres du vrai niveau du
-  // sol une fois la maquette mise à l'échelle/translatée.
   const groundTargets = [];
   if(polygonMesh) groundTargets.push(polygonMesh);
   if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
@@ -1384,9 +1451,6 @@ function usageAtFloor(b, floor){
 
 function rebuildMesh(b){
   b.group.clear();
-  // Note: THREE.ExtrudeGeometry + rotateX(-90°) to lay the shape flat mirrors
-  // the shape's local Y axis into world Z. We negate Z here so the built
-  // volume lines up exactly with the footprint the user traced on the ground.
   const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,-p.z)));
 
   for(let f=1; f<=b.floors; f++){
@@ -1402,14 +1466,12 @@ function rebuildMesh(b){
     mesh.castShadow = true; mesh.receiveShadow = true;
     b.group.add(mesh);
 
-    // slab edge line for a clean architectural-model look
     const edges = new THREE.EdgesGeometry(geo, 25);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity:0.35 }));
     line.position.y = mesh.position.y;
     b.group.add(line);
   }
 
-  // selection halo
   if(b.id === selectedId){
     const outlinePts = b.points.map(p=>new THREE.Vector3(p.x,0.06,p.z));
     outlinePts.push(outlinePts[0].clone());
@@ -1476,7 +1538,6 @@ function renderList(){
     const body = document.createElement('div');
     body.className = 'bldg-body' + (b.open ? ' open':'');
 
-    // floors field
     const floorsField = document.createElement('div');
     floorsField.className='field';
     floorsField.innerHTML = `<label>Nombre d'étages (R+${Math.max(b.floors-1,0)})</label>`;
@@ -1486,7 +1547,6 @@ function renderList(){
       let v = parseInt(floorsInput.value)||1;
       v = Math.max(1, Math.min(60, v));
       b.floors = v;
-      // clip bands to new floor count, ensure coverage
       b.bands = b.bands.filter(bd=>bd.from<=v).map(bd=>({...bd, to:Math.min(bd.to,v)}));
       if(!b.bands.length) b.bands = defaultBands(v);
       const lastTo = Math.max(...b.bands.map(bd=>bd.to));
@@ -1495,7 +1555,6 @@ function renderList(){
     });
     floorsField.appendChild(floorsInput);
 
-    // usage bands editor
     const bandsTitle = document.createElement('div');
     bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;';
     bandsTitle.textContent = 'Répartition des usages par étage';
@@ -1597,8 +1656,15 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
    ============================================================ */
 document.getElementById('btn-save-json').addEventListener('click', ()=>{
   const data = {
-    version: 1,
-    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands }))
+    version: 2,
+    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
+    extensions: extensions.map(e=>({
+      name: e.name,
+      pivots: e.pivots.map(p => ({x:p.x, y:p.y, z:p.z})),
+      scaleStart: e.scaleStart,
+      scaleEnd: e.scaleEnd,
+      segments: e.segments
+    }))
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const link = document.createElement('a');
@@ -1621,6 +1687,25 @@ fileLoad.addEventListener('change', (e)=>{
       idCounter = 1;
       (data.buildings||[]).forEach(b=> createBuilding(b.points, {name:b.name, floors:b.floors, bands:b.bands}));
       selectedId = null;
+      
+      // Restaurer les extensions
+      extensions.forEach(e => { scene.remove(e.group); e.mesh.geometry.dispose(); e.mesh.material.dispose(); });
+      extensions = [];
+      extIdCounter = 1;
+      if(data.extensions && data.pivots && data.profile) {
+        // Pour rétrocompatibilité, on reconstruit les extensions
+        (data.extensions||[]).forEach(extData => {
+          const pivots = extData.pivots.map(p => new THREE.Vector3(p.x, p.y, p.z));
+          // On a besoin du profil stocké ou on le recrée
+          const profile = data.profile || null;
+          if(profile && pivots.length >= 2) {
+            const ext = createExtensionFromPivots(profile, pivots, extData.name);
+            ext.scaleStart = extData.scaleStart || 1;
+            ext.scaleEnd = extData.scaleEnd || 1;
+            ext.segments = extData.segments || 32;
+          }
+        });
+      }
       rebuildAll(); renderList();
     }catch(err){ alert("Fichier de projet invalide."); }
   };
@@ -1629,13 +1714,7 @@ fileLoad.addEventListener('change', (e)=>{
 });
 
 /* ============================================================
-   CIRCULATION — tram / bus / voiture / piéton
-   ============================================================
-   Une "voie" = une courbe (CatmullRomCurve3). On peut la tracer à la
-   souris (comme un bâtiment mais en polyligne ouverte) ou en charger
-   depuis un routes.json exporté de Blender (courbes Bézier → points).
-   Chaque voie reçoit un pool de piétons/véhicules animés le long de
-   la courbe via curve.getPointAt(t), rendus en instanced mesh low-poly.
+   CIRCULATION
    ============================================================ */
 const ROUTE_TYPES = {
   tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:2,  scale:[2.2,2.6,9]  },
@@ -1643,11 +1722,11 @@ const ROUTE_TYPES = {
   voiture:{ label:'Voiture', color:0x2c0a71, speed:10,  count:5,  scale:[1.7,1.3,3.4]},
   pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, scale:[0.4,1.4,0.5]}
 };
-let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,offset}]}
+let routes = [];
 let routeIdCounter = 1;
 
 function createRoute(points, type, name){
-  if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
+  if(!points || points.length<2) return null;
   const cfg = ROUTE_TYPES[type] || ROUTE_TYPES.voiture;
   const vec = points.map(p=>new THREE.Vector3(p.x, p.y||0.15, p.z));
   const curve = new THREE.CatmullRomCurve3(vec, false, 'catmullrom', 0.2);
@@ -1663,7 +1742,7 @@ function createRoute(points, type, name){
   for(let i=0;i<count;i++) agents.push({ t: i/count, speed: cfg.speed * (0.9+Math.random()*0.2) });
 
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
-  line.visible = false; // le tracé lui-même reste caché ; seuls les véhicules/piétons animés sont visibles
+  line.visible = false;
   scene.add(line);
 
   const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, line, agents };
@@ -1684,7 +1763,6 @@ function tickAgents(dt){
       dummy.position.copy(pos);
       dummy.position.y += 0.05;
       dummy.lookAt(pos.clone().add(tangent));
-      // léger bruit latéral pour les piétons (foule moins "sur des rails")
       if(r.type==='pieton'){
         const lateral = Math.sin(a.t*40 + i*7) * 0.4;
         const side = new THREE.Vector3(-tangent.z,0,tangent.x);
@@ -1715,9 +1793,6 @@ function deleteRoute(id){
   routes = routes.filter(x=>x.id!==id);
   renderRouteList();
 }
-// Inverse le sens de circulation d'une voie : on inverse simplement l'ordre des
-// points du tracé et on reconstruit la courbe — les agents repartent de zéro
-// sur cette nouvelle courbe (répartis régulièrement comme à la création).
 function reverseRoute(id){
   const r = routes.find(x=>x.id===id);
   if(!r) return;
@@ -1757,8 +1832,6 @@ function renderRouteList(){
   });
 }
 
-// Admin : sélecteurs de couleur par type de véhicule/piéton — met à jour la
-// config ET tous les InstancedMesh déjà créés pour ce type, en direct.
 function renderVehicleColorControls(){
   const container = document.getElementById('vehicle-colors');
   container.innerHTML = '';
@@ -1776,7 +1849,7 @@ function renderVehicleColorControls(){
       const hex = parseInt(input.value.slice(1), 16);
       ROUTE_TYPES[type].color = hex;
       routes.forEach(r=>{ if(r.type===type) r.instancedMesh.material.color.setHex(hex); });
-      renderRouteList(); // rafraîchit le pastille de couleur dans la liste
+      renderRouteList();
     });
     row.append(label, input);
     container.appendChild(row);
@@ -1784,9 +1857,6 @@ function renderVehicleColorControls(){
 }
 renderVehicleColorControls();
 
-// Admin : réglages live des passages piétons (répétition U/V + rotation), car
-// on ne peut pas connaître l'UV réelle du mesh Blender depuis ici — plus rapide
-// de caler ça à l'oeil que de deviner à l'aveugle dans le code.
 function renderCrosswalkControls(){
   const container = document.getElementById('crosswalk-controls');
   if(!container) return;
@@ -1828,10 +1898,8 @@ function renderCrosswalkControls(){
   });
 }
 
-// Charge un routes.json exporté de Blender : { "Route_Tram_1":[[x,y,z],...], "Route_Bus_A":[...], ... }
-// Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
 function importRoutesFromJSON(data, sourceLabel){
-  clearRoutes(); // routes.json remplace l'ensemble des voies existantes (évite les doublons avec l'import auto depuis le .glb)
+  clearRoutes();
   const empty = [], created = [];
   Object.entries(data).forEach(([name, pts])=>{
     if(!pts || pts.length<2){ empty.push(name); return; }
@@ -1860,8 +1928,6 @@ fileRoutes.addEventListener('change', (e)=>{
   fileRoutes.value = '';
 });
 
-// Charge automatiquement routes.json s'il est présent à côté de index.html,
-// exactement comme place_de_milan.glb — pas besoin de cliquer manuellement.
 const ROUTES_JSON_URL = './routes.json';
 function tryAutoLoadRoutes(){
   fetch(ROUTES_JSON_URL).then(r=>{
@@ -1869,9 +1935,7 @@ function tryAutoLoadRoutes(){
     return r.json();
   }).then(data=>{
     importRoutesFromJSON(data, `${ROUTES_JSON_URL} (auto)`);
-  }).catch(()=>{
-    // silencieux : routes.json est optionnel, l'utilisateur peut toujours le charger à la main
-  });
+  }).catch(()=>{});
 }
 
 /* ============================================================
@@ -1888,9 +1952,6 @@ function animate(){
 }
 animate();
 
-// Charge la vraie maquette si le fichier est présent à côté de index.html ;
-// sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
-// et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
 loadSiteFromGLB(SITE_GLB_URL, (err)=>{
   const isFileProtocol = location.protocol === 'file:';
   showSiteBanner(`
