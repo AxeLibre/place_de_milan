@@ -1,284 +1,81 @@
 <!doctype html>
-<html lang="fr"> 
+<html lang="fr">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Place de Milan — Atelier volumétrique</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<title>Place de Milan — Extensions du hall</title>
 <style>
-  :root{
-    --ink:#101820;
-    --ink-2:#182430;
-    --paper:#eef1ee;
-    --line:#3f5568;
-    --blue:#5b8ab0;
-    --accent:#e0663f;
-    --muted:#7f93a3;
-    --res:#e0a24a;
-    --bur:#5b8ab0;
-    --com:#d95a6c;
-    --hot:#a06bd9;
-    --ser:#4fae8f;
-    --panel-w: 330px;
+  body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background: #101820; }
+  canvas { display: block; }
+  
+  /* Interface minimaliste */
+  #ui {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(16,24,32,0.9);
+    border: 1px solid #2a3946;
+    border-radius: 8px;
+    padding: 12px 20px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    z-index: 10;
   }
-  *{box-sizing:border-box;}
-  html,body{margin:0;height:100%;background:var(--ink);color:var(--paper);font-family:'Inter',sans-serif;overflow:hidden;}
-  #app{position:fixed;inset:0;display:flex;}
-  #viewport{flex:1;position:relative;}
-  canvas{display:block;}
-
-  #ribbon{
-    position:absolute;top:0;left:0;right:0;z-index:5;
-    display:flex;align-items:center;gap:14px;
-    padding:12px 18px;
-    background:linear-gradient(180deg, rgba(16,24,32,.92), rgba(16,24,32,0));
-    pointer-events:none;
+  #ui > * { pointer-events: auto; }
+  
+  .btn {
+    background: #182430;
+    border: 1px solid #2a3946;
+    color: #eef1ee;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
   }
-  #ribbon > *{pointer-events:auto;}
-  #brand{display:flex;flex-direction:column;line-height:1.05;margin-right:8px;}
-  #brand b{font-family:'Space Grotesk',sans-serif;font-size:17px;letter-spacing:.02em;}
-  #brand span{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
-
-  .tool-btn{
-    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:500;
-    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
-    padding:8px 14px;border-radius:3px;cursor:pointer;
-    display:flex;align-items:center;gap:8px;transition:all .12s ease;
+  .btn:hover { border-color: #5b8ab0; }
+  .btn.active { background: #e0663f; border-color: #e0663f; color: #1a0e08; font-weight: 600; }
+  .btn.primary { background: #4fae8f; border-color: #4fae8f; color: #101820; }
+  
+  #status {
+    color: #7f93a3;
+    font-size: 12px;
+    font-family: monospace;
+    min-width: 200px;
   }
-  .tool-btn:hover{border-color:var(--blue);color:#fff;}
-  .tool-btn.active{background:var(--accent);border-color:var(--accent);color:#1a0e08;font-weight:600;}
-  .tool-btn:disabled{opacity:.35;cursor:not-allowed;}
-  .tool-btn.ghost{background:transparent;}
-
-  #status-line{
-    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
-    margin-left:auto;text-align:right;max-width:280px;
-  }
-  #status-line b{color:var(--accent);}
-
-  #draw-hint{
-    position:absolute;bottom:22px;left:50%;transform:translateX(-50%);
-    background:var(--ink-2);border:1px solid #2a3946;border-radius:3px;
-    padding:9px 16px;font-family:'IBM Plex Mono',monospace;font-size:12px;
-    color:var(--paper);display:none;gap:14px;align-items:center;z-index:5;
-  }
-  #draw-hint.show{display:flex;}
-  #draw-hint kbd{background:#0b1116;border:1px solid #2a3946;border-radius:2px;padding:1px 6px;font-size:11px;}
-
-  #panel{
-    width:var(--panel-w);flex-shrink:0;background:var(--ink-2);
-    border-left:1px solid #23303b;display:flex;flex-direction:column;
-    overflow:hidden;
-  }
-  #panel-scroll{overflow-y:auto;flex:1;padding:16px;}
-  #panel-scroll::-webkit-scrollbar{width:8px;}
-  #panel-scroll::-webkit-scrollbar-thumb{background:#2a3946;border-radius:4px;}
-
-  .section-title{
-    font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;
-    text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
-    margin:22px 0 10px;display:flex;align-items:center;gap:8px;
-  }
-  .section-title:first-child{margin-top:0;}
-  .section-title::after{content:"";flex:1;height:1px;background:#23303b;}
-
-  .field{margin-bottom:10px;}
-  .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
-  .field input[type=text], .field input[type=number]{
-    width:100%;background:#0b1116;border:1px solid #23303b;color:var(--paper);
-    padding:7px 9px;border-radius:3px;font-family:'Inter',sans-serif;font-size:13px;
-  }
-  .field input:focus{outline:none;border-color:var(--blue);}
-  .row{display:flex;gap:8px;}
-  .row > .field{flex:1;}
-
-  .legend-item{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;color:var(--paper);}
-  .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
-
-  .bldg-card{
-    background:#0b1116;border:1px solid #23303b;border-radius:4px;
-    margin-bottom:10px;overflow:hidden;
-  }
-  .bldg-card.selected{border-color:var(--accent);}
-  .bldg-head{
-    display:flex;align-items:center;gap:8px;padding:9px 10px;cursor:pointer;
-  }
-  .bldg-head input{
-    background:transparent;border:none;color:var(--paper);font-family:'Space Grotesk',sans-serif;
-    font-size:13px;font-weight:600;flex:1;min-width:0;
-  }
-  .bldg-head input:focus{outline:none;}
-  .bldg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
-  .bldg-meta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);padding:0 10px 9px;}
-  .bldg-body{padding:0 10px 12px;border-top:1px solid #1a242d;display:none;}
-  .bldg-body.open{display:block;}
-
-  .band-row{display:flex;gap:6px;align-items:center;margin:6px 0;font-size:11px;}
-  .band-row select{
-    background:#141c24;border:1px solid #23303b;color:var(--paper);border-radius:3px;
-    padding:5px 6px;font-size:11px;flex-shrink:0;
-  }
-  .band-row input[type=number]{width:44px;padding:5px 4px;font-size:11px;text-align:center;}
-  .band-row .x{color:var(--muted);flex-shrink:0;}
-  .mini-btn{
-    background:none;border:1px solid #2a3946;color:var(--muted);border-radius:3px;
-    width:22px;height:22px;cursor:pointer;flex-shrink:0;font-size:13px;line-height:1;
-  }
-  .mini-btn:hover{color:var(--paper);border-color:var(--blue);}
-  .mini-btn.danger:hover{border-color:var(--com);color:var(--com);}
-
-  .btn-row{display:flex;gap:6px;margin-top:10px;}
-  .small-action{
-    flex:1;font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;
-    letter-spacing:.04em;background:#141c24;border:1px solid #23303b;color:var(--muted);
-    padding:6px;border-radius:3px;cursor:pointer;
-  }
-  .small-action:hover{color:var(--paper);border-color:var(--blue);}
-  .small-action.danger:hover{color:var(--com);border-color:var(--com);}
-
-  #footer-actions{
-    padding:14px 16px;border-top:1px solid #23303b;display:flex;flex-direction:column;gap:8px;
-  }
-  .primary-btn{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;
-    background:var(--accent);border:none;color:#1a0e08;padding:10px;border-radius:3px;cursor:pointer;
-  }
-  .primary-btn:hover{filter:brightness(1.08);}
-  .secondary-row{display:flex;gap:8px;}
-  .secondary-row .tool-btn{flex:1;justify-content:center;font-size:11.5px;padding:8px;}
-
-  #empty-note{color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;}
-
-  input[type=file]{display:none;}
-  .admin-only{display:none;}
-  body.is-admin .admin-only{display:flex;}
-  button.admin-only{display:none;}
-  body.is-admin button.admin-only{display:inline-flex;}
-
-  #compass{
-    position:absolute;top:70px;right:16px;z-index:5;width:46px;height:46px;
-    background:var(--ink-2);border:1px solid #2a3946;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;
-    font-size:11px;font-weight:700;color:var(--accent);pointer-events:none;
-  }
-  #site-status-banner{
-    position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:6;
-    max-width:560px;display:none;gap:8px;align-items:flex-start;
-    background:var(--ink-2);border:1px solid #2a3946;border-left:3px solid var(--accent);
-    border-radius:3px;padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
-    line-height:1.5;color:var(--paper);
-  }
-  #site-status-banner.show{display:flex;}
-  #site-status-banner.ok{border-left-color:var(--ser);}
-  #site-status-banner button{
-    background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;
-    margin-left:8px;flex-shrink:0;
-  }
-  #site-status-banner button:hover{color:var(--paper);}
-
-  .ext-edit-controls{
-    background:#0b1116;
-    border:1px solid #4fae8f;
-    border-radius:4px;
-    padding:12px;
-    margin-bottom:12px;
-  }
-  .ext-edit-controls .row{
-    display:flex;
-    gap:6px;
-    align-items:center;
-    margin:4px 0;
-    flex-wrap:wrap;
-  }
-  .ext-edit-controls label{
-    font-size:10px;
-    color:var(--muted);
-    font-family:'IBM Plex Mono',monospace;
-  }
-  .ext-edit-controls input[type=number]{
-    width:46px;
-    background:#0b1116;
-    border:1px solid #23303b;
-    color:var(--paper);
-    border-radius:3px;
-    padding:3px 4px;
-    font-size:10.5px;
-  }
-  .ext-edit-controls .btn-group{
-    display:flex;
-    gap:6px;
-    margin-top:6px;
+  #status b { color: #e0663f; }
+  
+  #info {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    color: #7f93a3;
+    font-size: 11px;
+    font-family: monospace;
+    text-align: right;
+    line-height: 1.6;
+    z-index: 10;
+    pointer-events: none;
   }
 </style>
 </head>
 <body>
-<div id="app">
-  <div id="viewport">
-    <div id="ribbon">
-      <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
-      <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
-      <button class="tool-btn" id="btn-extend">+ Extension du hall</button>
-      <button class="tool-btn ghost" id="btn-tree">+ Arbre</button>
-      <button class="tool-btn ghost admin-only" id="btn-load-glb">Charger maquette (.glb)</button>
-      <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
-      <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
-    </div>
-    <div id="compass">N↑</div>
-    <div id="site-status-banner"></div>
-    <div id="draw-hint">
-      <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
-      <span><kbd>Entrée</kbd> valider</span>
-      <span><kbd>Échap</kbd> annuler</span>
-    </div>
-    <input type="file" id="file-load" accept="application/json">
-    <input type="file" id="file-glb" accept=".glb,.gltf">
-    <input type="file" id="file-routes" accept="application/json">
-  </div>
 
-  <div id="panel">
-    <div id="panel-scroll">
-      <div class="section-title">Légende des usages</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--res)"></div>Résidentiel</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--bur)"></div>Bureaux</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--com)"></div>Commerces</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div>Hôtel</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div>Services / équipements</div>
+<div id="info">
+  <div>🖱 Clic gauche : placer/déplacer un pivot</div>
+  <div>🔄 Molette : zoom</div>
+  <div>✋ Clic droit : orbiter</div>
+</div>
 
-      <div class="section-title">Bâtiments <span id="bldg-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette.</div>
-      <div id="bldg-list"></div>
-
-      <div class="section-title">Extensions du hall <span id="ext-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="ext-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">
-        Aucune extension. Cliquez sur <b style="color:var(--paper)">+ Extension du hall</b>, puis sur la façade du hall pour en créer une copie.
-      </div>
-      <div id="ext-list"></div>
-
-      <div class="section-title">Arbres <span id="tree-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="tree-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucun arbre. Cliquez sur <b style="color:var(--paper)">+ Arbre</b> puis dans le polygone d'implantation pour en planter un.</div>
-      <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;">🗑 Supprimer tous les arbres</button>
-
-      <div class="section-title">Circulation</div>
-      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender.</div>
-      <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
-      <div id="route-list"></div>
-
-      <div class="section-title admin-only">Admin · couleurs véhicules</div>
-      <div class="admin-only" id="vehicle-colors" style="flex-direction:column;gap:8px;margin-bottom:16px;"></div>
-
-      <div class="section-title admin-only">Admin · passages piétons</div>
-      <div class="admin-only" id="crosswalk-controls" style="flex-direction:column;gap:12px;margin-bottom:16px;"></div>
-    </div>
-    <div id="footer-actions">
-      <button class="primary-btn" id="btn-export-png">Exporter l'image (PNG)</button>
-      <div class="secondary-row">
-        <button class="tool-btn" id="btn-save-json">💾 Sauver le projet</button>
-        <button class="tool-btn" id="btn-load-json">📂 Charger</button>
-      </div>
-    </div>
-  </div>
+<div id="ui">
+  <button class="btn" id="btn-draw">➕ Tracer une extension</button>
+  <button class="btn" id="btn-finish" disabled>✅ Valider</button>
+  <button class="btn" id="btn-cancel" disabled>✖ Annuler</button>
+  <span id="status">💡 Cliquez sur le sol pour placer les pivots</span>
 </div>
 
 <script type="importmap">
@@ -289,1878 +86,492 @@
   }
 }
 </script>
+
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-/* ============================================================
-   CONFIG
-   ============================================================ */
-const FLOOR_HEIGHT = 3.0;
-const USAGE_COLORS = {
-  residentiel: 0xe0a24a,
-  bureaux:     0x5b8ab0,
-  commerces:   0xd95a6c,
-  hotel:       0xa06bd9,
-  services:    0x4fae8f
-};
-const USAGE_LABELS = {
-  residentiel: "Résidentiel",
-  bureaux: "Bureaux",
-  commerces: "Commerces",
-  hotel: "Hôtel",
-  services: "Services"
-};
-const GROUND_SIZE = 260;
-
-/* ============================================================
-   SCENE
-   ============================================================ */
-if(new URLSearchParams(location.search).get('admin')==='1'){
-  document.body.classList.add('is-admin');
-}
-
-const viewport = document.getElementById('viewport');
-const statusLine = document.getElementById('status-line');
+// ============================================================
+// SCENE
+// ============================================================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101820);
-scene.fog = new THREE.Fog(0x101820, 260, 620);
 
-const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 3000);
-camera.position.set(140, 130, 170);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(80, 60, 100);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-viewport.appendChild(renderer.domElement);
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.prepend(renderer.domElement);
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-function resize(){
-  const w = viewport.clientWidth, h = viewport.clientHeight;
-  camera.aspect = w/h; camera.updateProjectionMatrix();
-  renderer.setSize(w,h);
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 4, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.48;
+
+// Lights
+scene.add(new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.8));
+const sun = new THREE.DirectionalLight(0xfff2df, 1.2);
+sun.position.set(80, 150, 60);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -100; sun.shadow.camera.right = 100;
+sun.shadow.camera.top = 100; sun.shadow.camera.bottom = -100;
+sun.shadow.camera.far = 300;
+scene.add(sun);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(300, 300),
+  new THREE.MeshStandardMaterial({ color: 0x1b2731, roughness: 1 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+ground.position.y = -0.5;
+scene.add(ground);
+
+// Grid
+const grid = new THREE.GridHelper(200, 40, 0x2a3946, 0x1a242d);
+grid.position.y = -0.45;
+scene.add(grid);
+
+// ============================================================
+// MAQUETTE (hall de gare simplifié)
+// ============================================================
+const hallGroup = new THREE.Group();
+hallGroup.position.set(-10, 0, -25);
+
+const hallMat = new THREE.MeshStandardMaterial({ color: 0x8fa4b3, roughness: 0.5, metalness: 0.1 });
+const hallW = 30, hallD = 22, hallH = 8;
+
+// Base
+const base = new THREE.Mesh(new THREE.BoxGeometry(hallW, hallH, hallD), hallMat);
+base.position.y = hallH/2;
+base.castShadow = true; base.receiveShadow = true;
+hallGroup.add(base);
+
+// Toit arrondi
+const roofGeo = new THREE.CylinderGeometry(hallW/2, hallW/2, hallD, 24, 1, false, 0, Math.PI);
+const roof = new THREE.Mesh(roofGeo, hallMat);
+roof.rotation.z = Math.PI/2;
+roof.rotation.y = Math.PI/2;
+roof.position.y = hallH;
+roof.castShadow = true; roof.receiveShadow = true;
+hallGroup.add(roof);
+
+scene.add(hallGroup);
+
+// Contour du hall pour visibilité
+const edgeMat = new THREE.LineBasicMaterial({ color: 0x5b8ab0, transparent: true, opacity: 0.3 });
+const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(hallW, hallH, hallD));
+const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
+edgeLine.position.y = hallH/2;
+hallGroup.add(edgeLine);
+
+// ============================================================
+// SYSTÈME D'EXTENSION À PIVOTS 3D
+// ============================================================
+let pivots = [];           // [{position:Vector3, mesh, heightLine}]
+let pivotGroup = new THREE.Group();
+scene.add(pivotGroup);
+
+let extensionMeshes = [];  // [{group, pivots:[Vector3], mesh}]
+let extIdCounter = 1;
+
+let drawing = false;
+let selectedPivot = null;
+
+const btnDraw = document.getElementById('btn-draw');
+const btnFinish = document.getElementById('btn-finish');
+const btnCancel = document.getElementById('btn-cancel');
+const statusEl = document.getElementById('status');
+
+// Raycaster
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+// Fonction pour obtenir le point au sol
+function getGroundPoint(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObject(ground);
+  return hits.length ? hits[0].point : null;
+}
+
+// Fonction pour obtenir un pivot existant par clic
+function getPivotAt(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  
+  const pivotMeshes = pivots.map(p => p.mesh);
+  const hits = raycaster.intersectObjects(pivotMeshes);
+  if (hits.length) {
+    const hitMesh = hits[0].object;
+    return pivots.find(p => p.mesh === hitMesh) || null;
+  }
+  return null;
+}
+
+// Créer un pivot
+function createPivot(position) {
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0xe0663f, emissive: 0xe0663f, emissiveIntensity: 0.2 })
+  );
+  sphere.position.copy(position);
+  sphere.position.y = position.y || 0.2;
+  sphere.castShadow = true;
+  pivotGroup.add(sphere);
+  
+  // Ligne de hauteur
+  const lineMat = new THREE.LineBasicMaterial({ color: 0xe0663f, transparent: true, opacity: 0.3 });
+  const lineGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(sphere.position.x, -0.4, sphere.position.z),
+    sphere.position.clone()
+  ]);
+  const line = new THREE.Line(lineGeo, lineMat);
+  pivotGroup.add(line);
+  
+  const pivot = { position: sphere.position.clone(), mesh: sphere, heightLine: line };
+  pivots.push(pivot);
+  
+  updateUI();
+  return pivot;
+}
+
+// Supprimer le dernier pivot (annuler)
+function popPivot() {
+  if (pivots.length === 0) return;
+  const last = pivots.pop();
+  pivotGroup.remove(last.mesh);
+  pivotGroup.remove(last.heightLine);
+  updateUI();
+}
+
+// Mettre à jour la ligne de hauteur d'un pivot
+function updateHeightLine(pivot) {
+  const pos = pivot.mesh.position;
+  const pts = [new THREE.Vector3(pos.x, -0.4, pos.z), pos.clone()];
+  pivot.heightLine.geometry.dispose();
+  pivot.heightLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+}
+
+// Mettre à jour la courbe de l'extension (ligne reliant les pivots)
+function updateCurve() {
+  // Supprimer l'ancienne ligne
+  pivotGroup.children.forEach(child => {
+    if (child.isLine && child !== pivots[0]?.heightLine && child !== pivots[0]?.mesh) {
+      // On garde les lignes de hauteur, on supprime les courbes
+    }
+  });
+  
+  const curveLines = [];
+  pivotGroup.children.forEach(child => {
+    if (child.isLine && child !== pivots[0]?.heightLine) {
+      curveLines.push(child);
+    }
+  });
+  curveLines.forEach(l => pivotGroup.remove(l));
+  
+  if (pivots.length < 2) return;
+  
+  // Créer une courbe CatmullRom en 3D
+  const points = pivots.map(p => p.mesh.position.clone());
+  const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.3);
+  const curvePoints = curve.getPoints(50);
+  
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, linewidth: 2 });
+  const lineGeo = new THREE.BufferGeometry().setFromPoints(curvePoints);
+  const line = new THREE.Line(lineGeo, lineMat);
+  pivotGroup.add(line);
+  
+  // Ajouter des repères d'orientation (petites flèches)
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i+1];
+    const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
+    const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+    // Petite flèche directionnelle
+    const arrowLen = 1.2;
+    const arrowColor = 0x4fae8f;
+    const arrow = new THREE.ArrowHelper(dir, mid, arrowLen, arrowColor, 0.5, 0.3);
+    pivotGroup.add(arrow);
+  }
+}
+
+// Valider l'extension → créer la géométrie loftée
+function finishExtension() {
+  if (pivots.length < 2) {
+    statusEl.innerHTML = '⚠️ Il faut au moins 2 pivots pour créer une extension';
+    return;
+  }
+  
+  // Créer le profil : on prend la section du hall
+  // Pour simplifier, on crée un rectangle de 10x8 qui suit la courbe
+  const points = pivots.map(p => p.mesh.position.clone());
+  const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.3);
+  const segments = 30;
+  const profileWidth = 6;
+  const profileHeight = 6;
+  
+  // Générer la géométrie loftée
+  const positions = [];
+  const indices = [];
+  const profilePoints = [
+    new THREE.Vector3(-profileWidth/2, -profileHeight/2, 0),
+    new THREE.Vector3(profileWidth/2, -profileHeight/2, 0),
+    new THREE.Vector3(profileWidth/2, profileHeight/2, 0),
+    new THREE.Vector3(-profileWidth/2, profileHeight/2, 0)
+  ];
+  const profileLen = profilePoints.length;
+  
+  for (let s = 0; s <= segments; s++) {
+    const t = s / segments;
+    const center = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t);
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    const localUp = new THREE.Vector3().crossVectors(right, tangent).normalize();
+    
+    for (const pp of profilePoints) {
+      const pt = center.clone()
+        .add(right.clone().multiplyScalar(pp.x))
+        .add(localUp.clone().multiplyScalar(pp.y));
+      positions.push(pt.x, pt.y, pt.z);
+    }
+  }
+  
+  for (let s = 0; s < segments; s++) {
+    for (let i = 0; i < profileLen; i++) {
+      const a = s * profileLen + i;
+      const b = s * profileLen + ((i + 1) % profileLen);
+      const c = (s + 1) * profileLen + i;
+      const d = (s + 1) * profileLen + ((i + 1) % profileLen);
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x9fb8c4,
+    roughness: 0.5,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide
+  });
+  
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  
+  // Sauvegarder
+  const ext = {
+    id: extIdCounter++,
+    pivots: points.map(p => p.clone()),
+    mesh: mesh,
+    group: new THREE.Group()
+  };
+  ext.group.add(mesh);
+  extensionMeshes.push(ext);
+  
+  // Nettoyer les pivots
+  clearPivots();
+  statusEl.innerHTML = `✅ Extension ${ext.id} créée avec ${points.length} pivots`;
+  updateUI();
+}
+
+// Effacer les pivots (sans supprimer l'extension)
+function clearPivots() {
+  pivots.forEach(p => {
+    pivotGroup.remove(p.mesh);
+    pivotGroup.remove(p.heightLine);
+  });
+  pivots = [];
+  // Nettoyer les lignes restantes
+  const toRemove = [];
+  pivotGroup.children.forEach(c => {
+    if (c.isLine || c.isArrowHelper) toRemove.push(c);
+  });
+  toRemove.forEach(c => pivotGroup.remove(c));
+}
+
+// Supprimer une extension
+function deleteExtension(id) {
+  const idx = extensionMeshes.findIndex(e => e.id === id);
+  if (idx === -1) return;
+  const ext = extensionMeshes[idx];
+  scene.remove(ext.mesh);
+  ext.mesh.geometry.dispose();
+  ext.mesh.material.dispose();
+  extensionMeshes.splice(idx, 1);
+  updateUI();
+}
+
+// ============================================================
+// INTERFACE UTILISATEUR
+// ============================================================
+function updateUI() {
+  btnFinish.disabled = pivots.length < 2;
+  btnCancel.disabled = pivots.length === 0 && !drawing;
+  
+  if (drawing) {
+    statusEl.innerHTML = `✏️ ${pivots.length} pivot${pivots.length > 1 ? 's' : ''} · cliquez pour ajouter · entrez pour valider`;
+  } else {
+    const count = extensionMeshes.length;
+    statusEl.innerHTML = count ? `🏗️ ${count} extension${count > 1 ? 's' : ''} créée${count > 1 ? 's' : ''} · cliquez sur un pivot pour le déplacer` : '💡 Cliquez sur "Tracer" pour commencer';
+  }
+}
+
+// Démarrer le tracé
+function startDrawing() {
+  drawing = true;
+  clearPivots();
+  btnDraw.classList.add('active');
+  btnDraw.textContent = '✏️ Tracé en cours';
+  btnFinish.disabled = true;
+  btnCancel.disabled = false;
+  controls.enabled = false;
+  updateUI();
+}
+
+// Annuler le tracé
+function cancelDrawing() {
+  drawing = false;
+  clearPivots();
+  btnDraw.classList.remove('active');
+  btnDraw.textContent = '➕ Tracer une extension';
+  btnFinish.disabled = true;
+  btnCancel.disabled = true;
+  controls.enabled = true;
+  updateUI();
+}
+
+// Événements souris
+renderer.domElement.addEventListener('click', (event) => {
+  if (!drawing) {
+    // En mode édition, cliquer sur un pivot pour le sélectionner et le déplacer
+    const pivot = getPivotAt(event);
+    if (pivot) {
+      selectedPivot = pivot;
+      statusEl.innerHTML = `🔵 Pivot sélectionné · cliquez sur le sol pour le déplacer en hauteur`;
+      return;
+    }
+    return;
+  }
+  
+  // En mode tracé : ajouter un pivot
+  const pt = getGroundPoint(event);
+  if (!pt) return;
+  
+  // Hauteur par défaut : 2m au-dessus du sol
+  pt.y = 2.0;
+  createPivot(pt);
+  updateCurve();
+  updateUI();
+});
+
+// Déplacement du pivot sélectionné (clic sur le sol)
+renderer.domElement.addEventListener('dblclick', (event) => {
+  if (!selectedPivot) return;
+  const pt = getGroundPoint(event);
+  if (!pt) return;
+  
+  // Déplacer le pivot en hauteur (Y)
+  const oldY = selectedPivot.mesh.position.y;
+  selectedPivot.mesh.position.y = pt.y;
+  updateHeightLine(selectedPivot);
+  updateCurve();
+  statusEl.innerHTML = `📐 Hauteur du pivot : ${pt.y.toFixed(1)}m`;
+  selectedPivot = null;
+});
+
+// Clavier
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && drawing) {
+    finishExtension();
+    cancelDrawing();
+  }
+  if (event.key === 'Escape') {
+    if (drawing) cancelDrawing();
+    selectedPivot = null;
+  }
+  if (event.key === 'Backspace' && drawing) {
+    popPivot();
+    updateCurve();
+  }
+  if (event.key === 'Delete' && !drawing) {
+    // Supprimer l'extension sélectionnée (au clic)
+    // Pour simplifier, on supprime la dernière
+    if (extensionMeshes.length) {
+      deleteExtension(extensionMeshes[extensionMeshes.length - 1].id);
+    }
+  }
+});
+
+// Boutons
+btnDraw.addEventListener('click', () => {
+  if (drawing) {
+    cancelDrawing();
+  } else {
+    startDrawing();
+  }
+});
+
+btnFinish.addEventListener('click', () => {
+  if (drawing) {
+    finishExtension();
+    cancelDrawing();
+  }
+});
+
+btnCancel.addEventListener('click', cancelDrawing);
+
+// ============================================================
+// RENDU
+// ============================================================
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
 }
 window.addEventListener('resize', resize);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0,8,0);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.maxPolarAngle = Math.PI*0.49;
-controls.minDistance = 15;
-controls.maxDistance = 700;
-
-scene.add(new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.9));
-const sun = new THREE.DirectionalLight(0xfff2df, 1.15);
-sun.position.set(120, 200, 60);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048,2048);
-sun.shadow.camera.left = -180; sun.shadow.camera.right = 180;
-sun.shadow.camera.top = 180; sun.shadow.camera.bottom = -180;
-sun.shadow.camera.far = 500;
-sun.shadow.bias = -0.0005;
-scene.add(sun);
-
-const groundGroup = new THREE.Group();
-scene.add(groundGroup);
-
-const groundMat = new THREE.MeshStandardMaterial({ color: 0x1b2731, roughness: 1 });
-const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
-const ground = new THREE.Mesh(groundGeo, groundMat);
-ground.rotation.x = -Math.PI/2;
-ground.receiveShadow = true;
-ground.name = 'ground';
-ground.visible = false;
-groundGroup.add(ground);
-
-const gridGroup = new THREE.Group();
-gridGroup.position.y = 0.02;
-groundGroup.add(gridGroup);
-
-const ilotOutlinePts = [
-  new THREE.Vector3(-55,0.05,-40), new THREE.Vector3(55,0.05,-40),
-  new THREE.Vector3(55,0.05,40), new THREE.Vector3(-55,0.05,40),
-  new THREE.Vector3(-55,0.05,-40)
-];
-const ilotOutline = new THREE.Line(
-  new THREE.BufferGeometry().setFromPoints(ilotOutlinePts),
-  new THREE.LineDashedMaterial({ color:0xe0663f, dashSize:2, gapSize:1.2 })
-);
-ilotOutline.computeLineDistances();
-groundGroup.add(ilotOutline);
-
-let gridVisible = true;
-
-/* ============================================================
-   TRANSFORM CONTROLS (GIZMOS)
-   ============================================================ */
-const transformControls = new TransformControls(camera, renderer.domElement);
-transformControls.setSize(0.8);
-transformControls.setSpace('world');
-scene.add(transformControls);
-
-transformControls.addEventListener('dragging-changed', (event) => {
-  controls.enabled = !event.value;
-});
-
-/* ============================================================
-   MAQUETTE BLENDER
-   ============================================================ */
-let hallFacadeWorldNormal = new THREE.Vector3(0,0,1);
-
-let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
-scene.add(siteRoot);
-let polygonMesh = null;
-let siteUpCorrected = false;
-let hallGroup = null;
-let hallMesh = null;
-let quartierGroup = null;
-let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z}));
-
-function clearSite(){
-  siteRoot.clear();
-  polygonMesh = null; hallGroup = null; hallMesh = null; quartierGroup = null;
-  treeTemplate = null;
-  extensions.forEach(e => { 
-    scene.remove(e.group); 
-    e.group.traverse(o => { if(o.isMesh) { o.geometry?.dispose(); o.material?.dispose(); } });
-  });
-  extensions = [];
-  renderExtList();
-}
-
-function extractBoundaryXZ(mesh){
-  mesh.updateWorldMatrix(true,false);
-  const pos = mesh.geometry.attributes.position;
-  const idx = mesh.geometry.index;
-  const v = new THREE.Vector3();
-  const world = [];
-  for(let i=0;i<pos.count;i++){
-    v.fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
-    world.push({x:v.x, z:v.z});
-  }
-  if(!idx) return world;
-  const triCount = idx.count/3;
-  const edgeCount = new Map();
-  const key = (a,b)=> a<b ? `${a}_${b}` : `${b}_${a}`;
-  for(let t=0;t<triCount;t++){
-    const a = idx.getX(t*3), b = idx.getX(t*3+1), c = idx.getX(t*3+2);
-    [[a,b],[b,c],[c,a]].forEach(([p,q])=>{
-      const k = key(p,q);
-      if(edgeCount.has(k)) edgeCount.get(k).count++;
-      else edgeCount.set(k, {count:1, a:p, b:q});
-    });
-  }
-  const boundaryEdges = [...edgeCount.values()].filter(e=>e.count===1);
-  if(!boundaryEdges.length) return convexHullXZ(dedupe(world));
-  const adjacency = new Map();
-  boundaryEdges.forEach(e=>{
-    if(!adjacency.has(e.a)) adjacency.set(e.a, []);
-    if(!adjacency.has(e.b)) adjacency.set(e.b, []);
-    adjacency.get(e.a).push(e.b);
-    adjacency.get(e.b).push(e.a);
-  });
-  const start = boundaryEdges[0].a;
-  const loopIdx = [start];
-  const visited = new Set([start]);
-  let current = start, prev = -1;
-  while(true){
-    const neighbors = adjacency.get(current) || [];
-    const next = neighbors.find(n=> n!==prev);
-    if(next===undefined || visited.has(next)) break;
-    loopIdx.push(next); visited.add(next);
-    prev = current; current = next;
-  }
-  const loop = loopIdx.map(i=>world[i]);
-  return loop.length>=3 ? loop : convexHullXZ(dedupe(world));
-}
-function dedupe(pts){
-  const uniq = [];
-  for(const p of pts){ if(!uniq.some(q=>Math.hypot(q.x-p.x,q.z-p.z)<0.01)) uniq.push(p); }
-  return uniq;
-}
-function convexHullXZ(pts){
-  if(pts.length<3) return pts;
-  const s = pts.slice().sort((a,b)=> a.x-b.x || a.z-b.z);
-  const cross=(o,a,b)=>(a.x-o.x)*(b.z-o.z)-(a.z-o.z)*(b.x-o.x);
-  const lower=[]; for(const p of s){ while(lower.length>=2 && cross(lower[lower.length-2],lower[lower.length-1],p)<=0) lower.pop(); lower.push(p); }
-  const upper=[]; for(let i=s.length-1;i>=0;i--){ const p=s[i]; while(upper.length>=2 && cross(upper[upper.length-2],upper[upper.length-1],p)<=0) upper.pop(); upper.push(p); }
-  lower.pop(); upper.pop();
-  return lower.concat(upper);
-}
-
-function updateBuildZoneVisual(){
-  scene.remove(ilotOutline);
-  const pts = buildZone.map(p=>new THREE.Vector3(p.x,0.05,p.z));
-  pts.push(pts[0].clone());
-  const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  ilotOutline.geometry.dispose();
-  ilotOutline.geometry = geo;
-  ilotOutline.computeLineDistances();
-  groundGroup.add(ilotOutline);
-  rebuildGrid();
-}
-
-function rebuildGrid(){
-  gridGroup.clear();
-  if(buildZone.length<3) return;
-  const xs = buildZone.map(p=>p.x), zs = buildZone.map(p=>p.z);
-  const minX=Math.min(...xs), maxX=Math.max(...xs), minZ=Math.min(...zs), maxZ=Math.max(...zs);
-  const span = Math.max(maxX-minX, maxZ-minZ);
-  if(span<=0) return;
-  const step = span/24;
-  const sampleStep = step/12;
-  const positions = [];
-  const pushRun=(a,b,fixedIsX,fixedVal)=>{
-    if(fixedIsX) positions.push(fixedVal,0,a, fixedVal,0,b);
-    else positions.push(a,0,fixedVal, b,0,fixedVal);
-  };
-  for(let x=Math.ceil(minX/step)*step; x<=maxX; x+=step){
-    let runStart=null, prevZ=null;
-    for(let z=minZ; z<=maxZ+sampleStep; z+=sampleStep){
-      const zc = Math.min(z,maxZ);
-      const inside = pointInPolygon({x,z:zc}, buildZone);
-      if(inside && runStart===null) runStart=zc;
-      if(!inside && runStart!==null){ pushRun(runStart, prevZ, true, x); runStart=null; }
-      prevZ = zc;
-    }
-    if(runStart!==null) pushRun(runStart, maxZ, true, x);
-  }
-  for(let z=Math.ceil(minZ/step)*step; z<=maxZ; z+=step){
-    let runStart=null, prevX=null;
-    for(let x=minX; x<=maxX+sampleStep; x+=sampleStep){
-      const xc = Math.min(x,maxX);
-      const inside = pointInPolygon({x:xc,z}, buildZone);
-      if(inside && runStart===null) runStart=xc;
-      if(!inside && runStart!==null){ pushRun(runStart, prevX, false, z); runStart=null; }
-      prevX = xc;
-    }
-    if(runStart!==null) pushRun(runStart, maxX, false, z);
-  }
-  if(!positions.length) return;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
-  const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({color:0x2a3946}));
-  gridGroup.add(lines);
-}
-rebuildGrid();
-
-function extractTubeCenterline(mesh){
-  mesh.updateWorldMatrix(true,false);
-  const pos = mesh.geometry.attributes.position;
-  const world = [];
-  const v = new THREE.Vector3();
-  for(let i=0;i<pos.count;i++){ world.push(v.clone().fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld).clone()); }
-  if(world.length<4) return null;
-  const dists = [];
-  for(let i=0;i<world.length-1;i++) dists.push(world[i].distanceTo(world[i+1]));
-  const sorted = dists.slice().sort((a,b)=>a-b);
-  const median = sorted[Math.floor(sorted.length/2)] || 0.001;
-  const threshold = Math.max(median*5, 0.02);
-  const bigJumps = [];
-  dists.forEach((d,i)=>{ if(d>threshold) bigJumps.push(i); });
-  let ringSize = null;
-  if(bigJumps.length>2){
-    const gaps = [];
-    for(let i=1;i<bigJumps.length;i++) gaps.push(bigJumps[i]-bigJumps[i-1]);
-    if(gaps.every(g=>g===gaps[0])) ringSize = gaps[0];
-  }
-  if(!ringSize) return null;
-  const centerline = [];
-  for(let r=0; r*ringSize < world.length; r++){
-    const start = r*ringSize, end = Math.min(start+ringSize, world.length);
-    const c = new THREE.Vector3();
-    for(let i=start;i<end;i++) c.add(world[i]);
-    c.multiplyScalar(1/(end-start));
-    centerline.push({x:c.x, y:c.y, z:c.z});
-  }
-  return centerline;
-}
-
-function autoImportRoutesFromSite(){
-  clearRoutes();
-  const found = [], noGeometry = [], unrecognized = [];
-  siteRoot.traverse(o=>{
-    if(!o.name || !/^route[_-]/i.test(o.name)) return;
-    const mesh = o.isMesh ? o : (o.children.find(c=>c.isMesh) || null);
-    const key = o.name.toLowerCase();
-    let type = null;
-    for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
-    if(!type){ unrecognized.push(o.name); type = 'voiture'; }
-    if(!mesh){ noGeometry.push(o.name); return; }
-    let pts = null;
-    if(mesh.geometry.index === null && (mesh.geometry.attributes.position.count < 200)){
-      mesh.updateWorldMatrix(true,false);
-      pts = [];
-      const v = new THREE.Vector3();
-      for(let i=0;i<mesh.geometry.attributes.position.count;i++){
-        pts.push(v.clone().fromBufferAttribute(mesh.geometry.attributes.position,i).applyMatrix4(mesh.matrixWorld).clone());
-        pts[pts.length-1] = {x:pts[pts.length-1].x, y:pts[pts.length-1].y, z:pts[pts.length-1].z};
-      }
-    } else {
-      pts = extractTubeCenterline(mesh);
-    }
-    if(!pts || pts.length<2){ noGeometry.push(o.name); return; }
-    createRoute(pts, type, o.name);
-    found.push(o.name);
-  });
-  return { found, noGeometry, unrecognized };
-}
-
-function findByNameCI(root, name){
-  const target = name.toLowerCase();
-  let found = null;
-  root.traverse(o=>{ if(!found && o.name && o.name.toLowerCase()===target) found = o; });
-  return found;
-}
-function onSiteLoaded(){
-  polygonMesh = findByNameCI(siteRoot, 'Polygone_Implantation');
-  hallGroup = findByNameCI(siteRoot, 'Hall_Gare');
-  if(hallGroup) {
-    hallMesh = hallGroup.children.find(c => c.isMesh) || null;
-  }
-  quartierGroup = findByNameCI(siteRoot, 'Quartier');
-  fixProceduralMaterials();
-  renderCrosswalkControls();
-  if(polygonMesh){
-    polygonMesh.visible = false;
-    buildZone = extractBoundaryXZ(polygonMesh);
-    updateBuildZoneVisual();
-  }
-  if(hallGroup){
-    hallGroup.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
-    if(polygonMesh && buildZone.length>=3){
-      const hallBox = new THREE.Box3().setFromObject(hallGroup);
-      const hallCenter = hallBox.getCenter(new THREE.Vector3());
-      const polyCenter = buildZone.reduce((s,p)=>({x:s.x+p.x, z:s.z+p.z}), {x:0,z:0});
-      polyCenter.x /= buildZone.length; polyCenter.z /= buildZone.length;
-      hallFacadeWorldNormal = new THREE.Vector3(polyCenter.x - hallCenter.x, 0, polyCenter.z - hallCenter.z).normalize();
-    }
-  }
-  if(quartierGroup){
-    quartierGroup.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
-  }
-  const routeReport = autoImportRoutesFromSite();
-  rebuildAll(); renderList();
-
-  const bits = [];
-  bits.push(polygonMesh ? `polygone : ${buildZone.length} sommets` : `<span style="color:var(--com)">polygone d'implantation introuvable</span>`);
-  bits.push(hallGroup ? `hall : ok` : `<span style="color:var(--com)">hall introuvable</span>`);
-  bits.push(quartierGroup ? `quartier : ok` : `<span style="color:var(--com)">quartier introuvable</span>`);
-  if(routeReport.found.length) bits.push(`${routeReport.found.length} voie(s) importée(s) : ${routeReport.found.join(', ')}`);
-  if(routeReport.noGeometry.length) bits.push(`<span style="color:var(--com)">${routeReport.noGeometry.length} voie(s) sans géométrie exploitable</span>`);
-  return bits.join(' · ');
-}
-
-function buildDemoSite(){
-  clearSite();
-  const polyPts = [{x:-42,z:-30},{x:20,z:-34},{x:38,z:-6},{x:22,z:26},{x:-30,z:22},{x:-44,z:-4}];
-  const shape = new THREE.Shape(polyPts.map(p=>new THREE.Vector2(p.x,-p.z)));
-  const polyGeo = new THREE.ShapeGeometry(shape);
-  polyGeo.rotateX(-Math.PI/2);
-  const poly = new THREE.Mesh(polyGeo, new THREE.MeshBasicMaterial({color:0xe0663f, visible:false}));
-  poly.name = 'Polygone_Implantation';
-  siteRoot.add(poly);
-
-  const hallGrp = new THREE.Group(); hallGrp.name = 'Hall_Gare';
-  hallGrp.position.set(-10, 0, -62);
-  const hallMat = new THREE.MeshStandardMaterial({color:0x8fa4b3, roughness:0.6, metalness:0.1});
-  const hallW=34, hallD=26, hallH=9;
-  const base = new THREE.Mesh(new THREE.BoxGeometry(hallW, hallH, hallD), hallMat);
-  base.position.set(0, hallH/2, 0);
-  base.name = 'hall_base';
-  hallGrp.add(base);
-  const roof = new THREE.Mesh(new THREE.CylinderGeometry(hallW/2, hallW/2, hallD, 24, 1, false, 0, Math.PI), hallMat);
-  roof.rotation.z = Math.PI/2; roof.rotation.y = Math.PI/2;
-  roof.position.set(0, hallH, 0);
-  roof.name = 'hall_roof';
-  hallGrp.add(roof);
-  siteRoot.add(hallGrp);
-
-  const qGroup = new THREE.Group(); qGroup.name = 'Quartier';
-  const qMat = new THREE.MeshStandardMaterial({color:0x2c3b47, roughness:0.9});
-  const blocks = [[-80,20,18,26,14],[60,10,20,20,22],[10,60,30,16,12],[-60,-50,22,20,16]];
-  blocks.forEach(([x,z,w,d,h])=>{
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), qMat);
-    m.position.set(x, h/2, z);
-    qGroup.add(m);
-  });
-  siteRoot.add(qGroup);
-
-  onSiteLoaded();
-
-  createBuilding(
-    [{x:-25,z:-15},{x:15,z:-15},{x:15,z:15},{x:-25,z:15}],
-    { name:'Exemple — Tour mixte', floors:12,
-      bands:[
-        {from:1,to:2,usage:'commerces'},
-        {from:3,to:8,usage:'bureaux'},
-        {from:9,to:12,usage:'residentiel'}
-      ]}
-  );
-  createRoute([{x:-70,y:0.15,z:-45},{x:-20,y:0.15,z:-45},{x:20,y:0.15,z:-45},{x:60,y:0.15,z:-45}], 'tram', 'Tram — Cours Part-Dieu');
-  createRoute([{x:-70,y:0.15,z:34},{x:0,y:0.15,z:34},{x:60,y:0.15,z:34}], 'bus', 'Bus — ligne C');
-  createRoute([{x:-50,y:0.15,z:-38},{x:34,y:0.15,z:-38},{x:44,y:0.15,z:0},{x:26,y:0.15,z:30},{x:-40,y:0.15,z:26},{x:-50,y:0.15,z:-10},{x:-50,y:0.15,z:-38}], 'voiture', 'Voirie — boucle place');
-  createRoute([{x:-30,y:0.15,z:-55},{x:-10,y:0.15,z:-40},{x:5,y:0.15,z:-10},{x:0,y:0.15,z:15}], 'pieton', 'Piétons — parvis gare');
-  selectedId = null; rebuildAll(); renderList();
-}
-
-function showSiteBanner(html, ok=false){
-  const el = document.getElementById('site-status-banner');
-  el.innerHTML = html + `<button aria-label="fermer">✕</button>`;
-  el.classList.add('show');
-  el.classList.toggle('ok', ok);
-  el.querySelector('button').addEventListener('click', ()=> el.classList.remove('show'));
-}
-
-const gltfLoader = new GLTFLoader();
-const SITE_GLB_URL = './place_de_milan.glb';
-function loadSiteFromGLB(url, onFail){
-  gltfLoader.load(url, (gltf)=>{
-    clearSite();
-    siteRoot.add(gltf.scene);
-    const box = new THREE.Box3().setFromObject(gltf.scene);
-    const size = box.getSize(new THREE.Vector3());
-    let corrected = false;
-    if(size.z < size.y){
-      gltf.scene.rotation.x = -Math.PI/2;
-      corrected = true;
-      siteUpCorrected = true;
-    }
-    const report = onSiteLoaded();
-    showSiteBanner(
-      `<div><b>Maquette chargée</b> (${url})${corrected ? ' — rotation Z-up→Y-up appliquée automatiquement' : ''}.<br>${report}</div>`,
-      true
-    );
-    tryAutoLoadRoutes();
-  }, undefined, (err)=>{
-    console.warn("Chargement du .glb impossible :", url, err);
-    if(onFail) onFail(err); else alert("Impossible de charger le .glb (voir la console).");
-  });
-}
-
-const fileGlb = document.getElementById('file-glb');
-document.getElementById('btn-load-glb').addEventListener('click', ()=> fileGlb.click());
-fileGlb.addEventListener('change', (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  loadSiteFromGLB(URL.createObjectURL(file));
-  fileGlb.value = '';
-});
-
-/* ============================================================
-   STATE
-   ============================================================ */
-let buildings = [];
-let idCounter = 1;
-let drawing = false;
-let drawPoints = [];
-let drawMarkers = new THREE.Group();
-let previewLine = null;
-scene.add(drawMarkers);
-
-let selectedId = null;
-
-/* ============================================================
-   RAYCAST HELPERS
-   ============================================================ */
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-function groundPointFromEvent(ev){
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObject(ground)[0];
-  return hit ? hit.point : null;
-}
-
-/* ============================================================
-   DRAW MODE
-   ============================================================ */
-const btnDraw = document.getElementById('btn-draw');
-const drawHint = document.getElementById('draw-hint');
-
-function startDraw(){
-  drawing = true; drawPoints = [];
-  clearMarkers();
-  btnDraw.classList.add('active');
-  btnDraw.textContent = 'Dessin en cours…';
-  drawHint.classList.add('show');
-  controls.enabled = false;
-}
-function cancelDraw(){
-  drawing = false; drawPoints = [];
-  clearMarkers();
-  btnDraw.classList.remove('active');
-  btnDraw.textContent = '+ Nouveau bâtiment';
-  drawHint.classList.remove('show');
-  controls.enabled = true;
-}
-function clearMarkers(){
-  drawMarkers.clear();
-  if(previewLine){ scene.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
-}
-function refreshPreview(){
-  if(previewLine){ scene.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
-  if(drawPoints.length<2) return;
-  const pts = drawPoints.map(p=>new THREE.Vector3(p.x,0.15,p.z));
-  pts.push(pts[0].clone());
-  previewLine = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color:0xe0663f })
-  );
-  scene.add(previewLine);
-}
-function pointInPolygon(pt, poly){
-  let inside = false;
-  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
-    const xi=poly[i].x, zi=poly[i].z, xj=poly[j].x, zj=poly[j].z;
-    const intersect = ((zi>pt.z)!==(zj>pt.z)) &&
-      (pt.x < (xj-xi)*(pt.z-zi)/(zj-zi)+xi);
-    if(intersect) inside = !inside;
-  }
-  return inside;
-}
-function polygonFullyInsideZone(pts, zone){
-  for(let i=0;i<pts.length;i++){
-    const a = pts[i], b = pts[(i+1)%pts.length];
-    const steps = Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1.0));
-    for(let s=0;s<=steps;s++){
-      const t=s/steps;
-      const p = {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t};
-      if(!pointInPolygon(p, zone)) return false;
-    }
-  }
-  return true;
-}
-function flashStatus(msg){
-  statusLine.dataset.orig = statusLine.dataset.orig || statusLine.textContent;
-  statusLine.innerHTML = `<b>${msg}</b>`;
-  clearTimeout(flashStatus._t);
-  flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
-}
-function addDrawPoint(pt){
-  if(buildZone.length>=3 && !pointInPolygon(pt, buildZone)){
-    flashStatus("Point hors du polygone d'implantation — refusé");
-    return;
-  }
-  drawPoints.push({x:pt.x, z:pt.z});
-  const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
-  m.position.set(pt.x,0.2,pt.z);
-  drawMarkers.add(m);
-  refreshPreview();
-}
-function finishDraw(){
-  if(drawPoints.length<3){ cancelDraw(); return; }
-  if(buildZone.length>=3 && !polygonFullyInsideZone(drawPoints, buildZone)){
-    flashStatus("Emprise hors polygone d'implantation — tracé refusé");
-    cancelDraw();
-    return;
-  }
-  createBuilding(drawPoints.slice());
-  cancelDraw();
-}
-
-btnDraw.addEventListener('click', ()=>{
-  if(extending) return;
-  drawing ? cancelDraw() : startDraw();
-});
-
-renderer.domElement.addEventListener('click', (ev)=>{
-  if(!drawing) return;
-  const pt = groundPointFromEvent(ev);
-  if(pt) addDrawPoint(pt);
-});
-window.addEventListener('keydown', (ev)=>{
-  if(!drawing) return;
-  if(ev.key==='Enter') finishDraw();
-  if(ev.key==='Escape') cancelDraw();
-});
-
-/* ============================================================
-   EXTENSION DU HALL DE GARE — Avec fusion + position correcte
-   ============================================================ */
-let extending = false;
-let extClone = null;
-let extOriginalGroup = null;
-let extensions = [];
-let extIdCounter = 1;
-let selectedExtId = null;
-let editMode = 'translate';
-let extStoredTransform = null; // Pour conserver la transformation lors de la réédition
-
-const btnExtend = document.getElementById('btn-extend');
-const drawHintText = document.getElementById('draw-hint-text');
-
-function startExtend(){
-  if(drawing) return;
-  if(!hallGroup){ alert("Aucun objet 'Hall_Gare' trouvé dans la maquette chargée."); return; }
-  
-  extending = true;
-  btnExtend.classList.add('active');
-  btnExtend.textContent = 'Extension : cliquez la façade…';
-  drawHint.classList.add('show');
-  drawHintText.textContent = "Cliquez sur la façade du hall pour en faire une copie";
-  controls.enabled = false;
-}
-
-function cancelExtend(){
-  extending = false;
-  if(extClone) {
-    transformControls.detach();
-    scene.remove(extClone);
-    extClone = null;
-    extOriginalGroup = null;
-  }
-  btnExtend.classList.remove('active');
-  btnExtend.textContent = '+ Extension du hall';
-  drawHint.classList.remove('show');
-  drawHintText.textContent = 'Cliquez sur le sol pour poser les sommets du bâtiment';
-  controls.enabled = true;
-  selectedExtId = null;
-  document.getElementById('ext-edit-controls')?.remove();
-}
-
-function createExtensionClone(hitPoint, hitNormal){
-  if(!hallGroup) return;
-  
-  extClone = hallGroup.clone();
-  
-  // Positionner contre la façade
-  const offset = 0.5; // léger décalage pour éviter le z-fighting
-  extClone.position.copy(hitPoint.clone().add(hitNormal.clone().multiplyScalar(offset)));
-  
-  // Orienter vers la normale de la face
-  const up = new THREE.Vector3(0, 1, 0);
-  const quat = new THREE.Quaternion().setFromUnitVectors(up, hitNormal);
-  extClone.quaternion.copy(quat);
-  extClone.scale.set(1, 1, 1);
-  
-  // Rendre transparent
-  extClone.traverse(o => {
-    if(o.isMesh) {
-      if(Array.isArray(o.material)) {
-        o.material.forEach(m => { m.transparent = true; m.opacity = 0.6; });
-      } else if(o.material) {
-        o.material.transparent = true;
-        o.material.opacity = 0.6;
-      }
-      o.castShadow = true;
-      o.receiveShadow = true;
-    }
-  });
-  
-  extOriginalGroup = hallGroup;
-  scene.add(extClone);
-  
-  // Ajouter une bordure
-  const box = new THREE.Box3().setFromObject(extClone);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const wireframe = new THREE.BoxGeometry(size.x + 0.2, size.y + 0.2, size.z + 0.2);
-  const wireMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, transparent: true, opacity: 0.8 });
-  const wireLine = new THREE.LineSegments(new THREE.EdgesGeometry(wireframe), wireMat);
-  wireLine.position.copy(center);
-  extClone.add(wireLine);
-  
-  // Attacher les gizmos
-  transformControls.attach(extClone);
-  transformControls.setMode(editMode);
-  
-  drawHintText.textContent = "Utilisez les gizmos pour positionner l'extension · ✅ Valider · ❌ Annuler";
-  
-  renderExtEditControls();
-}
-
-function pickHallFacade(ev){
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  
-  const meshes = [];
-  if(hallGroup) hallGroup.traverse(o => { if(o.isMesh) meshes.push(o); });
-  
-  const hits = raycaster.intersectObjects(meshes, true);
-  if(!hits.length){ flashStatus("Cliquez sur la façade du hall"); return; }
-  
-  const hit = hits[0];
-  const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
-  
-  if(Math.abs(worldNormal.y) > 0.3) {
-    flashStatus("Cliquez sur une façade verticale, pas le toit");
-    return;
-  }
-  
-  const facadeWorldNormal = hallFacadeWorldNormal;
-  if(worldNormal.dot(facadeWorldNormal) < 0.3) {
-    flashStatus("Cliquez sur la façade exposée du hall");
-    return;
-  }
-  
-  createExtensionClone(hit.point, worldNormal);
-}
-
-// Fonction de fusion des géométries
-function mergeExtensions(extGroup, originalGroup) {
-  // Récupérer tous les meshes du groupe d'extension
-  const extMeshes = [];
-  extGroup.traverse(o => { if(o.isMesh) extMeshes.push(o); });
-  
-  // Récupérer tous les meshes du hall original
-  const origMeshes = [];
-  originalGroup.traverse(o => { if(o.isMesh) origMeshes.push(o); });
-  
-  if(extMeshes.length === 0 || origMeshes.length === 0) return false;
-  
-  // Vérifier la distance entre les deux groupes
-  const extBox = new THREE.Box3().setFromObject(extGroup);
-  const origBox = new THREE.Box3().setFromObject(originalGroup);
-  
-  // Calculer la distance minimale entre les boîtes
-  const dist = extBox.distanceToBox(origBox);
-  
-  // Si les boîtes sont proches (< 2 unités), on considère qu'il y a superposition
-  if(dist > 2) return false;
-  
-  // Marquer l'extension comme fusionnée (visuel)
-  extGroup.traverse(o => {
-    if(o.isMesh) {
-      if(Array.isArray(o.material)) {
-        o.material.forEach(m => { m.color.setHex(0x4fae8f); m.emissive = new THREE.Color(0x4fae8f); m.emissiveIntensity = 0.1; });
-      } else if(o.material) {
-        o.material.color.setHex(0x4fae8f);
-        o.material.emissive = new THREE.Color(0x4fae8f);
-        o.material.emissiveIntensity = 0.1;
-      }
-    }
-  });
-  
-  flashStatus("✅ Extension fusionnée avec le hall !");
-  return true;
-}
-
-function validateExtension(){
-  if(!extClone) return;
-  
-  // Rendre opaque
-  extClone.traverse(o => {
-    if(o.isMesh) {
-      if(Array.isArray(o.material)) {
-        o.material.forEach(m => { m.transparent = false; m.opacity = 1; });
-      } else if(o.material) {
-        o.material.transparent = false;
-        o.material.opacity = 1;
-      }
-    }
-  });
-  
-  // Supprimer la bordure
-  const toRemove = [];
-  extClone.children.forEach(c => {
-    if(c.isLineSegments) toRemove.push(c);
-  });
-  toRemove.forEach(c => extClone.remove(c));
-  
-  // Détacher les gizmos
-  transformControls.detach();
-  
-  // Sauvegarder la transformation
-  const transform = {
-    position: extClone.position.clone(),
-    quaternion: extClone.quaternion.clone(),
-    scale: extClone.scale.clone()
-  };
-  
-  // Vérifier la fusion avec le hall original
-  const isMerged = mergeExtensions(extClone, hallGroup);
-  
-  // Ajouter l'extension à la liste
-  const ext = {
-    id: extIdCounter++,
-    name: `Extension ${extIdCounter-1}`,
-    group: extClone,
-    position: transform.position,
-    quaternion: transform.quaternion,
-    scale: transform.scale,
-    original: extOriginalGroup,
-    merged: isMerged
-  };
-  extensions.push(ext);
-  selectedExtId = ext.id;
-  
-  extClone = null;
-  extOriginalGroup = null;
-  renderExtList();
-  cancelExtend();
-}
-
-function renderExtEditControls(){
-  document.getElementById('ext-edit-controls')?.remove();
-  
-  const list = document.getElementById('ext-list');
-  const controlsDiv = document.createElement('div');
-  controlsDiv.id = 'ext-edit-controls';
-  controlsDiv.className = 'ext-edit-controls';
-  controlsDiv.innerHTML = `
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-family:IBM Plex Mono,monospace;">
-      🔧 Utilisez les gizmos pour positionner l'extension
-    </div>
-    <div class="row">
-      <label>Mode</label>
-      <button class="mini-btn" id="mode-translate" style="background:var(--blue);color:var(--ink);">↕</button>
-      <button class="mini-btn" id="mode-rotate" style="color:var(--muted);">↻</button>
-      <button class="mini-btn" id="mode-scale" style="color:var(--muted);">⤡</button>
-      <button class="mini-btn" id="mode-world" style="color:var(--muted);">🌍</button>
-    </div>
-    <div class="row">
-      <label>X</label>
-      <input type="number" id="ext-pos-x" step="0.5" value="0">
-      <label>Y</label>
-      <input type="number" id="ext-pos-y" step="0.5" value="0">
-      <label>Z</label>
-      <input type="number" id="ext-pos-z" step="0.5" value="0">
-    </div>
-    <div class="row">
-      <label>Échelle</label>
-      <input type="number" id="ext-scale" step="0.05" min="0.1" max="3" value="1">
-    </div>
-    <div class="btn-group">
-      <button class="small-action" id="ext-validate" style="background:var(--ser);color:var(--ink);">✅ Valider</button>
-      <button class="small-action danger" id="ext-cancel">❌ Annuler</button>
-    </div>
-  `;
-  
-  const empty = document.getElementById('ext-empty-note');
-  if(empty) empty.style.display = 'none';
-  
-  list.prepend(controlsDiv);
-  
-  const posX = document.getElementById('ext-pos-x');
-  const posY = document.getElementById('ext-pos-y');
-  const posZ = document.getElementById('ext-pos-z');
-  const scaleInp = document.getElementById('ext-scale');
-  const validateBtn = document.getElementById('ext-validate');
-  const cancelBtn = document.getElementById('ext-cancel');
-  const modeTranslate = document.getElementById('mode-translate');
-  const modeRotate = document.getElementById('mode-rotate');
-  const modeScale = document.getElementById('mode-scale');
-  const modeWorld = document.getElementById('mode-world');
-  
-  if(extClone) {
-    posX.value = extClone.position.x.toFixed(2);
-    posY.value = extClone.position.y.toFixed(2);
-    posZ.value = extClone.position.z.toFixed(2);
-    scaleInp.value = extClone.scale.x.toFixed(2);
-  }
-  
-  const updateExtTransform = () => {
-    if(!extClone) return;
-    extClone.position.set(
-      parseFloat(posX.value) || 0,
-      parseFloat(posY.value) || 0,
-      parseFloat(posZ.value) || 0
-    );
-    const s = parseFloat(scaleInp.value) || 1;
-    extClone.scale.set(s, s, s);
-    // Mettre à jour les gizmos
-    transformControls.detach();
-    transformControls.attach(extClone);
-  };
-  
-  posX.addEventListener('input', updateExtTransform);
-  posY.addEventListener('input', updateExtTransform);
-  posZ.addEventListener('input', updateExtTransform);
-  scaleInp.addEventListener('input', updateExtTransform);
-  
-  let worldSpace = true;
-  modeWorld.addEventListener('click', () => {
-    worldSpace = !worldSpace;
-    transformControls.setSpace(worldSpace ? 'world' : 'local');
-    modeWorld.style.color = worldSpace ? 'var(--blue)' : 'var(--muted)';
-    modeWorld.textContent = worldSpace ? '🌍' : '🔲';
-  });
-  
-  modeTranslate.addEventListener('click', () => {
-    editMode = 'translate';
-    transformControls.setMode('translate');
-    [modeTranslate, modeRotate, modeScale].forEach(b => { b.style.background = ''; b.style.color = 'var(--muted)'; });
-    modeTranslate.style.background = 'var(--blue)';
-    modeTranslate.style.color = 'var(--ink)';
-  });
-  
-  modeRotate.addEventListener('click', () => {
-    editMode = 'rotate';
-    transformControls.setMode('rotate');
-    [modeTranslate, modeRotate, modeScale].forEach(b => { b.style.background = ''; b.style.color = 'var(--muted)'; });
-    modeRotate.style.background = 'var(--blue)';
-    modeRotate.style.color = 'var(--ink)';
-  });
-  
-  modeScale.addEventListener('click', () => {
-    editMode = 'scale';
-    transformControls.setMode('scale');
-    [modeTranslate, modeRotate, modeScale].forEach(b => { b.style.background = ''; b.style.color = 'var(--muted)'; });
-    modeScale.style.background = 'var(--blue)';
-    modeScale.style.color = 'var(--ink)';
-  });
-  
-  validateBtn.addEventListener('click', validateExtension);
-  cancelBtn.addEventListener('click', () => {
-    if(extClone) {
-      transformControls.detach();
-      scene.remove(extClone);
-      extClone = null;
-      extOriginalGroup = null;
-    }
-    cancelExtend();
-  });
-  
-  const updateFields = () => {
-    if(extClone) {
-      posX.value = extClone.position.x.toFixed(2);
-      posY.value = extClone.position.y.toFixed(2);
-      posZ.value = extClone.position.z.toFixed(2);
-      scaleInp.value = extClone.scale.x.toFixed(2);
-    }
-  };
-  
-  transformControls.addEventListener('change', updateFields);
-  controlsDiv._cleanup = () => {
-    transformControls.removeEventListener('change', updateFields);
-  };
-}
-
-btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExtend());
-
-renderer.domElement.addEventListener('click', (ev)=>{
-  if(!extending) return;
-  if(!extClone){ pickHallFacade(ev); return; }
-});
-
-window.addEventListener('keydown', (ev)=>{
-  if(!extending) return;
-  if(ev.key==='Enter') validateExtension();
-  if(ev.key==='Escape') {
-    if(extClone) {
-      transformControls.detach();
-      scene.remove(extClone);
-      extClone = null;
-      extOriginalGroup = null;
-    }
-    cancelExtend();
-  }
-});
-
-function editExtension(id){
-  const ext = extensions.find(e => e.id === id);
-  if(!ext) return;
-  
-  // Sauvegarder la transformation actuelle
-  extStoredTransform = {
-    position: ext.position.clone(),
-    quaternion: ext.quaternion.clone(),
-    scale: ext.scale.clone()
-  };
-  
-  // Supprimer l'extension de la liste
-  extensions = extensions.filter(e => e.id !== id);
-  scene.remove(ext.group);
-  
-  // Utiliser son groupe comme clone d'édition
-  extClone = ext.group;
-  
-  // Restaurer la transformation sauvegardée
-  extClone.position.copy(extStoredTransform.position);
-  extClone.quaternion.copy(extStoredTransform.quaternion);
-  extClone.scale.copy(extStoredTransform.scale);
-  
-  // Rendre transparent
-  extClone.traverse(o => {
-    if(o.isMesh) {
-      if(Array.isArray(o.material)) {
-        o.material.forEach(m => { m.transparent = true; m.opacity = 0.6; });
-      } else if(o.material) {
-        o.material.transparent = true;
-        o.material.opacity = 0.6;
-      }
-    }
-  });
-  
-  // Ajouter une bordure
-  const box = new THREE.Box3().setFromObject(extClone);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const wireframe = new THREE.BoxGeometry(size.x + 0.2, size.y + 0.2, size.z + 0.2);
-  const wireMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, transparent: true, opacity: 0.8 });
-  const wireLine = new THREE.LineSegments(new THREE.EdgesGeometry(wireframe), wireMat);
-  wireLine.position.copy(center);
-  extClone.add(wireLine);
-  
-  scene.add(extClone);
-  transformControls.attach(extClone);
-  transformControls.setMode(editMode);
-  
-  extOriginalGroup = ext.original;
-  selectedExtId = null;
-  
-  extending = true;
-  btnExtend.classList.add('active');
-  btnExtend.textContent = 'Édition en cours…';
-  drawHint.classList.add('show');
-  drawHintText.textContent = "Modifiez l'extension avec les gizmos · ✅ Valider · ❌ Annuler";
-  controls.enabled = false;
-  
-  renderExtEditControls();
-  renderExtList();
-}
-
-function deleteExtension(id){
-  const e = extensions.find(x=>x.id===id);
-  if(!e) return;
-  
-  if(extClone === e.group) {
-    transformControls.detach();
-    scene.remove(extClone);
-    extClone = null;
-    cancelExtend();
-    return;
-  }
-  
-  scene.remove(e.group);
-  e.group.traverse(o => {
-    if(o.isMesh) {
-      o.geometry?.dispose();
-      if(Array.isArray(o.material)) o.material.forEach(m => m.dispose());
-      else if(o.material) o.material.dispose();
-    }
-  });
-  extensions = extensions.filter(x=>x.id!==id);
-  if(selectedExtId === id) selectedExtId = null;
-  renderExtList();
-}
-
-function renderExtList(){
-  const list = document.getElementById('ext-list');
-  const empty = document.getElementById('ext-empty-note');
-  const count = document.getElementById('ext-count');
-  
-  const controls = document.getElementById('ext-edit-controls');
-  const hasControls = !!controls;
-  
-  if(!hasControls) {
-    list.innerHTML = '';
-  } else {
-    const children = list.children;
-    for(let i = children.length - 1; i >= 0; i--) {
-      if(children[i].id !== 'ext-edit-controls') {
-        children[i].remove();
-      }
-    }
-  }
-  
-  empty.style.display = extensions.length ? 'none' : 'block';
-  count.textContent = extensions.length ? `(${extensions.length})` : '';
-  
-  extensions.forEach(e => {
-    const card = document.createElement('div');
-    card.className = 'bldg-card' + (e.id === selectedExtId ? ' selected' : '');
-    card.style.padding = '9px 10px';
-    card.style.display = 'flex';
-    card.style.alignItems = 'center';
-    card.style.gap = '8px';
-    card.style.flexWrap = 'wrap';
-    
-    const dot = document.createElement('div');
-    dot.className = 'bldg-dot';
-    dot.style.background = e.merged ? '#4fae8f' : '#8fa4b3';
-    dot.title = e.merged ? 'Fusionné avec le hall' : 'Indépendant';
-    
-    const label = document.createElement('span');
-    label.textContent = e.name + (e.merged ? ' 🔗' : '');
-    label.style.flex = '1';
-    label.style.fontSize = '12.5px';
-    
-    const info = document.createElement('span');
-    const pos = e.position || new THREE.Vector3();
-    info.textContent = `pos: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`;
-    info.style.cssText = 'font-size:10px;color:var(--muted);font-family:IBM Plex Mono,monospace;';
-    
-    const editBtn = document.createElement('button');
-    editBtn.className = 'mini-btn';
-    editBtn.textContent = '✎';
-    editBtn.title = 'Modifier l\'extension';
-    editBtn.style.color = 'var(--blue)';
-    editBtn.addEventListener('click', () => editExtension(e.id));
-    
-    const focusBtn = document.createElement('button');
-    focusBtn.className = 'mini-btn';
-    focusBtn.textContent = '⊙';
-    focusBtn.title = 'Centrer la vue';
-    focusBtn.addEventListener('click', () => {
-      if(e.group) {
-        const box = new THREE.Box3().setFromObject(e.group);
-        const center = box.getCenter(new THREE.Vector3());
-        controls.target.copy(center);
-        camera.position.set(center.x + 30, center.y + 20, center.z + 30);
-      }
-    });
-    
-    const del = document.createElement('button');
-    del.className = 'mini-btn danger';
-    del.textContent = '✕';
-    del.addEventListener('click', ()=> deleteExtension(e.id));
-    
-    card.append(dot, label, info, editBtn, focusBtn, del);
-    if(controls) {
-      list.insertBefore(card, controls.nextSibling);
-    } else {
-      list.appendChild(card);
-    }
-  });
-}
-
-/* ============================================================
-   MATÉRIAUX PROCÉDURAUX
-   ============================================================ */
-function makeStripeTexture(){
-  const size = 64;
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,size,size);
-  ctx.fillStyle = '#f2f2f0';
-  ctx.fillRect(0, 0, size/2, size);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.center.set(0.5,0.5);
-  return tex;
-}
-const crosswalkMaterials = { x:null, y:null };
-function makeCrosswalkMaterial(axis, name){
-  const tex = makeStripeTexture();
-  if(axis==='x') tex.repeat.set(1, 8); else tex.repeat.set(8, 1);
-  const mat = new THREE.MeshStandardMaterial({
-    name, map:tex, alphaMap:tex, transparent:false, alphaTest:0.5,
-    roughness:0.9, metalness:0.0, side:THREE.DoubleSide
-  });
-  crosswalkMaterials[axis] = mat;
-  return mat;
-}
-function isLikelyBrokenShader(m){
-  if(!m || m.map) return false;
-  if(!m.color) return false;
-  const c = m.color;
-  return c.r<0.04 && c.g<0.04 && c.b<0.04;
-}
-function fixProceduralMaterials(){
-  const seen = new Map();
-  siteRoot.traverse(o=>{
-    if(!o.isMesh || !o.material) return;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    const nextMats = mats.map(m=>{
-      if(!m) return m;
-      if(seen.has(m.uuid)) return seen.get(m.uuid) || m;
-      const name = (m.name||'').toLowerCase();
-      let replacement = null;
-      if(name.includes('alumin')){
-        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0xc7cbce, metalness:1.0, roughness:0.22, envMapIntensity:1.4 });
-      } else if(name.includes('route')){
-        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x16171a, roughness:0.95, metalness:0.0 });
-      } else if(name.includes('ppy')){
-        replacement = makeCrosswalkMaterial('y', m.name);
-      } else if(name.includes('ppx')){
-        replacement = makeCrosswalkMaterial('x', m.name);
-      } else if(name.includes('feuill')){
-        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x4a7c4e, roughness:0.85, flatShading:true });
-      } else if(isLikelyBrokenShader(m)){
-        const guessGreen = /leaf|vert|green|arbre|tree|icosph|folia/.test(name);
-        replacement = new THREE.MeshStandardMaterial({
-          name:m.name, color: guessGreen ? 0x4a7c4e : 0x8d8f92,
-          roughness: guessGreen ? 0.85 : 0.6, flatShading: guessGreen
-        });
-      }
-      seen.set(m.uuid, replacement);
-      return replacement || m;
-    });
-    o.material = Array.isArray(o.material) ? nextMats : nextMats[0];
-  });
-}
-
-/* ============================================================
-   ARBRES
-   ============================================================ */
-let treeTemplate = null;
-function findIcosphereTemplate(){
-  let found = null;
-  siteRoot.traverse(o=>{ if(!found && o.isMesh && /icosph/i.test(o.name)) found = o; });
-  if(found){
-    const geo = found.geometry.clone();
-    if(siteUpCorrected) geo.rotateX(-Math.PI/2);
-    geo.computeBoundingBox();
-    const bb = geo.boundingBox;
-    const cx = (bb.min.x+bb.max.x)/2, cz = (bb.min.z+bb.max.z)/2, baseY = bb.min.y;
-    geo.translate(-cx, -baseY, -cz);
-    const worldScale = found.getWorldScale(new THREE.Vector3());
-    treeTemplate = { geometry: geo, material: found.material, baseScale: worldScale };
-  } else {
-    treeTemplate = {
-      geometry: new THREE.IcosahedronGeometry(1.4, 0),
-      material: new THREE.MeshStandardMaterial({ color:0x4a7c4e, roughness:0.85, flatShading:true }),
-      baseScale: new THREE.Vector3(1,1,1)
-    };
-  }
-}
-
-let trees = [];
-let treeIdCounter = 1;
-let treesGroup = new THREE.Group(); scene.add(treesGroup);
-let treePlacing = false;
-const btnTree = document.getElementById('btn-tree');
-
-function startTreeTool(){
-  if(drawing || extending) return;
-  treePlacing = true;
-  btnTree.classList.add('active'); btnTree.textContent = 'Arbre : cliquez le polygone…';
-  drawHint.classList.add('show');
-  drawHintText.textContent = "Cliquez dans le polygone d'implantation pour planter un arbre · recliquez un arbre pour le retirer (Échap pour arrêter)";
-  controls.enabled = false;
-}
-function stopTreeTool(){
-  treePlacing = false;
-  btnTree.classList.remove('active'); btnTree.textContent = '+ Arbre';
-  drawHint.classList.remove('show');
-  controls.enabled = true;
-}
-btnTree.addEventListener('click', ()=> treePlacing ? stopTreeTool() : startTreeTool());
-window.addEventListener('keydown', (ev)=>{
-  if(!treePlacing) return;
-  if(ev.key==='Escape') stopTreeTool();
-});
-
-function addTree(pt){
-  if(!treeTemplate) findIcosphereTemplate();
-  const mesh = new THREE.Mesh(treeTemplate.geometry, treeTemplate.material);
-  mesh.position.set(pt.x, pt.y||0, pt.z);
-  mesh.rotation.y = Math.random()*Math.PI*2;
-  const variance = 0.85 + Math.random()*0.3;
-  mesh.scale.copy(treeTemplate.baseScale).multiplyScalar(variance);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  treesGroup.add(mesh);
-  trees.push({ id: treeIdCounter++, mesh, x:pt.x, z:pt.z });
-  renderTreeCount();
-}
-function removeTree(id){
-  const t = trees.find(x=>x.id===id);
-  if(!t) return;
-  treesGroup.remove(t.mesh);
-  trees = trees.filter(x=>x.id!==id);
-  renderTreeCount();
-}
-function clearAllTrees(){
-  trees.forEach(t=> treesGroup.remove(t.mesh));
-  trees = [];
-  renderTreeCount();
-}
-function renderTreeCount(){
-  document.getElementById('tree-count').textContent = trees.length ? `(${trees.length})` : '';
-  document.getElementById('tree-empty-note').style.display = trees.length ? 'none' : 'block';
-  document.getElementById('btn-clear-trees').style.display = trees.length ? 'block' : 'none';
-}
-document.getElementById('btn-clear-trees').addEventListener('click', clearAllTrees);
-
-renderer.domElement.addEventListener('click', (ev)=>{
-  if(!treePlacing) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-
-  const treeHit = raycaster.intersectObjects(trees.map(t=>t.mesh))[0];
-  if(treeHit){
-    const hitTree = trees.find(t=>t.mesh===treeHit.object);
-    if(hitTree){ removeTree(hitTree.id); return; }
-  }
-
-  const groundTargets = [];
-  if(polygonMesh) groundTargets.push(polygonMesh);
-  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
-  if(hallGroup) hallGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
-  groundTargets.push(ground);
-  const hit = raycaster.intersectObjects(groundTargets, true)[0];
-  if(!hit){ flashStatus("Cliquez dans le polygone d'implantation"); return; }
-  if(buildZone.length>=3 && !pointInPolygon({x:hit.point.x, z:hit.point.z}, buildZone)){
-    flashStatus("Les arbres ne peuvent être plantés que dans le polygone d'implantation");
-    return;
-  }
-  addTree(hit.point);
-});
-
-/* ============================================================
-   BUILDING MODEL
-   ============================================================ */
-function defaultBands(floors){
-  return [{from:1, to:floors, usage:'bureaux'}];
-}
-
-function createBuilding(pts, opts={}){
-  const b = {
-    id: idCounter++,
-    name: opts.name || `Bâtiment ${idCounter-1}`,
-    points: pts,
-    floors: opts.floors || 6,
-    bands: opts.bands || defaultBands(opts.floors || 6),
-    group: new THREE.Group(),
-    open: true
-  };
-  scene.add(b.group);
-  buildings.push(b);
-  selectedId = b.id;
-  rebuildMesh(b);
-  renderList();
-}
-
-function usageAtFloor(b, floor){
-  const band = b.bands.find(bd=>floor>=bd.from && floor<=bd.to);
-  return band ? band.usage : 'bureaux';
-}
-
-function rebuildMesh(b){
-  b.group.clear();
-  const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,-p.z)));
-
-  for(let f=1; f<=b.floors; f++){
-    const usage = usageAtFloor(b, f);
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_HEIGHT, bevelEnabled:false, curveSegments:1 });
-    geo.rotateX(-Math.PI/2);
-    const mat = new THREE.MeshStandardMaterial({
-      color: USAGE_COLORS[usage],
-      roughness: 0.75, metalness: 0.05
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.y = (f-1)*FLOOR_HEIGHT;
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    b.group.add(mesh);
-
-    const edges = new THREE.EdgesGeometry(geo, 25);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity:0.35 }));
-    line.position.y = mesh.position.y;
-    b.group.add(line);
-  }
-
-  if(b.id === selectedId){
-    const outlinePts = b.points.map(p=>new THREE.Vector3(p.x,0.06,p.z));
-    outlinePts.push(outlinePts[0].clone());
-    const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:0xe0663f}));
-    b.group.add(halo);
-  }
-}
-
-function rebuildAll(){ buildings.forEach(rebuildMesh); }
-
-function deleteBuilding(id){
-  const b = buildings.find(x=>x.id===id);
-  if(!b) return;
-  scene.remove(b.group);
-  buildings = buildings.filter(x=>x.id!==id);
-  if(selectedId===id) selectedId = null;
-  renderList();
-}
-
-function selectBuilding(id){
-  selectedId = id;
-  rebuildAll();
-  renderList();
-}
-
-/* ============================================================
-   SIDE PANEL — building list & editors
-   ============================================================ */
-const bldgList = document.getElementById('bldg-list');
-const emptyNote = document.getElementById('empty-note');
-const bldgCount = document.getElementById('bldg-count');
-
-function renderList(){
-  bldgCount.textContent = buildings.length ? `(${buildings.length})` : '';
-  emptyNote.style.display = buildings.length ? 'none' : 'block';
-  bldgList.innerHTML = '';
-  buildings.forEach(b=>{
-    const card = document.createElement('div');
-    card.className = 'bldg-card' + (b.id===selectedId ? ' selected':'');
-
-    const head = document.createElement('div');
-    head.className = 'bldg-head';
-    const dot = document.createElement('div');
-    dot.className='bldg-dot';
-    dot.style.background = '#'+USAGE_COLORS[usageAtFloor(b, b.floors)].toString(16).padStart(6,'0');
-    const nameInput = document.createElement('input');
-    nameInput.value = b.name;
-    nameInput.addEventListener('click', e=>e.stopPropagation());
-    nameInput.addEventListener('input', ()=>{ b.name = nameInput.value; });
-    const caret = document.createElement('span');
-    caret.textContent = b.open ? '▾' : '▸';
-    caret.style.color = 'var(--muted)';
-    head.append(dot, nameInput, caret);
-    head.addEventListener('click', ()=>{
-      selectBuilding(b.id);
-      b.open = !b.open;
-      renderList();
-    });
-
-    const meta = document.createElement('div');
-    meta.className = 'bldg-meta';
-    meta.textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${(b.floors*FLOOR_HEIGHT).toFixed(0)} m`;
-
-    const body = document.createElement('div');
-    body.className = 'bldg-body' + (b.open ? ' open':'');
-
-    const floorsField = document.createElement('div');
-    floorsField.className='field';
-    floorsField.innerHTML = `<label>Nombre d'étages (R+${Math.max(b.floors-1,0)})</label>`;
-    const floorsInput = document.createElement('input');
-    floorsInput.type='number'; floorsInput.min=1; floorsInput.max=60; floorsInput.value=b.floors;
-    floorsInput.addEventListener('change', ()=>{
-      let v = parseInt(floorsInput.value)||1;
-      v = Math.max(1, Math.min(60, v));
-      b.floors = v;
-      b.bands = b.bands.filter(bd=>bd.from<=v).map(bd=>({...bd, to:Math.min(bd.to,v)}));
-      if(!b.bands.length) b.bands = defaultBands(v);
-      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
-      if(lastTo < v) b.bands.push({from:lastTo+1, to:v, usage:'bureaux'});
-      rebuildMesh(b); renderList();
-    });
-    floorsField.appendChild(floorsInput);
-
-    const bandsTitle = document.createElement('div');
-    bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;';
-    bandsTitle.textContent = 'Répartition des usages par étage';
-    body.append(floorsField, bandsTitle);
-
-    b.bands.forEach((band, idx)=>{
-      const row = document.createElement('div');
-      row.className='band-row';
-      const fromInp = document.createElement('input');
-      fromInp.type='number'; fromInp.min=1; fromInp.max=b.floors; fromInp.value=band.from;
-      const x = document.createElement('span'); x.className='x'; x.textContent='→';
-      const toInp = document.createElement('input');
-      toInp.type='number'; toInp.min=1; toInp.max=b.floors; toInp.value=band.to;
-      const sel = document.createElement('select');
-      Object.entries(USAGE_LABELS).forEach(([k,label])=>{
-        const opt = document.createElement('option');
-        opt.value=k; opt.textContent=label; if(k===band.usage) opt.selected=true;
-        sel.appendChild(opt);
-      });
-      const del = document.createElement('button');
-      del.className='mini-btn danger'; del.textContent='✕';
-      del.addEventListener('click', ()=>{
-        b.bands.splice(idx,1);
-        if(!b.bands.length) b.bands = defaultBands(b.floors);
-        rebuildMesh(b); renderList();
-      });
-      function commit(){
-        band.from = Math.max(1, Math.min(parseInt(fromInp.value)||1, b.floors));
-        band.to = Math.max(band.from, Math.min(parseInt(toInp.value)||band.from, b.floors));
-        band.usage = sel.value;
-        rebuildMesh(b); renderList();
-      }
-      fromInp.addEventListener('change', commit);
-      toInp.addEventListener('change', commit);
-      sel.addEventListener('change', commit);
-      row.append(fromInp, x, toInp, sel, del);
-      body.appendChild(row);
-    });
-
-    const addBandBtn = document.createElement('button');
-    addBandBtn.className='small-action';
-    addBandBtn.textContent='+ Ajouter une tranche d\'usage';
-    addBandBtn.style.marginTop='6px';
-    addBandBtn.addEventListener('click', ()=>{
-      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
-      if(lastTo>=b.floors) return;
-      b.bands.push({from:lastTo+1, to:b.floors, usage:'residentiel'});
-      rebuildMesh(b); renderList();
-    });
-    body.appendChild(addBandBtn);
-
-    const actions = document.createElement('div');
-    actions.className='btn-row';
-    const focusBtn = document.createElement('button');
-    focusBtn.className='small-action'; focusBtn.textContent='Centrer la vue';
-    focusBtn.addEventListener('click', ()=> focusOn(b));
-    const delBtn = document.createElement('button');
-    delBtn.className='small-action danger'; delBtn.textContent='Supprimer';
-    delBtn.addEventListener('click', ()=> deleteBuilding(b.id));
-    actions.append(focusBtn, delBtn);
-    body.appendChild(actions);
-
-    card.append(head, meta, body);
-    bldgList.appendChild(card);
-  });
-}
-
-function focusOn(b){
-  const cx = b.points.reduce((s,p)=>s+p.x,0)/b.points.length;
-  const cz = b.points.reduce((s,p)=>s+p.z,0)/b.points.length;
-  const h = b.floors*FLOOR_HEIGHT;
-  controls.target.set(cx, h/2, cz);
-  const dist = Math.max(40, h*2.2);
-  camera.position.set(cx+dist*0.7, h*0.9+dist*0.5, cz+dist*0.7);
-}
-
-/* ============================================================
-   GRID TOGGLE
-   ============================================================ */
-document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
-  gridVisible = !gridVisible;
-  gridGroup.visible = gridVisible;
-  ilotOutline.visible = gridVisible;
-});
-
-/* ============================================================
-   EXPORT PNG
-   ============================================================ */
-document.getElementById('btn-export-png').addEventListener('click', ()=>{
-  renderer.render(scene, camera);
-  const link = document.createElement('a');
-  link.download = `place-de-milan_proposition_${Date.now()}.png`;
-  link.href = renderer.domElement.toDataURL('image/png');
-  link.click();
-});
-
-/* ============================================================
-   SAVE / LOAD JSON
-   ============================================================ */
-document.getElementById('btn-save-json').addEventListener('click', ()=>{
-  const data = {
-    version: 5,
-    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
-    extensions: extensions.map(e=>({
-      name: e.name,
-      position: {x:e.position.x, y:e.position.y, z:e.position.z},
-      quaternion: {x:e.quaternion.x, y:e.quaternion.y, z:e.quaternion.z, w:e.quaternion.w},
-      scale: {x:e.scale.x, y:e.scale.y, z:e.scale.z},
-      merged: e.merged || false
-    }))
-  };
-  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-  const link = document.createElement('a');
-  link.download = `place-de-milan_projet_${Date.now()}.json`;
-  link.href = URL.createObjectURL(blob);
-  link.click();
-});
-
-const fileLoad = document.getElementById('file-load');
-document.getElementById('btn-load-json').addEventListener('click', ()=> fileLoad.click());
-fileLoad.addEventListener('change', (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    try{
-      const data = JSON.parse(reader.result);
-      buildings.forEach(b=>scene.remove(b.group));
-      buildings = [];
-      idCounter = 1;
-      (data.buildings||[]).forEach(b=> createBuilding(b.points, {name:b.name, floors:b.floors, bands:b.bands}));
-      selectedId = null;
-      
-      extensions.forEach(e => { 
-        scene.remove(e.group);
-        e.group.traverse(o => { if(o.isMesh) { o.geometry?.dispose(); o.material?.dispose(); } });
-      });
-      extensions = [];
-      extIdCounter = 1;
-      
-      if(data.extensions && hallGroup) {
-        data.extensions.forEach(extData => {
-          const clone = hallGroup.clone();
-          clone.position.set(extData.position.x, extData.position.y, extData.position.z);
-          clone.quaternion.set(extData.quaternion.x, extData.quaternion.y, extData.quaternion.z, extData.quaternion.w);
-          clone.scale.set(extData.scale.x, extData.scale.y, extData.scale.z);
-          clone.traverse(o => { if(o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-          scene.add(clone);
-          
-          const ext = {
-            id: extIdCounter++,
-            name: extData.name || `Extension ${extIdCounter-1}`,
-            group: clone,
-            position: clone.position.clone(),
-            quaternion: clone.quaternion.clone(),
-            scale: clone.scale.clone(),
-            original: hallGroup,
-            merged: extData.merged || false
-          };
-          extensions.push(ext);
-        });
-      }
-      rebuildAll(); renderList();
-      renderExtList();
-    }catch(err){ alert("Fichier de projet invalide."); }
-  };
-  reader.readAsText(file);
-  fileLoad.value = '';
-});
-
-/* ============================================================
-   CIRCULATION
-   ============================================================ */
-const ROUTE_TYPES = {
-  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:2,  scale:[2.2,2.6,9]  },
-  bus:    { label:'Bus',     color:0x7a0000, speed:6,  count:2,  scale:[2,2.4,6]  },
-  voiture:{ label:'Voiture', color:0x2c0a71, speed:10,  count:5,  scale:[1.7,1.3,3.4]},
-  pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, scale:[0.4,1.4,0.5]}
-};
-let routes = [];
-let routeIdCounter = 1;
-
-function createRoute(points, type, name){
-  if(!points || points.length<2) return null;
-  const cfg = ROUTE_TYPES[type] || ROUTE_TYPES.voiture;
-  const vec = points.map(p=>new THREE.Vector3(p.x, p.y||0.15, p.z));
-  const curve = new THREE.CatmullRomCurve3(vec, false, 'catmullrom', 0.2);
-
-  const geo = new THREE.BoxGeometry(...cfg.scale);
-  const mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
-  const count = cfg.count;
-  const inst = new THREE.InstancedMesh(geo, mat, count);
-  inst.castShadow = true;
-  scene.add(inst);
-
-  const agents = [];
-  for(let i=0;i<count;i++) agents.push({ t: i/count, speed: cfg.speed * (0.9+Math.random()*0.2) });
-
-  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
-  line.visible = false;
-  scene.add(line);
-
-  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, line, agents };
-  routes.push(route);
-  renderRouteList();
-  return route;
-}
-
-const dummy = new THREE.Object3D();
-function tickAgents(dt){
-  for(const r of routes){
-    const len = r.curve.getLength();
-    if(len<=0) continue;
-    r.agents.forEach((a,i)=>{
-      a.t = (a.t + (a.speed*dt)/len) % 1;
-      const pos = r.curve.getPointAt(a.t);
-      const tangent = r.curve.getTangentAt(a.t);
-      dummy.position.copy(pos);
-      dummy.position.y += 0.05;
-      dummy.lookAt(pos.clone().add(tangent));
-      if(r.type==='pieton'){
-        const lateral = Math.sin(a.t*40 + i*7) * 0.4;
-        const side = new THREE.Vector3(-tangent.z,0,tangent.x);
-        dummy.position.addScaledVector(side, lateral);
-      }
-      dummy.updateMatrix();
-      r.instancedMesh.setMatrixAt(i, dummy.matrix);
-    });
-    r.instancedMesh.instanceMatrix.needsUpdate = true;
-  }
-}
-
-function clearRoutes(){
-  routes.forEach(r=>{
-    scene.remove(r.instancedMesh); scene.remove(r.line);
-    r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
-    r.line.geometry.dispose(); r.line.material.dispose();
-  });
-  routes = [];
-  renderRouteList();
-}
-function deleteRoute(id){
-  const r = routes.find(x=>x.id===id);
-  if(!r) return;
-  scene.remove(r.instancedMesh); scene.remove(r.line);
-  r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
-  r.line.geometry.dispose(); r.line.material.dispose();
-  routes = routes.filter(x=>x.id!==id);
-  renderRouteList();
-}
-function reverseRoute(id){
-  const r = routes.find(x=>x.id===id);
-  if(!r) return;
-  r.points = r.points.slice().reverse();
-  r.curve = new THREE.CatmullRomCurve3(
-    r.points.map(p=>new THREE.Vector3(p.x, p.y!==undefined?p.y:0.15, p.z)),
-    false, 'catmullrom', 0.2
-  );
-  r.agents.forEach((a,i)=>{ a.t = i/r.agents.length; });
-  renderRouteList();
-  flashStatus(`Sens inversé : ${r.name}`);
-}
-function renderRouteList(){
-  const list = document.getElementById('route-list');
-  const empty = document.getElementById('route-empty-note');
-  empty.style.display = routes.length ? 'none' : 'block';
-  list.innerHTML = '';
-  routes.forEach(r=>{
-    const card = document.createElement('div');
-    card.className='bldg-card';
-    card.style.padding='9px 10px'; card.style.display='flex'; card.style.alignItems='center'; card.style.gap='8px';
-    const dot = document.createElement('div');
-    dot.className='bldg-dot';
-    dot.style.background = '#'+ROUTE_TYPES[r.type].color.toString(16).padStart(6,'0');
-    const label = document.createElement('span');
-    label.textContent = `${r.name} · ${ROUTE_TYPES[r.type].label}`;
-    label.style.flex='1'; label.style.fontSize='12.5px';
-    const rev = document.createElement('button');
-    rev.className='mini-btn admin-only'; rev.textContent='⇄'; rev.title='Inverser le sens de circulation';
-    rev.style.display = document.body.classList.contains('is-admin') ? 'flex' : 'none';
-    rev.addEventListener('click', ()=> reverseRoute(r.id));
-    const del = document.createElement('button');
-    del.className='mini-btn danger'; del.textContent='✕';
-    del.addEventListener('click', ()=> deleteRoute(r.id));
-    card.append(dot, label, rev, del);
-    list.appendChild(card);
-  });
-}
-
-function renderVehicleColorControls(){
-  const container = document.getElementById('vehicle-colors');
-  container.innerHTML = '';
-  Object.entries(ROUTE_TYPES).forEach(([type,cfg])=>{
-    const row = document.createElement('div');
-    row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px';
-    const label = document.createElement('span');
-    label.textContent = cfg.label; label.style.flex='1'; label.style.fontSize='12px';
-    const input = document.createElement('input');
-    input.type='color';
-    input.value = '#'+cfg.color.toString(16).padStart(6,'0');
-    input.style.width='40px'; input.style.height='26px'; input.style.border='1px solid #2a3946';
-    input.style.borderRadius='3px'; input.style.background='none'; input.style.cursor='pointer';
-    input.addEventListener('input', ()=>{
-      const hex = parseInt(input.value.slice(1), 16);
-      ROUTE_TYPES[type].color = hex;
-      routes.forEach(r=>{ if(r.type===type) r.instancedMesh.material.color.setHex(hex); });
-      renderRouteList();
-    });
-    row.append(label, input);
-    container.appendChild(row);
-  });
-}
-renderVehicleColorControls();
-
-function renderCrosswalkControls(){
-  const container = document.getElementById('crosswalk-controls');
-  if(!container) return;
-  container.innerHTML = '';
-  [['y','ppy'], ['x','ppx']].forEach(([axis,label])=>{
-    const mat = crosswalkMaterials[axis];
-    const box = document.createElement('div');
-    box.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
-    const title = document.createElement('div');
-    title.textContent = mat ? label : `${label} (absent de la maquette)`;
-    title.style.cssText = 'font-size:11px;color:var(--muted);';
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
-
-    const mkNumber = (val)=>{
-      const inp = document.createElement('input');
-      inp.type='number'; inp.min=1; inp.max=40; inp.step=1; inp.value=val;
-      inp.style.cssText = 'width:46px;background:var(--ink);border:1px solid #2a3946;color:var(--paper);border-radius:3px;padding:3px 4px;font-size:11px;';
-      return inp;
-    };
-    const labelSpan = (t)=>{ const s=document.createElement('span'); s.textContent=t; s.style.cssText='font-size:10px;color:var(--muted);'; return s; };
-
-    const repU = mkNumber(mat ? mat.map.repeat.x : (axis==='x'?1:8));
-    const repV = mkNumber(mat ? mat.map.repeat.y : (axis==='x'?8:1));
-    const rotBtn = document.createElement('button');
-    rotBtn.className='mini-btn'; rotBtn.textContent='⟳90°'; rotBtn.style.width='auto'; rotBtn.style.padding='0 8px';
-    rotBtn.title = 'Pivote le motif de 90° (si les bandes ne suivent toujours pas le bon axe après ajustement U/V)';
-
-    if(mat){
-      repU.addEventListener('input', ()=>{ mat.map.repeat.x = parseFloat(repU.value)||1; });
-      repV.addEventListener('input', ()=>{ mat.map.repeat.y = parseFloat(repV.value)||1; });
-      rotBtn.addEventListener('click', ()=>{ mat.map.rotation += Math.PI/2; });
-    } else {
-      [repU, repV, rotBtn].forEach(el=> el.disabled = true);
-    }
-    row.append(labelSpan('U'), repU, labelSpan('V'), repV, rotBtn);
-    box.append(title, row);
-    container.appendChild(box);
-  });
-}
-
-function importRoutesFromJSON(data, sourceLabel){
-  clearRoutes();
-  const empty = [], created = [];
-  Object.entries(data).forEach(([name, pts])=>{
-    if(!pts || pts.length<2){ empty.push(name); return; }
-    const key = name.toLowerCase();
-    let type = 'voiture';
-    for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
-    const points = pts.map(p=>({x:p[0], y:(p[1]??0.15), z:p[2]}));
-    createRoute(points, type, name);
-    created.push(name);
-  });
-  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
-  return created.length;
-}
-
-const fileRoutes = document.getElementById('file-routes');
-document.getElementById('btn-load-routes').addEventListener('click', ()=> fileRoutes.click());
-fileRoutes.addEventListener('change', (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    try{ importRoutesFromJSON(JSON.parse(reader.result), 'routes.json'); }
-    catch(err){ alert("routes.json invalide : "+err.message); }
-  };
-  reader.readAsText(file);
-  fileRoutes.value = '';
-});
-
-const ROUTES_JSON_URL = './routes.json';
-function tryAutoLoadRoutes(){
-  fetch(ROUTES_JSON_URL).then(r=>{
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  }).then(data=>{
-    importRoutesFromJSON(data, `${ROUTES_JSON_URL} (auto)`);
-  }).catch(()=>{});
-}
-
-/* ============================================================
-   RENDER LOOP
-   ============================================================ */
-resize();
-const clock = new THREE.Clock();
-function animate(){
+function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.1);
   controls.update();
-  tickAgents(dt);
   renderer.render(scene, camera);
 }
 animate();
 
-loadSiteFromGLB(SITE_GLB_URL, (err)=>{
-  const isFileProtocol = location.protocol === 'file:';
-  showSiteBanner(`
-    <div>
-      <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL})${err && err.message ? ' — '+err.message : ''}.<br>
-      ${isFileProtocol
-        ? "Cette page est ouverte en double-clic (protocole file://), qui bloque le chargement automatique du .glb par le navigateur. Lance un serveur local depuis le dossier contenant les deux fichiers : <code>python -m http.server 8000</code>, puis ouvre <code>http://localhost:8000</code>."
-        : "Vérifie que <code>place_de_milan.glb</code> est bien placé exactement à côté de <code>index.html</code>, avec ce nom précis (respecte la casse)."}
-      <br>En attendant, une maquette de démonstration est affichée — utilise <b>Charger maquette (.glb)</b> pour charger le fichier manuellement.
-    </div>
-  `);
-  buildDemoSite();
-  tryAutoLoadRoutes();
-});
+// Status initial
+updateUI();
+
+console.log('🚀 Extension avec pivots 3D prête !');
+console.log('💡 Tracer : cliquez au sol pour placer des pivots (hauteur automatique 2m)');
+console.log('💡 Modifier : double-cliquez sur un pivot pour changer sa hauteur');
+console.log('💡 Entrée : valider · Échap : annuler · Suppr : supprimer la dernière extension');
 </script>
 </body>
 </html>
