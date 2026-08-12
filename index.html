@@ -16,13 +16,11 @@
     --blue:#5b8ab0;
     --accent:#e0663f;
     --muted:#7f93a3;
-
     --res:#e0a24a;
     --bur:#5b8ab0;
     --com:#d95a6c;
     --hot:#a06bd9;
     --ser:#4fae8f;
-
     --panel-w: 330px;
   }
   *{box-sizing:border-box;}
@@ -179,59 +177,6 @@
     margin-left:8px;flex-shrink:0;
   }
   #site-status-banner button:hover{color:var(--paper);}
-
-  /* Pivot controls */
-  .pivot-controls{
-    display:flex;
-    flex-direction:column;
-    gap:4px;
-    padding:6px 0;
-    border-top:1px solid #1a242d;
-    margin-top:6px;
-  }
-  .pivot-row{
-    display:flex;
-    gap:6px;
-    align-items:center;
-    font-size:10.5px;
-    font-family:'IBM Plex Mono',monospace;
-  }
-  .pivot-row input[type=number]{
-    width:50px;
-    background:#0b1116;
-    border:1px solid #23303b;
-    color:var(--paper);
-    border-radius:3px;
-    padding:3px 4px;
-    font-size:10.5px;
-  }
-  .pivot-row .coord-label{
-    color:var(--muted);
-    width:12px;
-    text-align:center;
-    font-weight:600;
-  }
-  .pivot-row .coord-label.x{color:#e0663f;}
-  .pivot-row .coord-label.y{color:#4fae8f;}
-  .pivot-row .coord-label.z{color:#5b8ab0;}
-
-  .ext-controls{
-    display:flex;
-    flex-direction:column;
-    gap:6px;
-    margin-top:6px;
-  }
-  .ext-controls .row{display:flex;gap:6px;align-items:center;}
-  .ext-controls label{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
-  .ext-controls input[type=number]{
-    width:50px;
-    background:#0b1116;
-    border:1px solid #23303b;
-    color:var(--paper);
-    border-radius:3px;
-    padding:3px 4px;
-    font-size:10.5px;
-  }
 </style>
 </head>
 <body>
@@ -240,7 +185,7 @@
     <div id="ribbon">
       <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
-      <button class="tool-btn" id="btn-extend-hall">Étendre le hall</button>
+      <button class="tool-btn" id="btn-extend">+ Extension du hall</button>
       <button class="tool-btn ghost" id="btn-tree">+ Arbre</button>
       <button class="tool-btn ghost admin-only" id="btn-load-glb">Charger maquette (.glb)</button>
       <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
@@ -268,19 +213,21 @@
       <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div>Services / équipements</div>
 
       <div class="section-title">Bâtiments <span id="bldg-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette. Le tracé est contraint au polygone d'implantation.</div>
+      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette.</div>
       <div id="bldg-list"></div>
 
-      <div class="section-title">Extensions du hall</div>
-      <div id="ext-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune extension. Cliquez sur <b style="color:var(--paper)">Étendre le hall</b>, puis sur la façade exposée du hall pour démarrer un tracé.</div>
+      <div class="section-title">Extensions du hall <span id="ext-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
+      <div id="ext-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">
+        Aucune extension. Cliquez sur <b style="color:var(--paper)">+ Extension du hall</b>, puis sur la façade du hall pour en créer une copie que vous pourrez positionner et redimensionner.
+      </div>
       <div id="ext-list"></div>
 
       <div class="section-title">Arbres <span id="tree-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="tree-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucun arbre. Cliquez sur <b style="color:var(--paper)">+ Arbre</b> puis dans le polygone d'implantation pour en planter un ; recliquez sur un arbre pour le retirer.</div>
+      <div id="tree-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucun arbre. Cliquez sur <b style="color:var(--paper)">+ Arbre</b> puis dans le polygone d'implantation pour en planter un.</div>
       <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;">🗑 Supprimer tous les arbres</button>
 
       <div class="section-title">Circulation</div>
-      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender (voir avec l'administrateur du site).</div>
+      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender.</div>
       <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
       <div id="route-list"></div>
 
@@ -425,15 +372,14 @@ scene.add(siteRoot);
 let polygonMesh = null;
 let siteUpCorrected = false;
 let hallMesh = null;
+let hallGroup = null;
 let quartierGroup = null;
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z}));
 
 function clearSite(){
   siteRoot.clear();
-  polygonMesh = null; hallMesh = null; quartierGroup = null;
+  polygonMesh = null; hallMesh = null; hallGroup = null; quartierGroup = null;
   treeTemplate = null;
-  siteUpCorrected = false;
-  // On garde les extensions existantes ? Non, on les efface aussi car elles dépendent du hall
   extensions.forEach(e => { scene.remove(e.group); if(e.mesh) { e.mesh.geometry.dispose(); e.mesh.material.dispose(); } });
   extensions = [];
   renderExtList();
@@ -625,7 +571,10 @@ function findByNameCI(root, name){
 }
 function onSiteLoaded(){
   polygonMesh = findByNameCI(siteRoot, 'Polygone_Implantation');
-  hallMesh    = findByNameCI(siteRoot, 'Hall_Gare');
+  hallGroup = findByNameCI(siteRoot, 'Hall_Gare');
+  if(hallGroup) {
+    hallMesh = hallGroup.children.find(c => c.isMesh) || null;
+  }
   quartierGroup = findByNameCI(siteRoot, 'Quartier');
   fixProceduralMaterials();
   renderCrosswalkControls();
@@ -634,10 +583,10 @@ function onSiteLoaded(){
     buildZone = extractBoundaryXZ(polygonMesh);
     updateBuildZoneVisual();
   }
-  if(hallMesh){
-    hallMesh.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+  if(hallGroup){
+    hallGroup.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
     if(polygonMesh && buildZone.length>=3){
-      const hallBox = new THREE.Box3().setFromObject(hallMesh);
+      const hallBox = new THREE.Box3().setFromObject(hallGroup);
       const hallCenter = hallBox.getCenter(new THREE.Vector3());
       const polyCenter = buildZone.reduce((s,p)=>({x:s.x+p.x, z:s.z+p.z}), {x:0,z:0});
       polyCenter.x /= buildZone.length; polyCenter.z /= buildZone.length;
@@ -652,10 +601,10 @@ function onSiteLoaded(){
 
   const bits = [];
   bits.push(polygonMesh ? `polygone : ${buildZone.length} sommets` : `<span style="color:var(--com)">polygone d'implantation introuvable</span>`);
-  bits.push(hallMesh ? `hall : ok` : `<span style="color:var(--com)">hall introuvable</span>`);
+  bits.push(hallGroup ? `hall : ok` : `<span style="color:var(--com)">hall introuvable</span>`);
   bits.push(quartierGroup ? `quartier : ok` : `<span style="color:var(--com)">quartier introuvable</span>`);
   if(routeReport.found.length) bits.push(`${routeReport.found.length} voie(s) importée(s) : ${routeReport.found.join(', ')}`);
-  if(routeReport.noGeometry.length) bits.push(`<span style="color:var(--com)">${routeReport.noGeometry.length} voie(s) sans géométrie exploitable (${routeReport.noGeometry.join(', ')}) — reconvertis ces courbes en mesh (section constante ou bevel=0) côté Blender, ou utilise "Charger routes.json"</span>`);
+  if(routeReport.noGeometry.length) bits.push(`<span style="color:var(--com)">${routeReport.noGeometry.length} voie(s) sans géométrie exploitable</span>`);
   return bits.join(' · ');
 }
 
@@ -669,18 +618,20 @@ function buildDemoSite(){
   poly.name = 'Polygone_Implantation';
   siteRoot.add(poly);
 
-  const hallGroup = new THREE.Group(); hallGroup.name = 'Hall_Gare';
-  hallGroup.position.set(-10, 0, -62);
+  const hallGrp = new THREE.Group(); hallGrp.name = 'Hall_Gare';
+  hallGrp.position.set(-10, 0, -62);
   const hallMat = new THREE.MeshStandardMaterial({color:0x8fa4b3, roughness:0.6, metalness:0.1});
   const hallW=34, hallD=26, hallH=9;
   const base = new THREE.Mesh(new THREE.BoxGeometry(hallW, hallH, hallD), hallMat);
   base.position.set(0, hallH/2, 0);
-  hallGroup.add(base);
+  base.name = 'hall_base';
+  hallGrp.add(base);
   const roof = new THREE.Mesh(new THREE.CylinderGeometry(hallW/2, hallW/2, hallD, 24, 1, false, 0, Math.PI), hallMat);
   roof.rotation.z = Math.PI/2; roof.rotation.y = Math.PI/2;
   roof.position.set(0, hallH, 0);
-  hallGroup.add(roof);
-  siteRoot.add(hallGroup);
+  roof.name = 'hall_roof';
+  hallGrp.add(roof);
+  siteRoot.add(hallGrp);
 
   const qGroup = new THREE.Group(); qGroup.name = 'Quartier';
   const qMat = new THREE.MeshStandardMaterial({color:0x2c3b47, roughness:0.9});
@@ -884,99 +835,97 @@ window.addEventListener('keydown', (ev)=>{
 });
 
 /* ============================================================
-   EXTENSION DU HALL DE GARE — Version améliorée avec pivots modifiables
+   EXTENSION DU HALL DE GARE — Nouvelle approche : clone + placement libre
    ============================================================ */
 let extending = false;
-let extPickedProfile = null;
-let extPathPivots = [];     // [{x,y,z}, ...] les points de contrôle du chemin
-let extMarkers = new THREE.Group(); scene.add(extMarkers);
-let extPreviewLine = null;
-let extPivotGizmos = [];    // Meshes pour les poignées de contrôle
+let extClone = null;          // Groupe cloné du hall
+let extOriginalMesh = null;   // Référence au mesh original pour la fusion
+let extControls = null;       // TransformControls (pas utilisé pour éviter la dépendance)
 let extensions = [];
 let extIdCounter = 1;
-let extScaleStart = 1.0, extScaleEnd = 1.0, extHeightOffset = 0;
-let extSegments = 32;
-let editingExtId = null;    // id de l'extension en cours d'édition
-let extPathPreview = null;  // ligne d'aperçu du chemin
-let extGizmoGroup = new THREE.Group();
-scene.add(extGizmoGroup);
+let selectedExtId = null;
 
-const btnExtend = document.getElementById('btn-extend-hall');
+// Stockage des transformations de l'extension en cours d'édition
+let extTransform = {
+  position: new THREE.Vector3(0, 0, 0),
+  rotation: new THREE.Euler(0, 0, 0),
+  scale: new THREE.Vector3(1, 1, 1)
+};
+
+const btnExtend = document.getElementById('btn-extend');
 const drawHintText = document.getElementById('draw-hint-text');
 
 function startExtend(){
   if(drawing) return;
-  if(!hallMesh){ alert("Aucun objet 'Hall_Gare' trouvé dans la maquette chargée."); return; }
-  extending = true; extPickedProfile = null; extPathPivots = [];
-  extMarkers.clear();
-  extGizmoGroup.clear();
+  if(!hallGroup){ alert("Aucun objet 'Hall_Gare' trouvé dans la maquette chargée."); return; }
+  
+  extending = true;
   btnExtend.classList.add('active');
   btnExtend.textContent = 'Extension : cliquez la façade…';
   drawHint.classList.add('show');
-  drawHintText.textContent = "Cliquez la façade exposée du hall pour démarrer l'extension";
+  drawHintText.textContent = "Cliquez sur la façade du hall pour en faire une copie";
   controls.enabled = false;
 }
 
 function cancelExtend(){
-  extending = false; extPickedProfile = null; extPathPivots = [];
-  extMarkers.clear();
-  extGizmoGroup.clear();
-  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
+  extending = false;
+  if(extClone) {
+    scene.remove(extClone);
+    extClone = null;
+    extOriginalMesh = null;
+  }
   btnExtend.classList.remove('active');
-  btnExtend.textContent = 'Étendre le hall';
+  btnExtend.textContent = '+ Extension du hall';
   drawHint.classList.remove('show');
   drawHintText.textContent = 'Cliquez sur le sol pour poser les sommets du bâtiment';
   controls.enabled = true;
-  editingExtId = null;
+  selectedExtId = null;
 }
 
-function sliceMeshByPlane(mesh, planePoint, planeNormal){
-  mesh.updateWorldMatrix(true,false);
-  const geo = mesh.geometry;
-  const pos = geo.attributes.position;
-  const idx = geo.index;
-  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, planePoint);
-  const a=new THREE.Vector3(), b=new THREE.Vector3(), c=new THREE.Vector3();
-  const segs = [];
-  const triCount = idx ? idx.count/3 : pos.count/3;
-  const getVertex=(i)=>{
-    const ii = idx ? idx.getX(i) : i;
-    return new THREE.Vector3().fromBufferAttribute(pos, ii).applyMatrix4(mesh.matrixWorld);
-  };
-  const edgeIntersect=(p1,p2)=>{
-    const d1 = plane.distanceToPoint(p1), d2 = plane.distanceToPoint(p2);
-    if((d1>0 && d2>0) || (d1<0 && d2<0)) return null;
-    if(Math.abs(d1-d2)<1e-9) return null;
-    const t = d1/(d1-d2);
-    return p1.clone().lerp(p2, t);
-  };
-  for(let t=0;t<triCount;t++){
-    a.copy(getVertex(t*3)); b.copy(getVertex(t*3+1)); c.copy(getVertex(t*3+2));
-    const pts = [edgeIntersect(a,b), edgeIntersect(b,c), edgeIntersect(c,a)].filter(Boolean);
-    if(pts.length===2) segs.push([pts[0], pts[1]]);
-  }
-  if(!segs.length) return null;
-  const used = new Array(segs.length).fill(false);
-  const loops = [];
-  for(let i=0;i<segs.length;i++){
-    if(used[i]) continue;
-    used[i]=true;
-    const loop = [segs[i][0], segs[i][1]];
-    let extended = true;
-    while(extended){
-      extended = false;
-      for(let j=0;j<segs.length;j++){
-        if(used[j]) continue;
-        const [p,q] = segs[j];
-        const tail = loop[loop.length-1];
-        if(tail.distanceTo(p)<0.05){ loop.push(q); used[j]=true; extended=true; }
-        else if(tail.distanceTo(q)<0.05){ loop.push(p); used[j]=true; extended=true; }
+function createExtensionClone(hitPoint, hitNormal){
+  // Clone le hall group entier
+  if(!hallGroup) return;
+  
+  extClone = hallGroup.clone();
+  // Positionner le clone à l'endroit cliqué
+  extClone.position.copy(hitPoint);
+  // Orienter vers la normale de la face cliquée
+  const up = new THREE.Vector3(0, 1, 0);
+  const quat = new THREE.Quaternion().setFromUnitVectors(up, hitNormal);
+  extClone.quaternion.copy(quat);
+  extClone.scale.set(1, 1, 1);
+  
+  // Rendre le clone transparent pour montrer qu'il est en édition
+  extClone.traverse(o => {
+    if(o.isMesh) {
+      if(Array.isArray(o.material)) {
+        o.material.forEach(m => { m.transparent = true; m.opacity = 0.7; });
+      } else if(o.material) {
+        o.material.transparent = true;
+        o.material.opacity = 0.7;
       }
+      o.castShadow = true;
+      o.receiveShadow = true;
     }
-    loops.push(loop);
-  }
-  loops.sort((a,b)=>b.length-a.length);
-  return loops[0];
+  });
+  
+  // Ajouter une bordure pour visualiser l'extension
+  const box = new THREE.Box3().setFromObject(extClone);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const wireframe = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, transparent: true, opacity: 0.8 });
+  const wireLine = new THREE.LineSegments(new THREE.EdgesGeometry(wireframe), wireMat);
+  wireLine.position.copy(center);
+  extClone.add(wireLine);
+  
+  extOriginalMesh = hallGroup;
+  scene.add(extClone);
+  
+  drawHintText.textContent = "Placez l'extension avec les commandes ci-dessous · ✅ Valider · ❌ Annuler";
+  
+  // Afficher les contrôles dans le panneau
+  renderExtEditControls();
 }
 
 function pickHallFacade(ev){
@@ -984,263 +933,259 @@ function pickHallFacade(ev){
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
+  
   const meshes = [];
-  hallMesh.traverse(o=>{ if(o.isMesh) meshes.push(o); });
+  if(hallGroup) hallGroup.traverse(o => { if(o.isMesh) meshes.push(o); });
+  
   const hits = raycaster.intersectObjects(meshes, true);
-  if(!hits.length){ flashStatus("Aucune surface du hall touchée"); return; }
+  if(!hits.length){ flashStatus("Cliquez sur la façade du hall"); return; }
+  
   const hit = hits[0];
   const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
-  const facadeWorldNormal = hallFacadeWorldNormal;
-  if(worldNormal.dot(facadeWorldNormal) < 0.6){
-    flashStatus("Cliquez la façade exposée du hall, pas une autre paroi");
+  
+  // Vérifier que c'est bien la façade (normale horizontale)
+  if(Math.abs(worldNormal.y) > 0.3) {
+    flashStatus("Cliquez sur une façade verticale, pas le toit");
     return;
   }
-  const planePoint = hit.point.clone().addScaledVector(facadeWorldNormal, -0.05);
-  const loop = sliceMeshByPlane(hallMesh, planePoint, facadeWorldNormal);
-  if(!loop || loop.length<3){ flashStatus("Profil de façade introuvable — cliquez ailleurs sur la façade"); return; }
-  const centroid = loop.reduce((s,p)=>s.add(p), new THREE.Vector3()).multiplyScalar(1/loop.length);
-  extPickedProfile = { points: loop.map(p=>p.clone().sub(centroid)), centroid, normal: facadeWorldNormal };
-  const marker = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([...loop, loop[0]]),
-    new THREE.LineBasicMaterial({ color:0x4fae8f })
-  );
-  extMarkers.add(marker);
   
-  // Premier pivot = position du hall + un peu d'offset
-  const startPivot = centroid.clone().addScaledVector(facadeWorldNormal, 3);
-  startPivot.y = 2; // hauteur de départ raisonnable
-  extPathPivots = [startPivot];
-  drawHintText.textContent = "Cliquez pour ajouter des pivots · Entrée pour valider · Échap annule";
-  flashStatus("Façade capturée — placez des pivots pour tracer le chemin");
-  updatePivotVisuals();
+  const facadeWorldNormal = hallFacadeWorldNormal;
+  if(worldNormal.dot(facadeWorldNormal) < 0.3) {
+    flashStatus("Cliquez sur la façade exposée du hall");
+    return;
+  }
+  
+  // Créer le clone à cet endroit
+  createExtensionClone(hit.point, worldNormal);
 }
 
-function addPivotFromEvent(ev){
-  // Raycast sur le sol pour déterminer la position
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  const targets = [ground];
-  buildings.forEach(b=> b.group.traverse(o=>{ if(o.isMesh) targets.push(o); }));
-  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) targets.push(o); });
-  const hit = raycaster.intersectObjects(targets, true)[0];
-  if(!hit) return;
+function validateExtension(){
+  if(!extClone) return;
   
-  const pt = hit.point.clone();
-  // On ajuste la hauteur par rapport au dernier pivot
-  const lastPivot = extPathPivots[extPathPivots.length-1];
-  if(lastPivot) {
-    // Si le clic est sur une surface verticale (bâtiment), on prend la hauteur du point cliqué
-    // Sinon, on propose une hauteur constante basée sur le dernier pivot
-    if(hit.face && Math.abs(hit.face.normal.y) < 0.3) {
-      // Surface verticale : on garde la hauteur du point cliqué
-      pt.y = hit.point.y;
-    } else {
-      // Surface horizontale : on utilise la hauteur du dernier pivot avec un léger offset
-      pt.y = lastPivot.y + (Math.random() - 0.5) * 0.5;
+  // Rendre le clone opaque
+  extClone.traverse(o => {
+    if(o.isMesh) {
+      if(Array.isArray(o.material)) {
+        o.material.forEach(m => { m.transparent = false; m.opacity = 1; });
+      } else if(o.material) {
+        o.material.transparent = false;
+        o.material.opacity = 1;
+      }
     }
-  }
-  extPathPivots.push(pt);
-  updatePivotVisuals();
-}
-
-function updatePivotVisuals(){
-  extMarkers.clear();
-  extGizmoGroup.clear();
-  extPivotGizmos = [];
-
-  // Dessine les pivots
-  extPathPivots.forEach((p, i) => {
-    const sphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.6, 12, 12),
-      new THREE.MeshBasicMaterial({ color: i === 0 ? 0x4fae8f : 0xe0663f })
-    );
-    sphere.position.copy(p);
-    sphere.userData.pivotIndex = i;
-    extMarkers.add(sphere);
-    extPivotGizmos.push(sphere);
-  });
-
-  // Ligne du chemin
-  if(extPathPivots.length > 1) {
-    if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-    extPreviewLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(extPathPivots),
-      new THREE.LineBasicMaterial({ color: 0x4fae8f, linewidth: 2 })
-    );
-    scene.add(extPreviewLine);
-  }
-}
-
-function createExtensionFromPivots(profile, pivots, name){
-  // Construit la géométrie loftée à partir des pivots
-  const curve = new THREE.CatmullRomCurve3(pivots, false, 'catmullrom', 0.3);
-  const segments = extSegments;
-  const frames = curve.computeFrenetFrames(segments, false);
-  const ring = profile.points;
-  
-  const positions = [], indices = [];
-  const ringLen = ring.length;
-  
-  for(let s=0; s<=segments; s++){
-    const t = s/segments;
-    const center = curve.getPointAt(t).clone();
-    // La hauteur est maintenant déterminée par la position Y des pivots
-    const scale = THREE.MathUtils.lerp(extScaleStart, extScaleEnd, t);
-    const normal = frames.normals[s], binormal = frames.binormals[s];
-    for(const p of ring){
-      const local = p.clone().multiplyScalar(scale);
-      const projN = local.dot(normal), projB = local.dot(binormal);
-      const worldPt = center.clone().addScaledVector(normal, projN).addScaledVector(binormal, projB);
-      positions.push(worldPt.x, worldPt.y, worldPt.z);
-    }
-  }
-  
-  for(let s=0;s<segments;s++){
-    for(let i=0;i<ringLen;i++){
-      const a = s*ringLen+i, b = s*ringLen+((i+1)%ringLen);
-      const c = (s+1)*ringLen+i, d = (s+1)*ringLen+((i+1)%ringLen);
-      indices.push(a,c,b, b,c,d);
-    }
-  }
-  
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x9fb8c4, roughness:0.55, metalness:0.1,
-    transparent:true, opacity:0.96, depthWrite:true
   });
   
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.renderOrder = 2;
+  // Supprimer la wireframe
+  const toRemove = [];
+  extClone.children.forEach(c => {
+    if(c.isLineSegments) toRemove.push(c);
+  });
+  toRemove.forEach(c => extClone.remove(c));
   
-  const group = new THREE.Group();
-  group.add(mesh);
-  scene.add(group);
-  
+  // Ajouter l'extension à la liste
   const ext = {
     id: extIdCounter++,
-    name: name || `Extension hall ${extIdCounter-1}`,
-    pivots: pivots.map(p => p.clone()),
-    profile: profile,
-    mesh: mesh,
-    group: group,
-    scaleStart: extScaleStart,
-    scaleEnd: extScaleEnd,
-    segments: extSegments
+    name: `Extension ${extIdCounter-1}`,
+    group: extClone,
+    position: extClone.position.clone(),
+    rotation: extClone.quaternion.clone(),
+    scale: extClone.scale.clone(),
+    original: extOriginalMesh
   };
   extensions.push(ext);
-  renderExtList();
-  return ext;
-}
-
-function finishExtend(){
-  if(!extPickedProfile || extPathPivots.length < 2){ 
-    flashStatus("Il faut au moins 2 pivots pour créer une extension");
-    cancelExtend(); 
-    return; 
-  }
-  const ext = createExtensionFromPivots(extPickedProfile, extPathPivots);
+  selectedExtId = ext.id;
+  
+  extClone = null;
+  extOriginalMesh = null;
   renderExtList();
   cancelExtend();
+}
+
+function renderExtEditControls(){
+  const list = document.getElementById('ext-list');
+  // Afficher temporairement les contrôles en haut de la liste
+  const controlsDiv = document.createElement('div');
+  controlsDiv.id = 'ext-edit-controls';
+  controlsDiv.style.cssText = 'background:#0b1116;border:1px solid #4fae8f;border-radius:4px;padding:12px;margin-bottom:12px;';
+  controlsDiv.innerHTML = `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-family:IBM Plex Mono,monospace;">🔄 Déplacez l'extension avec les commandes ci-dessous</div>
+    <div class="ext-controls">
+      <div class="row">
+        <label>X</label>
+        <input type="number" id="ext-pos-x" step="0.5" value="0">
+        <label>Y</label>
+        <input type="number" id="ext-pos-y" step="0.5" value="0">
+        <label>Z</label>
+        <input type="number" id="ext-pos-z" step="0.5" value="0">
+      </div>
+      <div class="row">
+        <label>Échelle</label>
+        <input type="number" id="ext-scale" step="0.05" min="0.1" max="3" value="1">
+      </div>
+      <div class="row" style="gap:6px;margin-top:6px;">
+        <button class="small-action" id="ext-validate" style="background:var(--ser);color:var(--ink);">✅ Valider</button>
+        <button class="small-action danger" id="ext-cancel">❌ Annuler</button>
+      </div>
+    </div>
+  `;
+  
+  // Insérer en haut de la liste
+  const empty = document.getElementById('ext-empty-note');
+  if(empty) empty.style.display = 'none';
+  
+  // Supprimer l'ancien contrôle s'il existe
+  const old = document.getElementById('ext-edit-controls');
+  if(old) old.remove();
+  
+  list.prepend(controlsDiv);
+  
+  // Lier les contrôles
+  const posX = document.getElementById('ext-pos-x');
+  const posY = document.getElementById('ext-pos-y');
+  const posZ = document.getElementById('ext-pos-z');
+  const scaleInp = document.getElementById('ext-scale');
+  const validateBtn = document.getElementById('ext-validate');
+  const cancelBtn = document.getElementById('ext-cancel');
+  
+  if(extClone) {
+    posX.value = extClone.position.x.toFixed(2);
+    posY.value = extClone.position.y.toFixed(2);
+    posZ.value = extClone.position.z.toFixed(2);
+    scaleInp.value = extClone.scale.x.toFixed(2);
+  }
+  
+  const updateExtTransform = () => {
+    if(!extClone) return;
+    extClone.position.set(
+      parseFloat(posX.value) || 0,
+      parseFloat(posY.value) || 0,
+      parseFloat(posZ.value) || 0
+    );
+    const s = parseFloat(scaleInp.value) || 1;
+    extClone.scale.set(s, s, s);
+  };
+  
+  posX.addEventListener('input', updateExtTransform);
+  posY.addEventListener('input', updateExtTransform);
+  posZ.addEventListener('input', updateExtTransform);
+  scaleInp.addEventListener('input', updateExtTransform);
+  
+  validateBtn.addEventListener('click', validateExtension);
+  cancelBtn.addEventListener('click', () => {
+    if(extClone) {
+      scene.remove(extClone);
+      extClone = null;
+      extOriginalMesh = null;
+    }
+    cancelExtend();
+  });
 }
 
 btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExtend());
 
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!extending) return;
-  if(!extPickedProfile){ pickHallFacade(ev); return; }
-  addPivotFromEvent(ev);
+  if(!extClone){ pickHallFacade(ev); return; }
+  // Si déjà un clone, on ignore les clics (l'utilisateur utilise les contrôles)
 });
 
 window.addEventListener('keydown', (ev)=>{
   if(!extending) return;
-  if(ev.key==='Enter') finishExtend();
-  if(ev.key==='Escape') cancelExtend();
+  if(ev.key==='Enter') validateExtension();
+  if(ev.key==='Escape') {
+    if(extClone) {
+      scene.remove(extClone);
+      extClone = null;
+      extOriginalMesh = null;
+    }
+    cancelExtend();
+  }
 });
 
-// Fonction pour rééditer une extension existante
-function editExtension(id){
-  const ext = extensions.find(e => e.id === id);
-  if(!ext) return;
-  editingExtId = id;
-  extPathPivots = ext.pivots.map(p => p.clone());
-  extPickedProfile = ext.profile;
-  extScaleStart = ext.scaleStart || 1;
-  extScaleEnd = ext.scaleEnd || 1;
-  extSegments = ext.segments || 32;
-  
-  // Supprime l'extension existante
-  scene.remove(ext.group);
-  ext.mesh.geometry.dispose();
-  ext.mesh.material.dispose();
-  extensions = extensions.filter(e => e.id !== id);
-  
-  // Passe en mode édition
-  extending = true;
-  btnExtend.classList.add('active');
-  btnExtend.textContent = 'Édition en cours…';
-  drawHint.classList.add('show');
-  drawHintText.textContent = "Déplacez les pivots (bleus) · Ajoutez-en en cliquant · Entrée pour valider";
-  controls.enabled = false;
-  updatePivotVisuals();
-  renderExtList();
-}
-
-// Supprimer une extension
 function deleteExtension(id){
   const e = extensions.find(x=>x.id===id);
   if(!e) return;
   scene.remove(e.group);
-  e.mesh.geometry.dispose(); 
-  e.mesh.material.dispose();
+  // Nettoyer les ressources
+  e.group.traverse(o => {
+    if(o.isMesh) {
+      o.geometry.dispose();
+      if(Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+      else if(o.material) o.material.dispose();
+    }
+  });
   extensions = extensions.filter(x=>x.id!==id);
+  if(selectedExtId === id) selectedExtId = null;
   renderExtList();
 }
 
 function renderExtList(){
   const list = document.getElementById('ext-list');
   const empty = document.getElementById('ext-empty-note');
-  empty.style.display = extensions.length ? 'none' : 'block';
-  list.innerHTML = '';
+  const count = document.getElementById('ext-count');
   
-  extensions.forEach(e=>{
+  // Ne pas effacer les contrôles d'édition s'ils existent
+  const controls = document.getElementById('ext-edit-controls');
+  const hasControls = !!controls;
+  
+  if(!hasControls) {
+    list.innerHTML = '';
+  } else {
+    // Garder les contrôles, effacer le reste
+    const children = list.children;
+    for(let i = children.length - 1; i >= 0; i--) {
+      if(children[i].id !== 'ext-edit-controls') {
+        children[i].remove();
+      }
+    }
+  }
+  
+  empty.style.display = extensions.length ? 'none' : 'block';
+  count.textContent = extensions.length ? `(${extensions.length})` : '';
+  
+  extensions.forEach(e => {
     const card = document.createElement('div');
-    card.className = 'bldg-card';
+    card.className = 'bldg-card' + (e.id === selectedExtId ? ' selected' : '');
     card.style.padding = '9px 10px';
-    card.style.display = 'flex'; 
-    card.style.alignItems='center'; 
-    card.style.gap='8px';
+    card.style.display = 'flex';
+    card.style.alignItems = 'center';
+    card.style.gap = '8px';
     card.style.flexWrap = 'wrap';
     
     const label = document.createElement('span');
-    label.textContent = e.name; 
-    label.style.flex='1'; 
-    label.style.fontSize='12.5px';
+    label.textContent = e.name;
+    label.style.flex = '1';
+    label.style.fontSize = '12.5px';
     
-    const editBtn = document.createElement('button');
-    editBtn.className = 'mini-btn';
-    editBtn.textContent = '✎';
-    editBtn.title = 'Modifier les pivots';
-    editBtn.style.color = 'var(--blue)';
-    editBtn.addEventListener('click', ()=> editExtension(e.id));
+    const info = document.createElement('span');
+    const pos = e.position || new THREE.Vector3();
+    info.textContent = `pos: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`;
+    info.style.cssText = 'font-size:10px;color:var(--muted);font-family:IBM Plex Mono,monospace;';
+    
+    const focusBtn = document.createElement('button');
+    focusBtn.className = 'mini-btn';
+    focusBtn.textContent = '⊙';
+    focusBtn.title = 'Centrer la vue';
+    focusBtn.addEventListener('click', () => {
+      if(e.group) {
+        const box = new THREE.Box3().setFromObject(e.group);
+        const center = box.getCenter(new THREE.Vector3());
+        controls.target.copy(center);
+        camera.position.set(center.x + 30, center.y + 20, center.z + 30);
+      }
+    });
     
     const del = document.createElement('button');
-    del.className = 'mini-btn danger'; 
+    del.className = 'mini-btn danger';
     del.textContent = '✕';
     del.addEventListener('click', ()=> deleteExtension(e.id));
     
-    const info = document.createElement('span');
-    info.textContent = `${e.pivots.length} pivots`;
-    info.style.cssText = 'font-size:10px;color:var(--muted);font-family:IBM Plex Mono,monospace;';
-    
-    card.append(label, info, editBtn, del);
-    list.appendChild(card);
+    card.append(label, info, focusBtn, del);
+    // Insérer après les contrôles s'ils existent
+    if(controls) {
+      list.insertBefore(card, controls.nextSibling);
+    } else {
+      list.appendChild(card);
+    }
   });
 }
 
@@ -1409,7 +1354,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   const groundTargets = [];
   if(polygonMesh) groundTargets.push(polygonMesh);
   if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
-  if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
+  if(hallGroup) hallGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
   groundTargets.push(ground);
   const hit = raycaster.intersectObjects(groundTargets, true)[0];
   if(!hit){ flashStatus("Cliquez dans le polygone d'implantation"); return; }
@@ -1656,14 +1601,13 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
    ============================================================ */
 document.getElementById('btn-save-json').addEventListener('click', ()=>{
   const data = {
-    version: 2,
+    version: 3,
     buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
     extensions: extensions.map(e=>({
       name: e.name,
-      pivots: e.pivots.map(p => ({x:p.x, y:p.y, z:p.z})),
-      scaleStart: e.scaleStart,
-      scaleEnd: e.scaleEnd,
-      segments: e.segments
+      position: {x:e.position.x, y:e.position.y, z:e.position.z},
+      rotation: {x:e.rotation.x, y:e.rotation.y, z:e.rotation.z, w:e.rotation.w},
+      scale: {x:e.scale.x, y:e.scale.y, z:e.scale.z}
     }))
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
@@ -1689,24 +1633,33 @@ fileLoad.addEventListener('change', (e)=>{
       selectedId = null;
       
       // Restaurer les extensions
-      extensions.forEach(e => { scene.remove(e.group); e.mesh.geometry.dispose(); e.mesh.material.dispose(); });
+      extensions.forEach(e => { scene.remove(e.group); });
       extensions = [];
       extIdCounter = 1;
-      if(data.extensions && data.pivots && data.profile) {
-        // Pour rétrocompatibilité, on reconstruit les extensions
-        (data.extensions||[]).forEach(extData => {
-          const pivots = extData.pivots.map(p => new THREE.Vector3(p.x, p.y, p.z));
-          // On a besoin du profil stocké ou on le recrée
-          const profile = data.profile || null;
-          if(profile && pivots.length >= 2) {
-            const ext = createExtensionFromPivots(profile, pivots, extData.name);
-            ext.scaleStart = extData.scaleStart || 1;
-            ext.scaleEnd = extData.scaleEnd || 1;
-            ext.segments = extData.segments || 32;
-          }
+      
+      if(data.extensions && hallGroup) {
+        data.extensions.forEach(extData => {
+          const clone = hallGroup.clone();
+          clone.position.set(extData.position.x, extData.position.y, extData.position.z);
+          clone.quaternion.set(extData.rotation.x, extData.rotation.y, extData.rotation.z, extData.rotation.w);
+          clone.scale.set(extData.scale.x, extData.scale.y, extData.scale.z);
+          clone.traverse(o => { if(o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+          scene.add(clone);
+          
+          const ext = {
+            id: extIdCounter++,
+            name: extData.name || `Extension ${extIdCounter-1}`,
+            group: clone,
+            position: clone.position.clone(),
+            rotation: clone.quaternion.clone(),
+            scale: clone.scale.clone(),
+            original: hallGroup
+          };
+          extensions.push(ext);
         });
       }
       rebuildAll(); renderList();
+      renderExtList();
     }catch(err){ alert("Fichier de projet invalide."); }
   };
   reader.readAsText(file);
