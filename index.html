@@ -1840,36 +1840,46 @@ function renderCrosswalkControls(){
   });
 }
 
-// Projette un point (x,z) sur le sol réel de la maquette (quartier/hall/polygone),
-// par un rayon vertical descendant. Sert à recaler la hauteur des voies importées :
-// la coordonnée Y d'un routes.json peut être incohérente avec le reste de la scène
-// (ex. objets Blender non "appliqués" au même moment que le reste), donc on ne lui
-// fait pas confiance aveuglément — on retrouve le vrai niveau du sol à cet endroit.
-function groundHeightAt(x, z, fallback){
-  const from = new THREE.Vector3(x, 1e5, z);
-  const rc = new THREE.Raycaster(from, new THREE.Vector3(0,-1,0), 0, 3e5);
-  const targets = [];
-  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) targets.push(o); });
-  if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) targets.push(o); });
-  if(polygonMesh) targets.push(polygonMesh);
-  const hit = rc.intersectObjects(targets, true)[0];
-  return hit ? hit.point.y + 0.05 : fallback;
+// Calibre la hauteur des voies importées par un DÉCALAGE CONSTANT plutôt qu'un
+// raycast par point (un raycast vertical peut retomber sur le toit d'un bâtiment
+// si le point (x,z) d'une voie passe sous son emprise — c'est ce qui faisait
+// "marcher les piétons sur les façades"). On compare simplement l'altitude
+// moyenne brute des points du routes.json à l'altitude réelle du sol de la place
+// (le polygone d'implantation, qui est toujours plat), et on additionne l'écart
+// à tous les points : les pentes/reliefs authored dans Blender restent intacts,
+// seul le biais global est corrigé.
+function getPolygonGroundY(){
+  if(!polygonMesh) return 0;
+  polygonMesh.updateWorldMatrix(true,false);
+  const pos = polygonMesh.geometry.attributes.position;
+  const v = new THREE.Vector3();
+  let sum = 0;
+  for(let i=0;i<pos.count;i++){ v.fromBufferAttribute(pos,i).applyMatrix4(polygonMesh.matrixWorld); sum += v.y; }
+  return pos.count ? sum/pos.count : 0;
 }
 // Charge un routes.json exporté de Blender : { "Route_Tram_1":[[x,y,z],...], "Route_Bus_A":[...], ... }
 // Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
 function importRoutesFromJSON(data, sourceLabel){
   clearRoutes(); // routes.json remplace l'ensemble des voies existantes (évite les doublons avec l'import auto depuis le .glb)
+
+  // décalage vertical global : moyenne des Y bruts du fichier vs. altitude réelle du sol
+  const rawYs = [];
+  Object.values(data).forEach(pts=>{ (pts||[]).forEach(p=>{ if(p && p[1]!==undefined) rawYs.push(p[1]); }); });
+  const rawBaseline = rawYs.length ? rawYs.reduce((a,b)=>a+b,0)/rawYs.length : 0;
+  const groundY = getPolygonGroundY();
+  const yOffset = groundY - rawBaseline;
+
   const empty = [], created = [];
   Object.entries(data).forEach(([name, pts])=>{
     if(!pts || pts.length<2){ empty.push(name); return; }
     const key = name.toLowerCase();
     let type = 'voiture';
     for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
-    const points = pts.map(p=> ({x:p[0], y: groundHeightAt(p[0], p[2], p[1]??0.15), z:p[2]}));
+    const points = pts.map(p=> ({x:p[0], y:(p[1]??0.15)+yOffset, z:p[2]}));
     createRoute(points, type, name);
     created.push(name);
   });
-  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
+  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''} (décalage vertical appliqué : ${yOffset.toFixed(2)} m).${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
   return created.length;
 }
 
