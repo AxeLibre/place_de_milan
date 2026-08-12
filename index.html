@@ -400,8 +400,17 @@ let gridVisible = true;
 // géométriquement quelle que soit la convention d'axes du fichier.
 let hallFacadeWorldNormal = new THREE.Vector3(0,0,1); // valeur par défaut avant chargement
 
+// worldRoot : parent commun UNIQUE de tout ce qui représente "le lieu" (maquette,
+// arbres, voies de circulation, bâtiments dessinés...). La correction d'axe
+// Z-up→Y-up est appliquée UNE SEULE FOIS ici, jamais sur des sous-parties
+// séparément — ça élimine par construction tout risque de décalage entre le
+// .glb et les données importées (routes.json, etc.) : tout ce qui vit sous
+// worldRoot bouge exactement ensemble, quoi qu'il arrive.
+let worldRoot = new THREE.Group(); worldRoot.name = 'worldRoot';
+scene.add(worldRoot);
+
 let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
-scene.add(siteRoot);
+worldRoot.add(siteRoot);
 let polygonMesh = null;   // THREE.Mesh du polygone d'implantation
 let siteUpCorrected = false; // true si une rotation Z-up→Y-up a été appliquée à la maquette chargée
 let hallMesh = null;      // THREE.Mesh du hall de gare
@@ -729,14 +738,18 @@ function loadSiteFromGLB(url, onFail){
     // la conversion d'axe (option "+Y Up" décochée), la hauteur du bâti se
     // retrouve sur Z au lieu de Y. On le détecte en comparant l'étendue verticale
     // (généralement bien plus petite que l'étendue horizontale d'un quartier) sur
-    // chacun des deux axes, et on corrige par une rotation si besoin.
+    // chacun des deux axes, et on corrige par une rotation si besoin — appliquée
+    // sur worldRoot (le parent commun de TOUT : maquette, arbres, voies...), pas
+    // sur gltf.scene seul, pour que routes.json et le reste bougent avec, sans
+    // jamais pouvoir diverger.
     const box = new THREE.Box3().setFromObject(gltf.scene);
     const size = box.getSize(new THREE.Vector3());
     let corrected = false;
+    worldRoot.rotation.x = 0;
     if(size.z < size.y){
-      gltf.scene.rotation.x = -Math.PI/2;
+      worldRoot.rotation.x = -Math.PI/2;
       corrected = true;
-      siteUpCorrected = true; // mémorisé pour appliquer la même correction aux gabarits clonés (arbres, etc.)
+      siteUpCorrected = true; // conservé pour référence/diagnostic (plus utilisé pour re-corriger quoi que ce soit ailleurs)
     }
     const report = onSiteLoaded();
     showSiteBanner(
@@ -768,7 +781,7 @@ let drawing = false;
 let drawPoints = [];
 let drawMarkers = new THREE.Group();
 let previewLine = null;
-scene.add(drawMarkers);
+worldRoot.add(drawMarkers);
 
 let selectedId = null;
 
@@ -821,7 +834,7 @@ function refreshPreview(){
     new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color:0xe0663f })
   );
-  scene.add(previewLine);
+  worldRoot.add(previewLine);
 }
 function pointInPolygon(pt, poly){
   let inside = false;
@@ -906,7 +919,7 @@ window.addEventListener('keydown', (ev)=>{
 let extending = false;
 let extPickedProfile = null; // {points:[Vector3 local autour du centroïde], centroid, normal}
 let extPathPoints = [];      // Vector3 monde
-let extMarkers = new THREE.Group(); scene.add(extMarkers);
+let extMarkers = new THREE.Group(); worldRoot.add(extMarkers);
 let extPreviewLine = null;
 let extensions = []; // {id, name, mesh, group}
 let extIdCounter = 1;
@@ -1020,7 +1033,7 @@ function refreshExtPreview(){
   if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
   if(extPathPoints.length<2) return;
   extPreviewLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(extPathPoints), new THREE.LineBasicMaterial({color:0x4fae8f}));
-  scene.add(extPreviewLine);
+  worldRoot.add(extPreviewLine);
 }
 
 function extendPathPointFromEvent(ev){
@@ -1086,7 +1099,7 @@ function finishExtend(){
   mesh.renderOrder = 2; // s'affiche par-dessus les bâtiments qu'elle traverse visuellement
   const group = new THREE.Group();
   group.add(mesh);
-  scene.add(group);
+  worldRoot.add(group);
   const ext = { id: extIdCounter++, name:`Extension hall ${extIdCounter-1}`, mesh, group };
   extensions.push(ext);
   renderExtList();
@@ -1245,10 +1258,9 @@ function findIcosphereTemplate(){
     inner.position.set(0,0,0);
     inner.rotation.set(0,0,0);
     inner.scale.set(1,1,1);
-    // Les arbres qu'on plante vivent dans treesGroup, hors de la hiérarchie de
-    // gltf.scene — ils n'héritent donc PAS de la rotation Z-up→Y-up appliquée à
-    // la maquette. On l'applique donc ici, une fois pour toutes.
-    if(siteUpCorrected) inner.rotation.x = -Math.PI/2;
+    // (treesGroup vit maintenant sous worldRoot, comme la maquette : plus besoin
+    // de recorriger manuellement l'axe ici, la rotation Z-up→Y-up est héritée
+    // automatiquement via la hiérarchie.)
     inner.updateMatrixWorld(true);
     // Recentre sur sa propre base locale (X/Z centrés, Y=0 au point le plus bas) :
     // indispensable si l'export a "appliqué" la position mondiale dans les sommets.
@@ -1272,7 +1284,7 @@ function findIcosphereTemplate(){
 
 let trees = [];
 let treeIdCounter = 1;
-let treesGroup = new THREE.Group(); scene.add(treesGroup);
+let treesGroup = new THREE.Group(); worldRoot.add(treesGroup);
 let treePlacing = false;
 const btnTree = document.getElementById('btn-tree');
 
@@ -1382,7 +1394,7 @@ function createBuilding(pts, opts={}){
     group: new THREE.Group(),
     open: true
   };
-  scene.add(b.group);
+  worldRoot.add(b.group);
   buildings.push(b);
   selectedId = b.id;
   rebuildMesh(b);
@@ -1669,14 +1681,14 @@ function createRoute(points, type, name){
   const count = cfg.count;
   const inst = new THREE.InstancedMesh(geo, mat, count);
   inst.castShadow = true;
-  scene.add(inst);
+  worldRoot.add(inst);
 
   const agents = [];
   for(let i=0;i<count;i++) agents.push({ t: i/count, speed: cfg.speed * (0.9+Math.random()*0.2) });
 
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
   line.visible = false; // le tracé lui-même reste caché ; seuls les véhicules/piétons animés sont visibles
-  scene.add(line);
+  worldRoot.add(line);
 
   const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, line, agents };
   routes.push(route);
@@ -1840,46 +1852,26 @@ function renderCrosswalkControls(){
   });
 }
 
-// Calibre la hauteur des voies importées par un DÉCALAGE CONSTANT plutôt qu'un
-// raycast par point (un raycast vertical peut retomber sur le toit d'un bâtiment
-// si le point (x,z) d'une voie passe sous son emprise — c'est ce qui faisait
-// "marcher les piétons sur les façades"). On compare simplement l'altitude
-// moyenne brute des points du routes.json à l'altitude réelle du sol de la place
-// (le polygone d'implantation, qui est toujours plat), et on additionne l'écart
-// à tous les points : les pentes/reliefs authored dans Blender restent intacts,
-// seul le biais global est corrigé.
-function getPolygonGroundY(){
-  if(!polygonMesh) return 0;
-  polygonMesh.updateWorldMatrix(true,false);
-  const pos = polygonMesh.geometry.attributes.position;
-  const v = new THREE.Vector3();
-  let sum = 0;
-  for(let i=0;i<pos.count;i++){ v.fromBufferAttribute(pos,i).applyMatrix4(polygonMesh.matrixWorld); sum += v.y; }
-  return pos.count ? sum/pos.count : 0;
-}
+// Décalage manuel des voies importées, réglable en direct dans le panneau admin
+// (X/Y/Z). Par défaut à zéro : les coordonnées du routes.json sont prises telles
 // Charge un routes.json exporté de Blender : { "Route_Tram_1":[[x,y,z],...], "Route_Bus_A":[...], ... }
+// Coordonnées prises TELLES QUELLES, sans aucune correction/décalage : maintenant
+// que routes.json et la maquette partagent le même worldRoot (voir plus haut),
+// il n'y a plus de raison structurelle qu'un décalage apparaisse entre les deux.
 // Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
 function importRoutesFromJSON(data, sourceLabel){
   clearRoutes(); // routes.json remplace l'ensemble des voies existantes (évite les doublons avec l'import auto depuis le .glb)
-
-  // décalage vertical global : moyenne des Y bruts du fichier vs. altitude réelle du sol
-  const rawYs = [];
-  Object.values(data).forEach(pts=>{ (pts||[]).forEach(p=>{ if(p && p[1]!==undefined) rawYs.push(p[1]); }); });
-  const rawBaseline = rawYs.length ? rawYs.reduce((a,b)=>a+b,0)/rawYs.length : 0;
-  const groundY = getPolygonGroundY();
-  const yOffset = groundY - rawBaseline;
-
   const empty = [], created = [];
   Object.entries(data).forEach(([name, pts])=>{
     if(!pts || pts.length<2){ empty.push(name); return; }
     const key = name.toLowerCase();
     let type = 'voiture';
     for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
-    const points = pts.map(p=> ({x:p[0], y:(p[1]??0.15)+yOffset, z:p[2]}));
+    const points = pts.map(p=> ({ x:p[0], y:(p[1]??0.15), z:p[2] }));
     createRoute(points, type, name);
     created.push(name);
   });
-  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''} (décalage vertical appliqué : ${yOffset.toFixed(2)} m).${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
+  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
   return created.length;
 }
 
