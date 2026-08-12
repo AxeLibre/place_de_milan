@@ -71,21 +71,6 @@
   #draw-hint.show{display:flex;}
   #draw-hint kbd{background:#0b1116;border:1px solid #2a3946;border-radius:2px;padding:1px 6px;font-size:11px;}
 
-  /* ---------- Pivot floating toolbar (extension du hall) ---------- */
-  #pivot-toolbar{
-    position:absolute; z-index:7; display:none; align-items:center; gap:4px;
-    background:var(--ink-2); border:1px solid #2a3946; border-radius:5px;
-    padding:5px 6px; font-family:'IBM Plex Mono',monospace; font-size:11px;
-    transform:translate(-50%,-145%); pointer-events:auto; box-shadow:0 4px 14px rgba(0,0,0,.35);
-    white-space:nowrap;
-  }
-  #pivot-toolbar.show{display:flex;}
-  #pivot-toolbar::after{
-    content:"";position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);
-    border:6px solid transparent;border-top-color:var(--ink-2);
-  }
-  #pivot-height-label{min-width:44px;text-align:center;color:var(--paper);}
-
   /* ---------- Side panel ---------- */
   #panel{
     width:var(--panel-w);flex-shrink:0;background:var(--ink-2);
@@ -173,8 +158,6 @@
   #empty-note{color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;}
 
   input[type=file]{display:none;}
-  /* Réglages "coulisses" (chargement manuel de la maquette/des voies, inversion de
-     sens) — masqués pour les visiteurs, visibles uniquement en mode admin (?admin=1). */
   .admin-only{display:none;}
   body.is-admin .admin-only{display:flex;}
   button.admin-only{display:none;}
@@ -221,12 +204,6 @@
       <span><kbd>Entrée</kbd> valider</span>
       <span><kbd>Échap</kbd> annuler</span>
     </div>
-    <div id="pivot-toolbar">
-      <button class="mini-btn" id="pivot-height-down">▾</button>
-      <span id="pivot-height-label">2.0 m</span>
-      <button class="mini-btn" id="pivot-height-up">▴</button>
-      <button class="mini-btn danger" id="pivot-delete" title="Supprimer ce pivot">✕</button>
-    </div>
     <input type="file" id="file-load" accept="application/json">
     <input type="file" id="file-glb" accept=".glb,.gltf">
     <input type="file" id="file-routes" accept="application/json">
@@ -254,7 +231,7 @@
       <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;">🗑 Supprimer tous les arbres</button>
 
       <div class="section-title">Circulation</div>
-      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender (voir avec l'administrateur du site).</div>
+      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender.</div>
       <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
       <div id="route-list"></div>
 
@@ -288,10 +265,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-/* ============================================================
-   CONFIG
-   ============================================================ */
-const FLOOR_HEIGHT = 3.0; // metres
+const FLOOR_HEIGHT = 3.0;
 const USAGE_COLORS = {
   residentiel: 0xe0a24a,
   bureaux:     0x5b8ab0,
@@ -306,14 +280,8 @@ const USAGE_LABELS = {
   hotel: "Hôtel",
   services: "Services"
 };
-const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
+const GROUND_SIZE = 260;
 
-/* ============================================================
-   SCENE
-   ============================================================ */
-// Mode admin : réglages "coulisses" (chargement manuel .glb/routes.json, sens des
-// voies) réservés à la maintenance du site, invisibles pour les visiteurs du forum.
-// Activation : ajouter ?admin=1 à l'URL.
 if(new URLSearchParams(location.search).get('admin')==='1'){
   document.body.classList.add('is-admin');
 }
@@ -333,9 +301,6 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 viewport.appendChild(renderer.domElement);
 
-// Environnement neutre généré (pas de HDRI à charger) : indispensable pour que les
-// matériaux métalliques (aluminium brossé, etc.) aient de vrais reflets et ne
-// paraissent pas ternes/plats sous un simple éclairage direct+ambiant.
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
@@ -354,7 +319,6 @@ controls.maxPolarAngle = Math.PI*0.49;
 controls.minDistance = 15;
 controls.maxDistance = 700;
 
-// Lighting — soft overcast "plan de présentation" look
 scene.add(new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.9));
 const sun = new THREE.DirectionalLight(0xfff2df, 1.15);
 sun.position.set(120, 200, 60);
@@ -366,7 +330,6 @@ sun.shadow.camera.far = 500;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-// Ground
 const groundGroup = new THREE.Group();
 scene.add(groundGroup);
 
@@ -376,19 +339,13 @@ const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI/2;
 ground.receiveShadow = true;
 ground.name = 'ground';
-// La maquette (polygone/hall/quartier) fournit désormais le sol visuel réel ;
-// ce plan ne sert plus que de surface invisible pour le raycast (placement des
-// bâtiments, tracé des voies, etc.) — il ne doit plus s'afficher à l'écran.
 ground.visible = false;
 groundGroup.add(ground);
 
-// Grille de sol : reconstruite dynamiquement pour ne jamais dépasser le
-// polygone d'implantation (voir rebuildGrid(), appelée dès que buildZone change).
 const gridGroup = new THREE.Group();
 gridGroup.position.y = 0.02;
 groundGroup.add(gridGroup);
 
-// Contour d'îlot de secours (rectangle) — remplacé dès que Polygone_Implantation est chargé.
 const ilotOutlinePts = [
   new THREE.Vector3(-55,0.05,-40), new THREE.Vector3(55,0.05,-40),
   new THREE.Vector3(55,0.05,40), new THREE.Vector3(-55,0.05,40),
@@ -402,30 +359,23 @@ ilotOutline.computeLineDistances();
 groundGroup.add(ilotOutline);
 
 let gridVisible = true;
-
-/* ============================================================
-   MAQUETTE BLENDER — polygone d'implantation / hall de gare / quartier
-   ============================================================ */
-let hallFacadeWorldNormal = new THREE.Vector3(0,0,1); // valeur par défaut avant chargement
+let hallFacadeWorldNormal = new THREE.Vector3(0,0,1);
 
 let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
 scene.add(siteRoot);
-let polygonMesh = null;   // THREE.Mesh du polygone d'implantation
-let siteUpCorrected = false; // true si une rotation Z-up→Y-up a été appliquée à la maquette chargée
-let hallMesh = null;      // THREE.Mesh du hall de gare
-let quartierGroup = null; // THREE.Object3D du contexte bâti
-let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
+let polygonMesh = null;
+let siteUpCorrected = false;
+let hallMesh = null;
+let quartierGroup = null;
+let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z}));
 
 function clearSite(){
   siteRoot.clear();
   polygonMesh = null; hallMesh = null; quartierGroup = null;
-  treeTemplate = null; // sera recapturé depuis la nouvelle maquette au prochain arbre planté
+  treeTemplate = null;
   siteUpCorrected = false;
 }
 
-// Extrait le contour XZ réel d'un mesh plat trianglé, en chaînant les arêtes
-// de bord (arêtes utilisées par un seul triangle). Fonctionne aussi pour des
-// emprises concaves (en L, etc.), contrairement à une simple enveloppe convexe.
 function extractBoundaryXZ(mesh){
   mesh.updateWorldMatrix(true,false);
   const pos = mesh.geometry.attributes.position;
@@ -436,9 +386,7 @@ function extractBoundaryXZ(mesh){
     v.fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
     world.push({x:v.x, z:v.z});
   }
-  if(!idx){
-    return world;
-  }
+  if(!idx) return world;
   const triCount = idx.count/3;
   const edgeCount = new Map();
   const key = (a,b)=> a<b ? `${a}_${b}` : `${b}_${a}`;
@@ -643,8 +591,7 @@ function onSiteLoaded(){
   bits.push(polygonMesh ? `polygone : ${buildZone.length} sommets` : `<span style="color:var(--com)">polygone d'implantation introuvable</span>`);
   bits.push(hallMesh ? `hall : ok` : `<span style="color:var(--com)">hall introuvable</span>`);
   bits.push(quartierGroup ? `quartier : ok` : `<span style="color:var(--com)">quartier introuvable</span>`);
-  if(routeReport.found.length) bits.push(`${routeReport.found.length} voie(s) importée(s) : ${routeReport.found.join(', ')}`);
-  if(routeReport.noGeometry.length) bits.push(`<span style="color:var(--com)">${routeReport.noGeometry.length} voie(s) sans géométrie exploitable (${routeReport.noGeometry.join(', ')}) — reconvertis ces courbes en mesh (section constante ou bevel=0) côté Blender, ou utilise "Charger routes.json"</span>`);
+  if(routeReport.found.length) bits.push(`${routeReport.found.length} voie(s) importée(s)`);
   return bits.join(' · ');
 }
 
@@ -682,7 +629,6 @@ function buildDemoSite(){
   siteRoot.add(qGroup);
 
   onSiteLoaded();
-
   createBuilding(
     [{x:-25,z:-15},{x:15,z:-15},{x:15,z:15},{x:-25,z:15}],
     { name:'Exemple — Tour mixte', floors:12,
@@ -692,10 +638,6 @@ function buildDemoSite(){
         {from:9,to:12,usage:'residentiel'}
       ]}
   );
-  createRoute([{x:-70,y:0.15,z:-45},{x:-20,y:0.15,z:-45},{x:20,y:0.15,z:-45},{x:60,y:0.15,z:-45}], 'tram', 'Tram — Cours Part-Dieu');
-  createRoute([{x:-70,y:0.15,z:34},{x:0,y:0.15,z:34},{x:60,y:0.15,z:34}], 'bus', 'Bus — ligne C');
-  createRoute([{x:-50,y:0.15,z:-38},{x:34,y:0.15,z:-38},{x:44,y:0.15,z:0},{x:26,y:0.15,z:30},{x:-40,y:0.15,z:26},{x:-50,y:0.15,z:-10},{x:-50,y:0.15,z:-38}], 'voiture', 'Voirie — boucle place');
-  createRoute([{x:-30,y:0.15,z:-55},{x:-10,y:0.15,z:-40},{x:5,y:0.15,z:-10},{x:0,y:0.15,z:15}], 'pieton', 'Piétons — parvis gare');
   selectedId = null; rebuildAll(); renderList();
 }
 
@@ -723,13 +665,12 @@ function loadSiteFromGLB(url, onFail){
     }
     const report = onSiteLoaded();
     showSiteBanner(
-      `<div><b>Maquette chargée</b> (${url})${corrected ? ' — rotation Z-up→Y-up appliquée automatiquement' : ''}.<br>${report}</div>`,
+      `<div><b>Maquette chargée</b> (${url})${corrected ? ' — rotation Z-up→Y-up appliquée' : ''}.<br>${report}</div>`,
       true
     );
     tryAutoLoadRoutes();
   }, undefined, (err)=>{
-    console.warn("Chargement du .glb impossible :", url, err);
-    if(onFail) onFail(err); else alert("Impossible de charger le .glb (voir la console).");
+    if(onFail) onFail(err); else alert("Impossible de charger le .glb.");
   });
 }
 
@@ -742,9 +683,6 @@ fileGlb.addEventListener('change', (e)=>{
   fileGlb.value = '';
 });
 
-/* ============================================================
-   STATE
-   ============================================================ */
 let buildings = [];
 let idCounter = 1;
 let drawing = false;
@@ -755,9 +693,6 @@ scene.add(drawMarkers);
 
 let selectedId = null;
 
-/* ============================================================
-   RAYCAST HELPERS
-   ============================================================ */
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 function groundPointFromEvent(ev){
@@ -769,9 +704,6 @@ function groundPointFromEvent(ev){
   return hit ? hit.point : null;
 }
 
-/* ============================================================
-   DRAW MODE
-   ============================================================ */
 const btnDraw = document.getElementById('btn-draw');
 const drawHint = document.getElementById('draw-hint');
 
@@ -872,68 +804,36 @@ window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Escape') cancelDraw();
 });
 
-/* ============================================================
-   EXTENSION DU HALL DE GARE — pivots déplaçables, façon "The Sims"
-   ============================================================
-   Principes d'interaction :
-   - La caméra reste TOUJOURS libre (orbite/zoom) pendant tout l'outil : elle
-     n'est verrouillée que le temps exact d'un glisser de pivot.
-   - Un pivot existant : CLIC simple = le sélectionne (fait apparaître sa
-     mini-barre d'outils flottante) ; CLIC-GLISSER = le déplace en X/Z en
-     temps réel, comme un objet qu'on pose dans un jeu de simulation.
-   - Une zone vide : CLIC simple = plante un nouveau pivot à cet endroit,
-     à la même hauteur que le dernier pivot sélectionné/placé (continuité).
-   - La hauteur se règle via la mini-barre flottante au-dessus du pivot
-     sélectionné (▾ / ▴ ou en tapant une valeur), jamais à la molette (qui
-     reste réservée au zoom caméra, sans ambiguïté possible).
-   ============================================================ */
 let extending = false;
 let extPickedProfile = null;
-let extPathPivots = [];      // [{mesh, heightLine}]
+let extPathPoints = [];
 let extMarkers = new THREE.Group(); scene.add(extMarkers);
 let extPreviewLine = null;
 let extensions = [];
 let extIdCounter = 1;
-let extScaleStart = 1.0, extScaleEnd = 1.0;
-let selectedPivotIndex = -1;
-let editingExtId = null;
+let extScaleStart = 1.0, extScaleEnd = 1.0, extHeightOffset = 0;
 
 const btnExtend = document.getElementById('btn-extend-hall');
 const drawHintText = document.getElementById('draw-hint-text');
-const pivotToolbar = document.getElementById('pivot-toolbar');
-const pivotHeightLabel = document.getElementById('pivot-height-label');
 
 function startExtend(){
   if(drawing) return;
-  if(!hallMesh){ alert("Aucun objet 'Hall_Gare' trouvé dans la maquette chargée."); return; }
-  extending = true;
-  extPickedProfile = null;
-  extPathPivots = [];
+  if(!hallMesh){ alert("Aucun objet 'Hall_Gare' trouvé."); return; }
+  extending = true; extPickedProfile = null; extPathPoints = [];
   extMarkers.clear();
-  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-  btnExtend.classList.add('active');
-  btnExtend.textContent = 'Extension : cliquez la façade…';
+  btnExtend.classList.add('active'); btnExtend.textContent = 'Extension : cliquez la façade…';
   drawHint.classList.add('show');
   drawHintText.textContent = "Cliquez la façade exposée du hall pour démarrer l'extension";
-  selectedPivotIndex = -1;
-  editingExtId = null;
-  updatePivotToolbar();
+  controls.enabled = false;
 }
-
 function cancelExtend(){
-  extending = false;
-  extPickedProfile = null;
-  extPathPivots.forEach(p => { extMarkers.remove(p.mesh); extMarkers.remove(p.heightLine); });
-  extPathPivots = [];
+  extending = false; extPickedProfile = null; extPathPoints = [];
+  extMarkers.clear();
   if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-  btnExtend.classList.remove('active');
-  btnExtend.textContent = 'Étendre le hall';
+  btnExtend.classList.remove('active'); btnExtend.textContent = 'Étendre le hall';
   drawHint.classList.remove('show');
   drawHintText.textContent = 'Cliquez sur le sol pour poser les sommets du bâtiment';
   controls.enabled = true;
-  selectedPivotIndex = -1;
-  editingExtId = null;
-  updatePivotToolbar();
 }
 
 function sliceMeshByPlane(mesh, planePoint, planeNormal){
@@ -998,24 +898,28 @@ function pickHallFacade(ev){
   const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
   const facadeWorldNormal = hallFacadeWorldNormal;
   if(worldNormal.dot(facadeWorldNormal) < 0.6){
-    flashStatus("Cliquez la façade exposée du hall, pas une autre paroi");
+    flashStatus("Cliquez la façade exposée du hall");
     return;
   }
   const planePoint = hit.point.clone().addScaledVector(facadeWorldNormal, -0.05);
   const loop = sliceMeshByPlane(hallMesh, planePoint, facadeWorldNormal);
-  if(!loop || loop.length<3){ flashStatus("Profil de façade introuvable — cliquez ailleurs sur la façade"); return; }
+  if(!loop || loop.length<3){ flashStatus("Profil de façade introuvable"); return; }
   const centroid = loop.reduce((s,p)=>s.add(p), new THREE.Vector3()).multiplyScalar(1/loop.length);
   extPickedProfile = { points: loop.map(p=>p.clone().sub(centroid)), centroid, normal: facadeWorldNormal };
   const marker = new THREE.Line(new THREE.BufferGeometry().setFromPoints([...loop, loop[0]]), new THREE.LineBasicMaterial({color:0x4fae8f}));
   extMarkers.add(marker);
-  const startPos = centroid.clone().addScaledVector(facadeWorldNormal, 2);
-  startPos.y = 2.0;
-  addExtPivot(startPos, /*select=*/true);
-  drawHintText.textContent = "Cliquez pour ajouter des pivots · glissez-en un pour le déplacer · Entrée pour valider";
-  flashStatus("Façade capturée — placez des pivots");
+  extPathPoints = [centroid.clone()];
+  drawHintText.textContent = "Tracez le chemin de l'extension, Entrée pour valider";
+  flashStatus("Façade capturée — tracez le chemin");
 }
 
-// Cible de déplacement : sol, bâtiments dessinés ou quartier (permet de "grimper").
+function refreshExtPreview(){
+  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
+  if(extPathPoints.length<2) return;
+  extPreviewLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(extPathPoints), new THREE.LineBasicMaterial({color:0x4fae8f}));
+  scene.add(extPreviewLine);
+}
+
 function extendPathPointFromEvent(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
@@ -1028,172 +932,6 @@ function extendPathPointFromEvent(ev){
   return hit ? hit.point.clone() : null;
 }
 
-function addExtPivot(position, select){
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(0.7, 16, 16),
-    new THREE.MeshStandardMaterial({ color: 0xe0663f, emissive: 0xe0663f, emissiveIntensity: 0.2 })
-  );
-  sphere.position.copy(position);
-  sphere.castShadow = true;
-  extMarkers.add(sphere);
-
-  const lineMat = new THREE.LineBasicMaterial({ color: 0xe0663f, transparent: true, opacity: 0.3 });
-  const lineGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(sphere.position.x, -0.4, sphere.position.z),
-    sphere.position.clone()
-  ]);
-  const heightLine = new THREE.Line(lineGeo, lineMat);
-  extMarkers.add(heightLine);
-
-  const pivot = { mesh: sphere, heightLine };
-  extPathPivots.push(pivot);
-  updateExtCurve();
-  if(select) selectPivotIndex(extPathPivots.length - 1);
-  return pivot;
-}
-
-function updatePivotHeightLine(pivot){
-  const pos = pivot.mesh.position;
-  const pts = [new THREE.Vector3(pos.x,-0.4,pos.z), pos.clone()];
-  pivot.heightLine.geometry.dispose();
-  pivot.heightLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
-}
-
-function updateExtCurve(){
-  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-  if(extPathPivots.length < 2) return;
-  const pts = extPathPivots.map(p => p.mesh.position.clone());
-  const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.3);
-  const curvePoints = curve.getPoints(50);
-  const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
-  extPreviewLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x4fae8f }));
-  scene.add(extPreviewLine);
-}
-
-// Sélectionne (ou désélectionne si idx=-1) un pivot : surbrillance 3D +
-// mini-barre d'outils flottante positionnée au-dessus de lui.
-function selectPivotIndex(idx){
-  selectedPivotIndex = idx;
-  extPathPivots.forEach((p,i)=>{
-    const isSel = i===idx;
-    p.mesh.material.color.setHex(isSel ? 0x4fae8f : 0xe0663f);
-    p.mesh.material.emissive.setHex(isSel ? 0x4fae8f : 0xe0663f);
-    p.mesh.scale.setScalar(isSel ? 1.35 : 1.0);
-  });
-  updatePivotToolbar();
-}
-
-// Repositionne la mini-barre flottante au-dessus du pivot sélectionné, en
-// projetant sa position 3D vers l'écran — appelé à chaque frame pendant
-// l'édition pour qu'elle suive la caméra.
-function updatePivotToolbar(){
-  if(selectedPivotIndex===-1 || !extPathPivots[selectedPivotIndex]){
-    pivotToolbar.classList.remove('show');
-    return;
-  }
-  const pivot = extPathPivots[selectedPivotIndex];
-  const pos = pivot.mesh.position.clone();
-  pos.y += 1.3;
-  const screen = pos.project(camera);
-  if(screen.z > 1 || screen.z < -1){ pivotToolbar.classList.remove('show'); return; }
-  const rect = renderer.domElement.getBoundingClientRect();
-  const sx = rect.left + (screen.x*0.5+0.5)*rect.width;
-  const sy = rect.top + (-screen.y*0.5+0.5)*rect.height;
-  pivotToolbar.style.left = sx+'px';
-  pivotToolbar.style.top = sy+'px';
-  pivotToolbar.classList.add('show');
-  pivotHeightLabel.textContent = pivot.mesh.position.y.toFixed(1)+' m';
-}
-
-function adjustPivotHeight(index, delta){
-  if(index<0 || index>=extPathPivots.length) return;
-  const pivot = extPathPivots[index];
-  const newY = Math.max(0.2, pivot.mesh.position.y + delta);
-  pivot.mesh.position.y = newY;
-  updatePivotHeightLine(pivot);
-  updateExtCurve();
-  updatePivotToolbar();
-}
-
-document.getElementById('pivot-height-up').addEventListener('click', ()=> adjustPivotHeight(selectedPivotIndex, 0.5));
-document.getElementById('pivot-height-down').addEventListener('click', ()=> adjustPivotHeight(selectedPivotIndex, -0.5));
-document.getElementById('pivot-delete').addEventListener('click', ()=>{
-  if(selectedPivotIndex===-1) return;
-  if(extPathPivots.length<=2){ flashStatus("Il faut garder au moins 2 pivots"); return; }
-  const pivot = extPathPivots[selectedPivotIndex];
-  extMarkers.remove(pivot.mesh); extMarkers.remove(pivot.heightLine);
-  extPathPivots.splice(selectedPivotIndex,1);
-  selectPivotIndex(-1);
-  updateExtCurve();
-});
-
-// --- Interaction souris : glisser-déposer d'un pivot existant, ou clic simple
-// pour sélectionner un pivot / planter un nouveau pivot en zone vide. La
-// caméra (OrbitControls) n'est désactivée que pendant le glisser effectif
-// d'un pivot ; le reste du temps elle reste libre (orbite/zoom normaux).
-let pivotPointerDown = null; // {index, x, y, moved}
-
-renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if(!extending || !extPickedProfile || ev.button!==0) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(extPathPivots.map(p=>p.mesh));
-  const idx = hits.length ? extPathPivots.findIndex(p=>p.mesh===hits[0].object) : -1;
-  pivotPointerDown = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
-  if(idx!==-1) controls.enabled = false; // verrouille la caméra le temps du glisser potentiel
-});
-
-window.addEventListener('pointermove', (ev)=>{
-  if(!pivotPointerDown) return;
-  const dx = ev.clientX - pivotPointerDown.x, dy = ev.clientY - pivotPointerDown.y;
-  if(Math.hypot(dx,dy) > 4) pivotPointerDown.moved = true;
-  if(pivotPointerDown.index===-1 || !pivotPointerDown.moved) return;
-  const pt = extendPathPointFromEvent(ev);
-  if(!pt) return;
-  const pivot = extPathPivots[pivotPointerDown.index];
-  pivot.mesh.position.x = pt.x;
-  pivot.mesh.position.z = pt.z;
-  updatePivotHeightLine(pivot);
-  updateExtCurve();
-  if(pivotPointerDown.index===selectedPivotIndex) updatePivotToolbar();
-});
-
-window.addEventListener('pointerup', ()=>{
-  if(!pivotPointerDown) return;
-  const info = pivotPointerDown; pivotPointerDown = null;
-  controls.enabled = true;
-  if(!extending || !extPickedProfile) return;
-  if(info.index!==-1 && !info.moved) selectPivotIndex(info.index); // clic net sur un pivot = sélection
-});
-
-renderer.domElement.addEventListener('click', (ev)=>{
-  if(!extending) return;
-  if(!extPickedProfile){ pickHallFacade(ev); return; }
-  // Un pivot vient d'être touché (sélectionné ou déplacé) : rien à faire ici.
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  const hitsPivot = raycaster.intersectObjects(extPathPivots.map(p=>p.mesh)).length>0;
-  if(hitsPivot) return;
-  // Clic en zone vide : plante un nouveau pivot, à la hauteur du pivot
-  // sélectionné (continuité visuelle, pratique pour une rampe/pente régulière).
-  const pt = extendPathPointFromEvent(ev);
-  if(pt){
-    pt.y = selectedPivotIndex!==-1 ? extPathPivots[selectedPivotIndex].mesh.position.y
-         : (extPathPivots.length ? extPathPivots[extPathPivots.length-1].mesh.position.y : 2.0);
-    addExtPivot(pt, true);
-  }
-});
-
-window.addEventListener('keydown', (ev)=>{
-  if(!extending) return;
-  if(ev.key === 'Enter') finishExtend();
-  if(ev.key === 'Escape') cancelExtend();
-});
-
 function buildLoftGeometry(profile, pathPoints, segments=48){
   const curve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.25);
   const frames = curve.computeFrenetFrames(segments, false);
@@ -1202,6 +940,7 @@ function buildLoftGeometry(profile, pathPoints, segments=48){
   for(let s=0;s<=segments;s++){
     const t = s/segments;
     const center = curve.getPointAt(t).clone();
+    center.y += extHeightOffset * t;
     const scale = THREE.MathUtils.lerp(extScaleStart, extScaleEnd, t);
     const normal = frames.normals[s], binormal = frames.binormals[s];
     for(const p of ring){
@@ -1227,12 +966,8 @@ function buildLoftGeometry(profile, pathPoints, segments=48){
 }
 
 function finishExtend(){
-  if(!extPickedProfile || extPathPivots.length < 2){
-    flashStatus("Il faut au moins 2 pivots pour créer une extension");
-    return;
-  }
-  const pathPoints = extPathPivots.map(p => p.mesh.position.clone());
-  const geo = buildLoftGeometry(extPickedProfile, pathPoints);
+  if(!extPickedProfile || extPathPoints.length<2){ cancelExtend(); return; }
+  const geo = buildLoftGeometry(extPickedProfile, extPathPoints);
   const mat = new THREE.MeshStandardMaterial({
     color: 0x9fb8c4, roughness:0.55, metalness:0.1,
     transparent:true, opacity:0.96, depthWrite:true
@@ -1243,42 +978,25 @@ function finishExtend(){
   const group = new THREE.Group();
   group.add(mesh);
   scene.add(group);
-  const ext = {
-    id: extIdCounter++,
-    name: `Extension ${extIdCounter-1}`,
-    mesh, group,
-    pivots: pathPoints.map(p => ({x:p.x, y:p.y, z:p.z})),
-    profile: extPickedProfile
-  };
+  const ext = { id: extIdCounter++, name:`Extension hall ${extIdCounter-1}`, mesh, group };
   extensions.push(ext);
   renderExtList();
   cancelExtend();
 }
 
-function editExtension(id){
-  const ext = extensions.find(e => e.id === id);
-  if(!ext) return;
+btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExtend());
 
-  extensions = extensions.filter(e => e.id !== id);
-  scene.remove(ext.group);
-  ext.mesh.geometry.dispose();
-  ext.mesh.material.dispose();
-
-  extending = true;
-  extPickedProfile = ext.profile;
-  extPathPivots = [];
-  extMarkers.clear();
-  ext.pivots.forEach(pos => addExtPivot(new THREE.Vector3(pos.x,pos.y,pos.z), false));
-  editingExtId = id;
-
-  btnExtend.classList.add('active');
-  btnExtend.textContent = 'Édition en cours…';
-  drawHint.classList.add('show');
-  drawHintText.textContent = "Glissez un pivot pour le déplacer, cliquez pour en ajouter · Entrée pour valider";
-  selectedPivotIndex = -1;
-  updateExtCurve();
-  flashStatus(`Édition de l'extension ${ext.name} — ${extPathPivots.length} pivots`);
-}
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(!extending) return;
+  if(!extPickedProfile){ pickHallFacade(ev); return; }
+  const pt = extendPathPointFromEvent(ev);
+  if(pt){ extPathPoints.push(pt); refreshExtPreview(); }
+});
+window.addEventListener('keydown', (ev)=>{
+  if(!extending) return;
+  if(ev.key==='Enter') finishExtend();
+  if(ev.key==='Escape') cancelExtend();
+});
 
 function deleteExtension(id){
   const e = extensions.find(x=>x.id===id);
@@ -1288,7 +1006,6 @@ function deleteExtension(id){
   extensions = extensions.filter(x=>x.id!==id);
   renderExtList();
 }
-
 function renderExtList(){
   const list = document.getElementById('ext-list');
   const empty = document.getElementById('ext-empty-note');
@@ -1298,33 +1015,17 @@ function renderExtList(){
     const card = document.createElement('div');
     card.className = 'bldg-card';
     card.style.padding = '9px 10px';
-    card.style.display = 'flex';
-    card.style.alignItems = 'center';
-    card.style.gap = '8px';
+    card.style.display = 'flex'; card.style.alignItems='center'; card.style.gap='8px';
     const label = document.createElement('span');
-    label.textContent = `${e.name} (${e.pivots.length} pivots)`;
-    label.style.flex = '1';
-    label.style.fontSize = '12.5px';
-    const editBtn = document.createElement('button');
-    editBtn.className = 'mini-btn';
-    editBtn.textContent = '✎';
-    editBtn.style.color = 'var(--blue)';
-    editBtn.title = 'Modifier les pivots';
-    editBtn.addEventListener('click', ()=> editExtension(e.id));
+    label.textContent = e.name; label.style.flex='1'; label.style.fontSize='12.5px';
     const del = document.createElement('button');
-    del.className='mini-btn danger';
-    del.textContent='✕';
+    del.className='mini-btn danger'; del.textContent='✕';
     del.addEventListener('click', ()=> deleteExtension(e.id));
-    card.append(label, editBtn, del);
+    card.append(label, del);
     list.appendChild(card);
   });
 }
 
-btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExtend());
-
-/* ============================================================
-   MATÉRIAUX PROCÉDURAUX
-   ============================================================ */
 function makeStripeTexture(){
   const size = 64;
   const canvas = document.createElement('canvas');
@@ -1389,9 +1090,6 @@ function fixProceduralMaterials(){
   });
 }
 
-/* ============================================================
-   ARBRES
-   ============================================================ */
 let treeTemplate = null;
 function findIcosphereTemplate(){
   let found = null;
@@ -1425,7 +1123,7 @@ function startTreeTool(){
   treePlacing = true;
   btnTree.classList.add('active'); btnTree.textContent = 'Arbre : cliquez le polygone…';
   drawHint.classList.add('show');
-  drawHintText.textContent = "Cliquez dans le polygone d'implantation pour planter un arbre · recliquez un arbre pour le retirer (Échap pour arrêter)";
+  drawHintText.textContent = "Cliquez dans le polygone d'implantation pour planter un arbre · recliquez un arbre pour le retirer";
   controls.enabled = false;
 }
 function stopTreeTool(){
@@ -1492,15 +1190,12 @@ renderer.domElement.addEventListener('click', (ev)=>{
   const hit = raycaster.intersectObjects(groundTargets, true)[0];
   if(!hit){ flashStatus("Cliquez dans le polygone d'implantation"); return; }
   if(buildZone.length>=3 && !pointInPolygon({x:hit.point.x, z:hit.point.z}, buildZone)){
-    flashStatus("Les arbres ne peuvent être plantés que dans le polygone d'implantation");
+    flashStatus("Les arbres ne peuvent être plantés que dans le polygone");
     return;
   }
   addTree(hit.point);
 });
 
-/* ============================================================
-   BUILDING MODEL
-   ============================================================ */
 function defaultBands(floors){
   return [{from:1, to:floors, usage:'bureaux'}];
 }
@@ -1575,9 +1270,6 @@ function selectBuilding(id){
   renderList();
 }
 
-/* ============================================================
-   SIDE PANEL
-   ============================================================ */
 const bldgList = document.getElementById('bldg-list');
 const emptyNote = document.getElementById('empty-note');
 const bldgCount = document.getElementById('bldg-count');
@@ -1709,18 +1401,12 @@ function focusOn(b){
   camera.position.set(cx+dist*0.7, h*0.9+dist*0.5, cz+dist*0.7);
 }
 
-/* ============================================================
-   GRID TOGGLE
-   ============================================================ */
 document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
   gridVisible = !gridVisible;
   gridGroup.visible = gridVisible;
   ilotOutline.visible = gridVisible;
 });
 
-/* ============================================================
-   EXPORT PNG
-   ============================================================ */
 document.getElementById('btn-export-png').addEventListener('click', ()=>{
   renderer.render(scene, camera);
   const link = document.createElement('a');
@@ -1729,18 +1415,10 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
   link.click();
 });
 
-/* ============================================================
-   SAVE / LOAD JSON
-   ============================================================ */
 document.getElementById('btn-save-json').addEventListener('click', ()=>{
   const data = {
-    version: 2,
-    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
-    extensions: extensions.map(e=>({
-      name: e.name,
-      pivots: e.pivots,
-      profile: e.profile ? { points: e.profile.points.map(p => ({x:p.x, y:p.y, z:p.z})), centroid: {x:e.profile.centroid.x, y:e.profile.centroid.y, z:e.profile.centroid.z}, normal: {x:e.profile.normal.x, y:e.profile.normal.y, z:e.profile.normal.z} } : null
-    }))
+    version: 1,
+    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands }))
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const link = document.createElement('a');
@@ -1763,58 +1441,13 @@ fileLoad.addEventListener('change', (e)=>{
       idCounter = 1;
       (data.buildings||[]).forEach(b=> createBuilding(b.points, {name:b.name, floors:b.floors, bands:b.bands}));
       selectedId = null;
-      extensions.forEach(e => {
-        scene.remove(e.group);
-        e.mesh.geometry.dispose();
-        e.mesh.material.dispose();
-      });
-      extensions = [];
-      extIdCounter = 1;
-      if(data.extensions && data.extensions.length) {
-        data.extensions.forEach(extData => {
-          let profile = null;
-          if(extData.profile && extData.profile.points) {
-            profile = {
-              points: extData.profile.points.map(p => new THREE.Vector3(p.x, p.y, p.z)),
-              centroid: new THREE.Vector3(extData.profile.centroid.x, extData.profile.centroid.y, extData.profile.centroid.z),
-              normal: new THREE.Vector3(extData.profile.normal.x, extData.profile.normal.y, extData.profile.normal.z)
-            };
-          }
-          if(profile && extData.pivots && extData.pivots.length >= 2) {
-            const pathPoints = extData.pivots.map(p => new THREE.Vector3(p.x, p.y, p.z));
-            const geo = buildLoftGeometry(profile, pathPoints);
-            const mat = new THREE.MeshStandardMaterial({
-              color: 0x9fb8c4, roughness:0.55, metalness:0.1,
-              transparent:true, opacity:0.96, depthWrite:true
-            });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.castShadow = true; mesh.receiveShadow = true;
-            mesh.renderOrder = 2;
-            const group = new THREE.Group();
-            group.add(mesh);
-            scene.add(group);
-            const ext = {
-              id: extIdCounter++,
-              name: extData.name || `Extension ${extIdCounter-1}`,
-              mesh, group,
-              pivots: extData.pivots,
-              profile: profile
-            };
-            extensions.push(ext);
-          }
-        });
-      }
       rebuildAll(); renderList();
-      renderExtList();
-    }catch(err){ alert("Fichier de projet invalide."); }
+    }catch(err){ alert("Fichier invalide."); }
   };
   reader.readAsText(file);
   fileLoad.value = '';
 });
 
-/* ============================================================
-   CIRCULATION
-   ============================================================ */
 const ROUTE_TYPES = {
   tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:2,  scale:[2.2,2.6,9]  },
   bus:    { label:'Bus',     color:0x7a0000, speed:6,  count:2,  scale:[2,2.4,6]  },
@@ -1920,7 +1553,7 @@ function renderRouteList(){
     label.textContent = `${r.name} · ${ROUTE_TYPES[r.type].label}`;
     label.style.flex='1'; label.style.fontSize='12.5px';
     const rev = document.createElement('button');
-    rev.className='mini-btn admin-only'; rev.textContent='⇄'; rev.title='Inverser le sens de circulation';
+    rev.className='mini-btn admin-only'; rev.textContent='⇄';
     rev.style.display = document.body.classList.contains('is-admin') ? 'flex' : 'none';
     rev.addEventListener('click', ()=> reverseRoute(r.id));
     const del = document.createElement('button');
@@ -1965,7 +1598,7 @@ function renderCrosswalkControls(){
     const box = document.createElement('div');
     box.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
     const title = document.createElement('div');
-    title.textContent = mat ? label : `${label} (absent de la maquette)`;
+    title.textContent = mat ? label : `${label} (absent)`;
     title.style.cssText = 'font-size:11px;color:var(--muted);';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
@@ -1982,7 +1615,6 @@ function renderCrosswalkControls(){
     const repV = mkNumber(mat ? mat.map.repeat.y : (axis==='x'?8:1));
     const rotBtn = document.createElement('button');
     rotBtn.className='mini-btn'; rotBtn.textContent='⟳90°'; rotBtn.style.width='auto'; rotBtn.style.padding='0 8px';
-    rotBtn.title = 'Pivote le motif de 90°';
 
     if(mat){
       repU.addEventListener('input', ()=>{ mat.map.repeat.x = parseFloat(repU.value)||1; });
@@ -2009,7 +1641,7 @@ function importRoutesFromJSON(data, sourceLabel){
     createRoute(points, type, name);
     created.push(name);
   });
-  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
+  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s).</div>`, created.length>0);
   return created.length;
 }
 
@@ -2021,7 +1653,7 @@ fileRoutes.addEventListener('change', (e)=>{
   const reader = new FileReader();
   reader.onload = ()=>{
     try{ importRoutesFromJSON(JSON.parse(reader.result), 'routes.json'); }
-    catch(err){ alert("routes.json invalide : "+err.message); }
+    catch(err){ alert("routes.json invalide"); }
   };
   reader.readAsText(file);
   fileRoutes.value = '';
@@ -2030,16 +1662,13 @@ fileRoutes.addEventListener('change', (e)=>{
 const ROUTES_JSON_URL = './routes.json';
 function tryAutoLoadRoutes(){
   fetch(ROUTES_JSON_URL).then(r=>{
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    if(!r.ok) throw new Error();
     return r.json();
   }).then(data=>{
     importRoutesFromJSON(data, `${ROUTES_JSON_URL} (auto)`);
   }).catch(()=>{});
 }
 
-/* ============================================================
-   RENDER LOOP
-   ============================================================ */
 resize();
 const clock = new THREE.Clock();
 function animate(){
@@ -2047,20 +1676,15 @@ function animate(){
   const dt = Math.min(clock.getDelta(), 0.1);
   controls.update();
   tickAgents(dt);
-  if(extending) updatePivotToolbar();
   renderer.render(scene, camera);
 }
 animate();
 
 loadSiteFromGLB(SITE_GLB_URL, (err)=>{
-  const isFileProtocol = location.protocol === 'file:';
   showSiteBanner(`
     <div>
-      <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL})${err && err.message ? ' — '+err.message : ''}.<br>
-      ${isFileProtocol
-        ? "Cette page est ouverte en double-clic (protocole file://), qui bloque le chargement automatique du .glb par le navigateur. Lance un serveur local depuis le dossier contenant les deux fichiers : <code>python -m http.server 8000</code>, puis ouvre <code>http://localhost:8000</code>."
-        : "Vérifie que <code>place_de_milan.glb</code> est bien placé exactement à côté de <code>index.html</code>, avec ce nom précis (respecte la casse)."}
-      <br>En attendant, une maquette de démonstration est affichée — utilise <b>Charger maquette (.glb)</b> pour charger le fichier manuellement.
+      <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL}).<br>
+      Lance un serveur local (ex: <code>python -m http.server 8000</code>) ou utilise <b>Charger maquette (.glb)</b>.
     </div>
   `);
   buildDemoSite();
