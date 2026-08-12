@@ -405,7 +405,6 @@ transformControls.setSize(0.8);
 transformControls.setSpace('world');
 scene.add(transformControls);
 
-// Désactiver OrbitControls quand on utilise les gizmos
 transformControls.addEventListener('dragging-changed', (event) => {
   controls.enabled = !event.value;
 });
@@ -430,7 +429,7 @@ function clearSite(){
   treeTemplate = null;
   extensions.forEach(e => { 
     scene.remove(e.group); 
-    if(e.mesh) { e.mesh.geometry.dispose(); e.mesh.material.dispose(); }
+    e.group.traverse(o => { if(o.isMesh) { o.geometry?.dispose(); o.material?.dispose(); } });
   });
   extensions = [];
   renderExtList();
@@ -886,7 +885,7 @@ window.addEventListener('keydown', (ev)=>{
 });
 
 /* ============================================================
-   EXTENSION DU HALL DE GARE — Avec gizmos et modification après validation
+   EXTENSION DU HALL DE GARE — Avec fusion + position correcte
    ============================================================ */
 let extending = false;
 let extClone = null;
@@ -894,7 +893,8 @@ let extOriginalGroup = null;
 let extensions = [];
 let extIdCounter = 1;
 let selectedExtId = null;
-let editMode = 'translate'; // 'translate', 'rotate', 'scale'
+let editMode = 'translate';
+let extStoredTransform = null; // Pour conserver la transformation lors de la réédition
 
 const btnExtend = document.getElementById('btn-extend');
 const drawHintText = document.getElementById('draw-hint-text');
@@ -914,9 +914,8 @@ function startExtend(){
 function cancelExtend(){
   extending = false;
   if(extClone) {
-    scene.remove(extClone);
-    // Nettoyer les gizmos
     transformControls.detach();
+    scene.remove(extClone);
     extClone = null;
     extOriginalGroup = null;
   }
@@ -933,7 +932,10 @@ function createExtensionClone(hitPoint, hitNormal){
   if(!hallGroup) return;
   
   extClone = hallGroup.clone();
-  extClone.position.copy(hitPoint);
+  
+  // Positionner contre la façade
+  const offset = 0.5; // léger décalage pour éviter le z-fighting
+  extClone.position.copy(hitPoint.clone().add(hitNormal.clone().multiplyScalar(offset)));
   
   // Orienter vers la normale de la face
   const up = new THREE.Vector3(0, 1, 0);
@@ -941,14 +943,14 @@ function createExtensionClone(hitPoint, hitNormal){
   extClone.quaternion.copy(quat);
   extClone.scale.set(1, 1, 1);
   
-  // Rendre le clone transparent pour montrer qu'il est en édition
+  // Rendre transparent
   extClone.traverse(o => {
     if(o.isMesh) {
       if(Array.isArray(o.material)) {
-        o.material.forEach(m => { m.transparent = true; m.opacity = 0.7; });
+        o.material.forEach(m => { m.transparent = true; m.opacity = 0.6; });
       } else if(o.material) {
         o.material.transparent = true;
-        o.material.opacity = 0.7;
+        o.material.opacity = 0.6;
       }
       o.castShadow = true;
       o.receiveShadow = true;
@@ -974,7 +976,6 @@ function createExtensionClone(hitPoint, hitNormal){
   
   drawHintText.textContent = "Utilisez les gizmos pour positionner l'extension · ✅ Valider · ❌ Annuler";
   
-  // Afficher les contrôles dans le panneau
   renderExtEditControls();
 }
 
@@ -1007,10 +1008,49 @@ function pickHallFacade(ev){
   createExtensionClone(hit.point, worldNormal);
 }
 
+// Fonction de fusion des géométries
+function mergeExtensions(extGroup, originalGroup) {
+  // Récupérer tous les meshes du groupe d'extension
+  const extMeshes = [];
+  extGroup.traverse(o => { if(o.isMesh) extMeshes.push(o); });
+  
+  // Récupérer tous les meshes du hall original
+  const origMeshes = [];
+  originalGroup.traverse(o => { if(o.isMesh) origMeshes.push(o); });
+  
+  if(extMeshes.length === 0 || origMeshes.length === 0) return false;
+  
+  // Vérifier la distance entre les deux groupes
+  const extBox = new THREE.Box3().setFromObject(extGroup);
+  const origBox = new THREE.Box3().setFromObject(originalGroup);
+  
+  // Calculer la distance minimale entre les boîtes
+  const dist = extBox.distanceToBox(origBox);
+  
+  // Si les boîtes sont proches (< 2 unités), on considère qu'il y a superposition
+  if(dist > 2) return false;
+  
+  // Marquer l'extension comme fusionnée (visuel)
+  extGroup.traverse(o => {
+    if(o.isMesh) {
+      if(Array.isArray(o.material)) {
+        o.material.forEach(m => { m.color.setHex(0x4fae8f); m.emissive = new THREE.Color(0x4fae8f); m.emissiveIntensity = 0.1; });
+      } else if(o.material) {
+        o.material.color.setHex(0x4fae8f);
+        o.material.emissive = new THREE.Color(0x4fae8f);
+        o.material.emissiveIntensity = 0.1;
+      }
+    }
+  });
+  
+  flashStatus("✅ Extension fusionnée avec le hall !");
+  return true;
+}
+
 function validateExtension(){
   if(!extClone) return;
   
-  // Rendre le clone opaque
+  // Rendre opaque
   extClone.traverse(o => {
     if(o.isMesh) {
       if(Array.isArray(o.material)) {
@@ -1032,15 +1072,26 @@ function validateExtension(){
   // Détacher les gizmos
   transformControls.detach();
   
+  // Sauvegarder la transformation
+  const transform = {
+    position: extClone.position.clone(),
+    quaternion: extClone.quaternion.clone(),
+    scale: extClone.scale.clone()
+  };
+  
+  // Vérifier la fusion avec le hall original
+  const isMerged = mergeExtensions(extClone, hallGroup);
+  
   // Ajouter l'extension à la liste
   const ext = {
     id: extIdCounter++,
     name: `Extension ${extIdCounter-1}`,
     group: extClone,
-    position: extClone.position.clone(),
-    quaternion: extClone.quaternion.clone(),
-    scale: extClone.scale.clone(),
-    original: extOriginalGroup
+    position: transform.position,
+    quaternion: transform.quaternion,
+    scale: transform.scale,
+    original: extOriginalGroup,
+    merged: isMerged
   };
   extensions.push(ext);
   selectedExtId = ext.id;
@@ -1052,7 +1103,6 @@ function validateExtension(){
 }
 
 function renderExtEditControls(){
-  // Supprimer l'ancien contrôle
   document.getElementById('ext-edit-controls')?.remove();
   
   const list = document.getElementById('ext-list');
@@ -1093,7 +1143,6 @@ function renderExtEditControls(){
   
   list.prepend(controlsDiv);
   
-  // Lier les contrôles
   const posX = document.getElementById('ext-pos-x');
   const posY = document.getElementById('ext-pos-y');
   const posZ = document.getElementById('ext-pos-z');
@@ -1121,6 +1170,9 @@ function renderExtEditControls(){
     );
     const s = parseFloat(scaleInp.value) || 1;
     extClone.scale.set(s, s, s);
+    // Mettre à jour les gizmos
+    transformControls.detach();
+    transformControls.attach(extClone);
   };
   
   posX.addEventListener('input', updateExtTransform);
@@ -1128,51 +1180,36 @@ function renderExtEditControls(){
   posZ.addEventListener('input', updateExtTransform);
   scaleInp.addEventListener('input', updateExtTransform);
   
-  // Mettre à jour les gizmos quand les champs changent
-  const updateGizmos = () => {
-    if(extClone) {
-      transformControls.detach();
-      transformControls.attach(extClone);
-    }
-  };
-  
-  // Mode translation
-  modeTranslate.addEventListener('click', () => {
-    editMode = 'translate';
-    transformControls.setMode('translate');
-    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.background = '');
-    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.color = 'var(--muted)');
-    modeTranslate.style.background = 'var(--blue)';
-    modeTranslate.style.color = 'var(--ink)';
-  });
-  
-  // Mode rotation
-  modeRotate.addEventListener('click', () => {
-    editMode = 'rotate';
-    transformControls.setMode('rotate');
-    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.background = '');
-    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.color = 'var(--muted)');
-    modeRotate.style.background = 'var(--blue)';
-    modeRotate.style.color = 'var(--ink)';
-  });
-  
-  // Mode scale
-  modeScale.addEventListener('click', () => {
-    editMode = 'scale';
-    transformControls.setMode('scale');
-    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.background = '');
-    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.color = 'var(--muted)');
-    modeScale.style.background = 'var(--blue)';
-    modeScale.style.color = 'var(--ink)';
-  });
-  
-  // Mode world/local
   let worldSpace = true;
   modeWorld.addEventListener('click', () => {
     worldSpace = !worldSpace;
     transformControls.setSpace(worldSpace ? 'world' : 'local');
     modeWorld.style.color = worldSpace ? 'var(--blue)' : 'var(--muted)';
     modeWorld.textContent = worldSpace ? '🌍' : '🔲';
+  });
+  
+  modeTranslate.addEventListener('click', () => {
+    editMode = 'translate';
+    transformControls.setMode('translate');
+    [modeTranslate, modeRotate, modeScale].forEach(b => { b.style.background = ''; b.style.color = 'var(--muted)'; });
+    modeTranslate.style.background = 'var(--blue)';
+    modeTranslate.style.color = 'var(--ink)';
+  });
+  
+  modeRotate.addEventListener('click', () => {
+    editMode = 'rotate';
+    transformControls.setMode('rotate');
+    [modeTranslate, modeRotate, modeScale].forEach(b => { b.style.background = ''; b.style.color = 'var(--muted)'; });
+    modeRotate.style.background = 'var(--blue)';
+    modeRotate.style.color = 'var(--ink)';
+  });
+  
+  modeScale.addEventListener('click', () => {
+    editMode = 'scale';
+    transformControls.setMode('scale');
+    [modeTranslate, modeRotate, modeScale].forEach(b => { b.style.background = ''; b.style.color = 'var(--muted)'; });
+    modeScale.style.background = 'var(--blue)';
+    modeScale.style.color = 'var(--ink)';
   });
   
   validateBtn.addEventListener('click', validateExtension);
@@ -1186,7 +1223,6 @@ function renderExtEditControls(){
     cancelExtend();
   });
   
-  // Mettre à jour les champs quand les gizmos bougent
   const updateFields = () => {
     if(extClone) {
       posX.value = extClone.position.x.toFixed(2);
@@ -1197,7 +1233,6 @@ function renderExtEditControls(){
   };
   
   transformControls.addEventListener('change', updateFields);
-  // Stocker la référence pour nettoyage
   controlsDiv._cleanup = () => {
     transformControls.removeEventListener('change', updateFields);
   };
@@ -1224,10 +1259,16 @@ window.addEventListener('keydown', (ev)=>{
   }
 });
 
-// Éditer une extension existante
 function editExtension(id){
   const ext = extensions.find(e => e.id === id);
   if(!ext) return;
+  
+  // Sauvegarder la transformation actuelle
+  extStoredTransform = {
+    position: ext.position.clone(),
+    quaternion: ext.quaternion.clone(),
+    scale: ext.scale.clone()
+  };
   
   // Supprimer l'extension de la liste
   extensions = extensions.filter(e => e.id !== id);
@@ -1235,13 +1276,20 @@ function editExtension(id){
   
   // Utiliser son groupe comme clone d'édition
   extClone = ext.group;
+  
+  // Restaurer la transformation sauvegardée
+  extClone.position.copy(extStoredTransform.position);
+  extClone.quaternion.copy(extStoredTransform.quaternion);
+  extClone.scale.copy(extStoredTransform.scale);
+  
+  // Rendre transparent
   extClone.traverse(o => {
     if(o.isMesh) {
       if(Array.isArray(o.material)) {
-        o.material.forEach(m => { m.transparent = true; m.opacity = 0.7; });
+        o.material.forEach(m => { m.transparent = true; m.opacity = 0.6; });
       } else if(o.material) {
         o.material.transparent = true;
-        m.opacity = 0.7;
+        o.material.opacity = 0.6;
       }
     }
   });
@@ -1278,7 +1326,6 @@ function deleteExtension(id){
   const e = extensions.find(x=>x.id===id);
   if(!e) return;
   
-  // Si c'est celui en cours d'édition, on annule d'abord
   if(extClone === e.group) {
     transformControls.detach();
     scene.remove(extClone);
@@ -1290,7 +1337,7 @@ function deleteExtension(id){
   scene.remove(e.group);
   e.group.traverse(o => {
     if(o.isMesh) {
-      o.geometry.dispose();
+      o.geometry?.dispose();
       if(Array.isArray(o.material)) o.material.forEach(m => m.dispose());
       else if(o.material) o.material.dispose();
     }
@@ -1305,7 +1352,6 @@ function renderExtList(){
   const empty = document.getElementById('ext-empty-note');
   const count = document.getElementById('ext-count');
   
-  // Garder les contrôles d'édition s'ils existent
   const controls = document.getElementById('ext-edit-controls');
   const hasControls = !!controls;
   
@@ -1332,8 +1378,13 @@ function renderExtList(){
     card.style.gap = '8px';
     card.style.flexWrap = 'wrap';
     
+    const dot = document.createElement('div');
+    dot.className = 'bldg-dot';
+    dot.style.background = e.merged ? '#4fae8f' : '#8fa4b3';
+    dot.title = e.merged ? 'Fusionné avec le hall' : 'Indépendant';
+    
     const label = document.createElement('span');
-    label.textContent = e.name;
+    label.textContent = e.name + (e.merged ? ' 🔗' : '');
     label.style.flex = '1';
     label.style.fontSize = '12.5px';
     
@@ -1367,7 +1418,7 @@ function renderExtList(){
     del.textContent = '✕';
     del.addEventListener('click', ()=> deleteExtension(e.id));
     
-    card.append(label, info, editBtn, focusBtn, del);
+    card.append(dot, label, info, editBtn, focusBtn, del);
     if(controls) {
       list.insertBefore(card, controls.nextSibling);
     } else {
@@ -1788,13 +1839,14 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
    ============================================================ */
 document.getElementById('btn-save-json').addEventListener('click', ()=>{
   const data = {
-    version: 4,
+    version: 5,
     buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
     extensions: extensions.map(e=>({
       name: e.name,
       position: {x:e.position.x, y:e.position.y, z:e.position.z},
       quaternion: {x:e.quaternion.x, y:e.quaternion.y, z:e.quaternion.z, w:e.quaternion.w},
-      scale: {x:e.scale.x, y:e.scale.y, z:e.scale.z}
+      scale: {x:e.scale.x, y:e.scale.y, z:e.scale.z},
+      merged: e.merged || false
     }))
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
@@ -1821,7 +1873,7 @@ fileLoad.addEventListener('change', (e)=>{
       
       extensions.forEach(e => { 
         scene.remove(e.group);
-        e.group.traverse(o => { if(o.isMesh) { o.geometry.dispose(); if(o.material) o.material.dispose(); } });
+        e.group.traverse(o => { if(o.isMesh) { o.geometry?.dispose(); o.material?.dispose(); } });
       });
       extensions = [];
       extIdCounter = 1;
@@ -1842,7 +1894,8 @@ fileLoad.addEventListener('change', (e)=>{
             position: clone.position.clone(),
             quaternion: clone.quaternion.clone(),
             scale: clone.scale.clone(),
-            original: hallGroup
+            original: hallGroup,
+            merged: extData.merged || false
           };
           extensions.push(ext);
         });
