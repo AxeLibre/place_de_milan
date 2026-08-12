@@ -3,79 +3,190 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Place de Milan — Extensions du hall</title>
+<title>Place de Milan — Extension du hall</title>
 <style>
-  body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background: #101820; }
-  canvas { display: block; }
-  
-  /* Interface minimaliste */
-  #ui {
-    position: absolute;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(16,24,32,0.9);
-    border: 1px solid #2a3946;
-    border-radius: 8px;
-    padding: 12px 20px;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    backdrop-filter: blur(6px);
-    pointer-events: none;
-    z-index: 10;
+  /* ===== STYLES COMPLETS ===== */
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#101820;color:#eef1ee;font-family:'Inter',sans-serif;overflow:hidden;height:100vh;}
+  #app{display:flex;height:100vh;}
+
+  #viewport{flex:1;position:relative;background:#101820;}
+  #viewport canvas{display:block;width:100%;height:100%;}
+
+  #panel{
+    width:350px;
+    background:#182430;
+    border-left:1px solid #2a3946;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    flex-shrink:0;
   }
-  #ui > * { pointer-events: auto; }
-  
-  .btn {
-    background: #182430;
-    border: 1px solid #2a3946;
-    color: #eef1ee;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: all 0.15s;
+  #panel-scroll{flex:1;overflow-y:auto;padding:16px;}
+  #panel-scroll::-webkit-scrollbar{width:6px;}
+  #panel-scroll::-webkit-scrollbar-thumb{background:#2a3946;border-radius:3px;}
+
+  .section-title{
+    font-family:'Segoe UI',sans-serif;
+    font-size:12px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:#7f93a3;
+    margin:20px 0 10px;
+    display:flex;
+    align-items:center;
+    gap:8px;
   }
-  .btn:hover { border-color: #5b8ab0; }
-  .btn.active { background: #e0663f; border-color: #e0663f; color: #1a0e08; font-weight: 600; }
-  .btn.primary { background: #4fae8f; border-color: #4fae8f; color: #101820; }
-  
-  #status {
-    color: #7f93a3;
-    font-size: 12px;
-    font-family: monospace;
-    min-width: 200px;
+  .section-title::after{content:"";flex:1;height:1px;background:#2a3946;}
+
+  .field{margin-bottom:10px;}
+  .field label{display:block;font-size:11px;color:#7f93a3;margin-bottom:3px;font-family:'Courier New',monospace;}
+  .field input[type=text], .field input[type=number]{
+    width:100%;
+    background:#0b1116;
+    border:1px solid #2a3946;
+    color:#eef1ee;
+    padding:6px 8px;
+    border-radius:3px;
+    font-size:13px;
   }
-  #status b { color: #e0663f; }
-  
-  #info {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    color: #7f93a3;
-    font-size: 11px;
-    font-family: monospace;
-    text-align: right;
-    line-height: 1.6;
-    z-index: 10;
-    pointer-events: none;
+  .field input:focus{outline:none;border-color:#5b8ab0;}
+
+  .row{display:flex;gap:8px;}
+  .row .field{flex:1;}
+
+  .btn{
+    background:#2a3946;
+    border:none;
+    color:#eef1ee;
+    padding:8px 14px;
+    border-radius:3px;
+    cursor:pointer;
+    font-size:13px;
+    transition:all 0.15s;
+    font-family:'Segoe UI',sans-serif;
+  }
+  .btn:hover{background:#3f5568;}
+  .btn-primary{background:#4fae8f;color:#101820;}
+  .btn-primary:hover{background:#5fc09f;}
+  .btn-danger{background:#d95a6c;color:#fff;}
+  .btn-danger:hover{background:#e06a7c;}
+  .btn-sm{font-size:11px;padding:4px 10px;}
+
+  .bldg-card{
+    background:#0b1116;
+    border:1px solid #2a3946;
+    border-radius:4px;
+    margin-bottom:8px;
+    overflow:hidden;
+  }
+  .bldg-card.selected{border-color:#e0663f;}
+  .bldg-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 10px;
+    cursor:pointer;
+  }
+  .bldg-head .name{flex:1;font-weight:600;font-size:13px;}
+  .bldg-head .badge{font-size:10px;color:#7f93a3;background:#1a242d;padding:2px 8px;border-radius:10px;}
+
+  .bldg-body{padding:0 10px 12px;border-top:1px solid #1a242d;display:none;}
+  .bldg-body.open{display:block;}
+
+  .mini-btn{
+    background:none;
+    border:1px solid #2a3946;
+    color:#7f93a3;
+    border-radius:3px;
+    width:24px;height:24px;
+    cursor:pointer;
+    font-size:13px;
+    line-height:1;
+    transition:all 0.12s;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .mini-btn:hover{color:#eef1ee;border-color:#5b8ab0;}
+  .mini-btn.danger:hover{border-color:#d95a6c;color:#d95a6c;}
+  .mini-btn.success:hover{border-color:#4fae8f;color:#4fae8f;}
+
+  #status-bar{
+    position:absolute;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    background:#0b1116;
+    border:1px solid #2a3946;
+    border-radius:4px;
+    padding:8px 16px;
+    font-size:12px;
+    font-family:'Courier New',monospace;
+    color:#7f93a3;
+    z-index:10;
+    pointer-events:none;
+    display:flex;
+    gap:16px;
+    align-items:center;
+  }
+  #status-bar .highlight{color:#e0663f;font-weight:600;}
+
+  #ext-edit-controls{
+    background:#0b1116;
+    border:1px solid #4fae8f;
+    border-radius:4px;
+    padding:12px;
+    margin-bottom:12px;
+  }
+  #ext-edit-controls .row{display:flex;gap:6px;align-items:center;margin:4px 0;flex-wrap:wrap;}
+  #ext-edit-controls label{font-size:10px;color:#7f93a3;font-family:'Courier New',monospace;}
+  #ext-edit-controls input[type=number]{width:48px;background:#101820;border:1px solid #2a3946;color:#eef1ee;border-radius:3px;padding:2px 4px;font-size:11px;}
+  #ext-edit-controls .btn-group{display:flex;gap:6px;margin-top:8px;}
+
+  .empty-note{color:#7f93a3;font-size:12px;line-height:1.6;font-family:'Courier New',monospace;}
+
+  #compass{
+    position:absolute;
+    top:16px;
+    right:16px;
+    width:40px;height:40px;
+    background:#182430;
+    border:1px solid #2a3946;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:12px;
+    font-weight:700;
+    color:#e0663f;
+    z-index:5;
+    pointer-events:none;
   }
 </style>
 </head>
 <body>
+<div id="app">
+  <div id="viewport">
+    <div id="status-bar">
+      <span id="status-text">💡 Cliquez sur « Nouvelle extension » pour commencer</span>
+      <span id="status-pivots" class="highlight"></span>
+    </div>
+    <div id="compass">N↑</div>
+  </div>
 
-<div id="info">
-  <div>🖱 Clic gauche : placer/déplacer un pivot</div>
-  <div>🔄 Molette : zoom</div>
-  <div>✋ Clic droit : orbiter</div>
-</div>
+  <div id="panel">
+    <div id="panel-scroll">
+      <div class="section-title">📍 Extensions du hall</div>
+      <div id="ext-empty" class="empty-note">Aucune extension. Cliquez sur <b style="color:#eef1ee">Nouvelle extension</b> puis sur la façade du hall.</div>
+      <div id="ext-list"></div>
 
-<div id="ui">
-  <button class="btn" id="btn-draw">➕ Tracer une extension</button>
-  <button class="btn" id="btn-finish" disabled>✅ Valider</button>
-  <button class="btn" id="btn-cancel" disabled>✖ Annuler</button>
-  <span id="status">💡 Cliquez sur le sol pour placer les pivots</span>
+      <div class="section-title">⚙️ Actions</div>
+      <button class="btn btn-primary" id="btn-new-ext" style="width:100%;">➕ Nouvelle extension</button>
+      <button class="btn" id="btn-cancel-ext" style="width:100%;margin-top:6px;display:none;">✖ Annuler</button>
+    </div>
+  </div>
 </div>
 
 <script type="importmap">
@@ -96,25 +207,25 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 // ============================================================
 // SCENE
 // ============================================================
+const viewport = document.getElementById('viewport');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101820);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.position.set(80, 60, 100);
+const camera = new THREE.PerspectiveCamera(40, viewport.clientWidth/viewport.clientHeight, 0.1, 1000);
+camera.position.set(70, 50, 90);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.prepend(renderer.domElement);
+renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+viewport.prepend(renderer.domElement);
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-// Controls
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 4, 0);
+controls.target.set(0, 6, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.maxPolarAngle = Math.PI * 0.48;
@@ -146,21 +257,18 @@ grid.position.y = -0.45;
 scene.add(grid);
 
 // ============================================================
-// MAQUETTE (hall de gare simplifié)
+// HALL DE GARE (maquette)
 // ============================================================
 const hallGroup = new THREE.Group();
 hallGroup.position.set(-10, 0, -25);
-
 const hallMat = new THREE.MeshStandardMaterial({ color: 0x8fa4b3, roughness: 0.5, metalness: 0.1 });
 const hallW = 30, hallD = 22, hallH = 8;
 
-// Base
 const base = new THREE.Mesh(new THREE.BoxGeometry(hallW, hallH, hallD), hallMat);
 base.position.y = hallH/2;
 base.castShadow = true; base.receiveShadow = true;
 hallGroup.add(base);
 
-// Toit arrondi
 const roofGeo = new THREE.CylinderGeometry(hallW/2, hallW/2, hallD, 24, 1, false, 0, Math.PI);
 const roof = new THREE.Mesh(roofGeo, hallMat);
 roof.rotation.z = Math.PI/2;
@@ -168,39 +276,401 @@ roof.rotation.y = Math.PI/2;
 roof.position.y = hallH;
 roof.castShadow = true; roof.receiveShadow = true;
 hallGroup.add(roof);
-
 scene.add(hallGroup);
 
-// Contour du hall pour visibilité
-const edgeMat = new THREE.LineBasicMaterial({ color: 0x5b8ab0, transparent: true, opacity: 0.3 });
-const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(hallW, hallH, hallD));
-const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
-edgeLine.position.y = hallH/2;
-hallGroup.add(edgeLine);
+// ============================================================
+// EXTENSION SYSTEM
+// ============================================================
+let extensions = [];
+let extIdCounter = 1;
 
-// ============================================================
-// SYSTÈME D'EXTENSION À PIVOTS 3D
-// ============================================================
-let pivots = [];           // [{position:Vector3, mesh, heightLine}]
+// État de dessin
+let drawing = false;
+let pivots = []; // {x, y, z}
+let pivotMeshes = [];
+let pivotLines = [];
+let curveLine = null;
 let pivotGroup = new THREE.Group();
 scene.add(pivotGroup);
 
-let extensionMeshes = [];  // [{group, pivots:[Vector3], mesh}]
-let extIdCounter = 1;
+// Extension en cours d'édition
+let editingExtId = null;
+let editingPivots = [];
 
-let drawing = false;
-let selectedPivot = null;
+// Éléments UI
+const statusText = document.getElementById('status-text');
+const statusPivots = document.getElementById('status-pivots');
+const extList = document.getElementById('ext-list');
+const extEmpty = document.getElementById('ext-empty');
+const btnNew = document.getElementById('btn-new-ext');
+const btnCancel = document.getElementById('btn-cancel-ext');
 
-const btnDraw = document.getElementById('btn-draw');
-const btnFinish = document.getElementById('btn-finish');
-const btnCancel = document.getElementById('btn-cancel');
-const statusEl = document.getElementById('status');
+// ============================================================
+// FONCTIONS DE DESSIN DES PIVOTS
+// ============================================================
+function clearPivots() {
+  pivotGroup.clear();
+  pivotMeshes = [];
+  pivotLines = [];
+  curveLine = null;
+}
 
-// Raycaster
+function updatePivots() {
+  clearPivots();
+  if (pivots.length === 0) return;
+
+  // Sphères
+  pivots.forEach((p, i) => {
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 12, 12),
+      new THREE.MeshStandardMaterial({
+        color: i === 0 ? 0x4fae8f : 0xe0663f,
+        emissive: 0xe0663f,
+        emissiveIntensity: 0.15
+      })
+    );
+    sphere.position.set(p.x, p.y, p.z);
+    sphere.castShadow = true;
+    pivotGroup.add(sphere);
+    pivotMeshes.push(sphere);
+
+    // Ligne verticale (hauteur)
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, transparent: true, opacity: 0.3 });
+    const pts = [new THREE.Vector3(p.x, -0.4, p.z), new THREE.Vector3(p.x, p.y, p.z)];
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat);
+    pivotGroup.add(line);
+    pivotLines.push(line);
+
+    // Étiquette de hauteur (texte simplifié via un petit repère)
+    if (i > 0) {
+      const arrow = new THREE.ArrowHelper(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(p.x, -0.2, p.z),
+        0.3,
+        0x4fae8f,
+        0.2,
+        0.1
+      );
+      pivotGroup.add(arrow);
+    }
+  });
+
+  // Courbe
+  if (pivots.length >= 2) {
+    const pts = pivots.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.3);
+    const curvePts = curve.getPoints(50);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, linewidth: 2 });
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(curvePts);
+    curveLine = new THREE.Line(lineGeo, lineMat);
+    pivotGroup.add(curveLine);
+  }
+
+  updateStatus();
+}
+
+function addPivot(x, y, z) {
+  pivots.push({ x, y, z });
+  updatePivots();
+}
+
+function removeLastPivot() {
+  if (pivots.length > 1) {
+    pivots.pop();
+    updatePivots();
+  }
+}
+
+function updateStatus() {
+  if (drawing) {
+    statusText.textContent = `✏️ Tracé en cours · ${pivots.length} pivot${pivots.length > 1 ? 's' : ''}`;
+    statusPivots.textContent = pivots.length >= 2 ? '✅ Valider avec Entrée' : '⏳ Ajoutez au moins 2 pivots';
+    btnNew.textContent = '✏️ Tracé en cours…';
+    btnCancel.style.display = 'inline-block';
+  } else if (editingExtId !== null) {
+    statusText.textContent = `🔧 Édition de l'extension ${editingExtId}`;
+    statusPivots.textContent = `${pivots.length} pivots · Entrée pour valider`;
+    btnNew.textContent = '🔧 Édition…';
+    btnCancel.style.display = 'inline-block';
+  } else {
+    const count = extensions.length;
+    statusText.textContent = count ? `🏗️ ${count} extension${count > 1 ? 's' : ''} créée${count > 1 ? 's' : ''}` : '💡 Cliquez sur « Nouvelle extension »';
+    statusPivots.textContent = '';
+    btnNew.textContent = '➕ Nouvelle extension';
+    btnCancel.style.display = 'none';
+  }
+  renderExtList();
+}
+
+// ============================================================
+// CRÉATION DE L'EXTENSION (LOFT)
+// ============================================================
+function createExtensionFromPivots(pts, name) {
+  if (pts.length < 2) return null;
+
+  const curve = new THREE.CatmullRomCurve3(
+    pts.map(p => new THREE.Vector3(p.x, p.y, p.z)),
+    false, 'catmullrom', 0.3
+  );
+  const segments = 30;
+  const profileW = 5;
+  const profileH = 5;
+
+  // Profil rectangulaire
+  const profile = [
+    new THREE.Vector3(-profileW/2, -profileH/2, 0),
+    new THREE.Vector3(profileW/2, -profileH/2, 0),
+    new THREE.Vector3(profileW/2, profileH/2, 0),
+    new THREE.Vector3(-profileW/2, profileH/2, 0)
+  ];
+  const profLen = profile.length;
+
+  const positions = [];
+  const indices = [];
+
+  for (let s = 0; s <= segments; s++) {
+    const t = s / segments;
+    const center = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t);
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    const localUp = new THREE.Vector3().crossVectors(right, tangent).normalize();
+
+    for (const pp of profile) {
+      const pt = center.clone()
+        .add(right.clone().multiplyScalar(pp.x))
+        .add(localUp.clone().multiplyScalar(pp.y));
+      positions.push(pt.x, pt.y, pt.z);
+    }
+  }
+
+  for (let s = 0; s < segments; s++) {
+    for (let i = 0; i < profLen; i++) {
+      const a = s * profLen + i;
+      const b = s * profLen + ((i + 1) % profLen);
+      const c = (s + 1) * profLen + i;
+      const d = (s + 1) * profLen + ((i + 1) % profLen);
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x9fb8c4,
+    roughness: 0.5,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  const ext = {
+    id: extIdCounter++,
+    name: name || `Extension ${extIdCounter-1}`,
+    pivots: pts.map(p => ({ ...p })),
+    mesh: mesh
+  };
+  extensions.push(ext);
+  return ext;
+}
+
+// ============================================================
+// ÉDITION D'UNE EXTENSION EXISTANTE
+// ============================================================
+function editExtension(id) {
+  const ext = extensions.find(e => e.id === id);
+  if (!ext) return;
+
+  // Supprimer l'extension de la scène
+  scene.remove(ext.mesh);
+  ext.mesh.geometry.dispose();
+  ext.mesh.material.dispose();
+  extensions = extensions.filter(e => e.id !== id);
+
+  // Passer en mode édition avec ses pivots
+  editingExtId = id;
+  pivots = ext.pivots.map(p => ({ ...p }));
+  drawing = false;
+  updatePivots();
+  updateStatus();
+  renderExtList();
+}
+
+function cancelEdit() {
+  if (editingExtId !== null) {
+    // Réajouter l'extension avec ses pivots actuels
+    const ext = createExtensionFromPivots(pivots, `Extension ${editingExtId}`);
+    if (ext) {
+      ext.id = editingExtId;
+      // Garder l'ID
+      extensions = extensions.filter(e => e.id !== editingExtId);
+      extensions.push(ext);
+    }
+    editingExtId = null;
+    pivots = [];
+    clearPivots();
+    updateStatus();
+    renderExtList();
+  }
+}
+
+function finishEdit() {
+  if (editingExtId !== null && pivots.length >= 2) {
+    const ext = createExtensionFromPivots(pivots, `Extension ${editingExtId}`);
+    if (ext) {
+      ext.id = editingExtId;
+      extensions = extensions.filter(e => e.id !== editingExtId);
+      extensions.push(ext);
+    }
+    editingExtId = null;
+    pivots = [];
+    clearPivots();
+    updateStatus();
+    renderExtList();
+  }
+}
+
+// ============================================================
+// SUPPRESSION D'UNE EXTENSION
+// ============================================================
+function deleteExtension(id) {
+  const ext = extensions.find(e => e.id === id);
+  if (!ext) return;
+  scene.remove(ext.mesh);
+  ext.mesh.geometry.dispose();
+  ext.mesh.material.dispose();
+  extensions = extensions.filter(e => e.id !== id);
+  renderExtList();
+  updateStatus();
+}
+
+// ============================================================
+// RENDU DE LA LISTE DANS LE PANNEAU
+// ============================================================
+function renderExtList() {
+  extList.innerHTML = '';
+  extEmpty.style.display = extensions.length ? 'none' : 'block';
+
+  extensions.forEach(ext => {
+    const card = document.createElement('div');
+    card.className = 'bldg-card';
+    card.style.borderColor = editingExtId === ext.id ? '#4fae8f' : '#2a3946';
+
+    const head = document.createElement('div');
+    head.className = 'bldg-head';
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = ext.name || `Extension ${ext.id}`;
+
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = `${ext.pivots.length} pivots`;
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'mini-btn success';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Modifier les pivots';
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editExtension(ext.id);
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'mini-btn danger';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteExtension(ext.id);
+    });
+
+    head.append(name, badge, editBtn, delBtn);
+    card.appendChild(head);
+    extList.appendChild(card);
+  });
+}
+
+// ============================================================
+// INTERACTIONS UTILISATEUR
+// ============================================================
+// Démarrer une nouvelle extension
+btnNew.addEventListener('click', () => {
+  if (editingExtId !== null) {
+    // Si on est en édition, on annule d'abord
+    cancelEdit();
+    return;
+  }
+  if (drawing) {
+    // Si déjà en tracé, on annule
+    cancelDrawing();
+    return;
+  }
+  startDrawing();
+});
+
+btnCancel.addEventListener('click', () => {
+  if (editingExtId !== null) {
+    cancelEdit();
+  } else if (drawing) {
+    cancelDrawing();
+  }
+});
+
+function startDrawing() {
+  drawing = true;
+  pivots = [];
+  clearPivots();
+  updatePivots();
+  updateStatus();
+  btnNew.textContent = '✏️ Tracé en cours…';
+  btnCancel.style.display = 'inline-block';
+  controls.enabled = false;
+}
+
+function cancelDrawing() {
+  drawing = false;
+  pivots = [];
+  clearPivots();
+  updateStatus();
+  btnNew.textContent = '➕ Nouvelle extension';
+  btnCancel.style.display = 'none';
+  controls.enabled = true;
+}
+
+function finishDrawing() {
+  if (pivots.length < 2) {
+    statusText.textContent = '⚠️ Il faut au moins 2 pivots';
+    return;
+  }
+  const ext = createExtensionFromPivots(pivots);
+  if (ext) {
+    statusText.textContent = `✅ Extension ${ext.id} créée !`;
+  }
+  drawing = false;
+  pivots = [];
+  clearPivots();
+  updateStatus();
+  btnNew.textContent = '➕ Nouvelle extension';
+  btnCancel.style.display = 'none';
+  controls.enabled = true;
+  renderExtList();
+}
+
+// ============================================================
+// ÉVÉNEMENTS SOURIS
+// ============================================================
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-// Fonction pour obtenir le point au sol
 function getGroundPoint(event) {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -210,354 +680,83 @@ function getGroundPoint(event) {
   return hits.length ? hits[0].point : null;
 }
 
-// Fonction pour obtenir un pivot existant par clic
-function getPivotAt(event) {
+renderer.domElement.addEventListener('click', (event) => {
+  if (event.button !== 0) return;
+
+  if (drawing || editingExtId !== null) {
+    const pt = getGroundPoint(event);
+    if (pt) {
+      // Hauteur par défaut : 2m, ou dernière hauteur si déjà des pivots
+      let y = 2.0;
+      if (pivots.length > 0) {
+        y = pivots[pivots.length - 1].y;
+      }
+      addPivot(pt.x, y, pt.z);
+    }
+  }
+});
+
+// Double-clic pour ajuster la hauteur d'un pivot
+renderer.domElement.addEventListener('dblclick', (event) => {
+  if (!drawing && editingExtId === null) return;
+  if (pivots.length === 0) return;
+
+  // Trouver le pivot le plus proche du clic
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  
-  const pivotMeshes = pivots.map(p => p.mesh);
-  const hits = raycaster.intersectObjects(pivotMeshes);
+
+  const meshes = pivotMeshes;
+  const hits = raycaster.intersectObjects(meshes);
   if (hits.length) {
-    const hitMesh = hits[0].object;
-    return pivots.find(p => p.mesh === hitMesh) || null;
-  }
-  return null;
-}
-
-// Créer un pivot
-function createPivot(position) {
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(0.6, 16, 16),
-    new THREE.MeshStandardMaterial({ color: 0xe0663f, emissive: 0xe0663f, emissiveIntensity: 0.2 })
-  );
-  sphere.position.copy(position);
-  sphere.position.y = position.y || 0.2;
-  sphere.castShadow = true;
-  pivotGroup.add(sphere);
-  
-  // Ligne de hauteur
-  const lineMat = new THREE.LineBasicMaterial({ color: 0xe0663f, transparent: true, opacity: 0.3 });
-  const lineGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(sphere.position.x, -0.4, sphere.position.z),
-    sphere.position.clone()
-  ]);
-  const line = new THREE.Line(lineGeo, lineMat);
-  pivotGroup.add(line);
-  
-  const pivot = { position: sphere.position.clone(), mesh: sphere, heightLine: line };
-  pivots.push(pivot);
-  
-  updateUI();
-  return pivot;
-}
-
-// Supprimer le dernier pivot (annuler)
-function popPivot() {
-  if (pivots.length === 0) return;
-  const last = pivots.pop();
-  pivotGroup.remove(last.mesh);
-  pivotGroup.remove(last.heightLine);
-  updateUI();
-}
-
-// Mettre à jour la ligne de hauteur d'un pivot
-function updateHeightLine(pivot) {
-  const pos = pivot.mesh.position;
-  const pts = [new THREE.Vector3(pos.x, -0.4, pos.z), pos.clone()];
-  pivot.heightLine.geometry.dispose();
-  pivot.heightLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
-}
-
-// Mettre à jour la courbe de l'extension (ligne reliant les pivots)
-function updateCurve() {
-  // Supprimer l'ancienne ligne
-  pivotGroup.children.forEach(child => {
-    if (child.isLine && child !== pivots[0]?.heightLine && child !== pivots[0]?.mesh) {
-      // On garde les lignes de hauteur, on supprime les courbes
-    }
-  });
-  
-  const curveLines = [];
-  pivotGroup.children.forEach(child => {
-    if (child.isLine && child !== pivots[0]?.heightLine) {
-      curveLines.push(child);
-    }
-  });
-  curveLines.forEach(l => pivotGroup.remove(l));
-  
-  if (pivots.length < 2) return;
-  
-  // Créer une courbe CatmullRom en 3D
-  const points = pivots.map(p => p.mesh.position.clone());
-  const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.3);
-  const curvePoints = curve.getPoints(50);
-  
-  const lineMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, linewidth: 2 });
-  const lineGeo = new THREE.BufferGeometry().setFromPoints(curvePoints);
-  const line = new THREE.Line(lineGeo, lineMat);
-  pivotGroup.add(line);
-  
-  // Ajouter des repères d'orientation (petites flèches)
-  for (let i = 0; i < points.length - 1; i++) {
-    const p1 = points[i];
-    const p2 = points[i+1];
-    const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
-    const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-    // Petite flèche directionnelle
-    const arrowLen = 1.2;
-    const arrowColor = 0x4fae8f;
-    const arrow = new THREE.ArrowHelper(dir, mid, arrowLen, arrowColor, 0.5, 0.3);
-    pivotGroup.add(arrow);
-  }
-}
-
-// Valider l'extension → créer la géométrie loftée
-function finishExtension() {
-  if (pivots.length < 2) {
-    statusEl.innerHTML = '⚠️ Il faut au moins 2 pivots pour créer une extension';
-    return;
-  }
-  
-  // Créer le profil : on prend la section du hall
-  // Pour simplifier, on crée un rectangle de 10x8 qui suit la courbe
-  const points = pivots.map(p => p.mesh.position.clone());
-  const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.3);
-  const segments = 30;
-  const profileWidth = 6;
-  const profileHeight = 6;
-  
-  // Générer la géométrie loftée
-  const positions = [];
-  const indices = [];
-  const profilePoints = [
-    new THREE.Vector3(-profileWidth/2, -profileHeight/2, 0),
-    new THREE.Vector3(profileWidth/2, -profileHeight/2, 0),
-    new THREE.Vector3(profileWidth/2, profileHeight/2, 0),
-    new THREE.Vector3(-profileWidth/2, profileHeight/2, 0)
-  ];
-  const profileLen = profilePoints.length;
-  
-  for (let s = 0; s <= segments; s++) {
-    const t = s / segments;
-    const center = curve.getPointAt(t);
-    const tangent = curve.getTangentAt(t);
-    const up = new THREE.Vector3(0, 1, 0);
-    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
-    const localUp = new THREE.Vector3().crossVectors(right, tangent).normalize();
-    
-    for (const pp of profilePoints) {
-      const pt = center.clone()
-        .add(right.clone().multiplyScalar(pp.x))
-        .add(localUp.clone().multiplyScalar(pp.y));
-      positions.push(pt.x, pt.y, pt.z);
+    const idx = meshes.indexOf(hits[0].object);
+    if (idx !== -1) {
+      // Récupérer la hauteur actuelle du pivot
+      const currentY = pivots[idx].y;
+      // Proposer une nouvelle hauteur (clic sur le sol)
+      const pt = getGroundPoint(event);
+      if (pt) {
+        pivots[idx].y = Math.max(0.5, pt.y);
+        updatePivots();
+        statusText.textContent = `📐 Pivot ${idx+1} → hauteur ${pivots[idx].y.toFixed(1)}m`;
+      }
     }
   }
-  
-  for (let s = 0; s < segments; s++) {
-    for (let i = 0; i < profileLen; i++) {
-      const a = s * profileLen + i;
-      const b = s * profileLen + ((i + 1) % profileLen);
-      const c = (s + 1) * profileLen + i;
-      const d = (s + 1) * profileLen + ((i + 1) % profileLen);
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-  
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x9fb8c4,
-    roughness: 0.5,
-    metalness: 0.1,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide
-  });
-  
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-  
-  // Sauvegarder
-  const ext = {
-    id: extIdCounter++,
-    pivots: points.map(p => p.clone()),
-    mesh: mesh,
-    group: new THREE.Group()
-  };
-  ext.group.add(mesh);
-  extensionMeshes.push(ext);
-  
-  // Nettoyer les pivots
-  clearPivots();
-  statusEl.innerHTML = `✅ Extension ${ext.id} créée avec ${points.length} pivots`;
-  updateUI();
-}
-
-// Effacer les pivots (sans supprimer l'extension)
-function clearPivots() {
-  pivots.forEach(p => {
-    pivotGroup.remove(p.mesh);
-    pivotGroup.remove(p.heightLine);
-  });
-  pivots = [];
-  // Nettoyer les lignes restantes
-  const toRemove = [];
-  pivotGroup.children.forEach(c => {
-    if (c.isLine || c.isArrowHelper) toRemove.push(c);
-  });
-  toRemove.forEach(c => pivotGroup.remove(c));
-}
-
-// Supprimer une extension
-function deleteExtension(id) {
-  const idx = extensionMeshes.findIndex(e => e.id === id);
-  if (idx === -1) return;
-  const ext = extensionMeshes[idx];
-  scene.remove(ext.mesh);
-  ext.mesh.geometry.dispose();
-  ext.mesh.material.dispose();
-  extensionMeshes.splice(idx, 1);
-  updateUI();
-}
-
-// ============================================================
-// INTERFACE UTILISATEUR
-// ============================================================
-function updateUI() {
-  btnFinish.disabled = pivots.length < 2;
-  btnCancel.disabled = pivots.length === 0 && !drawing;
-  
-  if (drawing) {
-    statusEl.innerHTML = `✏️ ${pivots.length} pivot${pivots.length > 1 ? 's' : ''} · cliquez pour ajouter · entrez pour valider`;
-  } else {
-    const count = extensionMeshes.length;
-    statusEl.innerHTML = count ? `🏗️ ${count} extension${count > 1 ? 's' : ''} créée${count > 1 ? 's' : ''} · cliquez sur un pivot pour le déplacer` : '💡 Cliquez sur "Tracer" pour commencer';
-  }
-}
-
-// Démarrer le tracé
-function startDrawing() {
-  drawing = true;
-  clearPivots();
-  btnDraw.classList.add('active');
-  btnDraw.textContent = '✏️ Tracé en cours';
-  btnFinish.disabled = true;
-  btnCancel.disabled = false;
-  controls.enabled = false;
-  updateUI();
-}
-
-// Annuler le tracé
-function cancelDrawing() {
-  drawing = false;
-  clearPivots();
-  btnDraw.classList.remove('active');
-  btnDraw.textContent = '➕ Tracer une extension';
-  btnFinish.disabled = true;
-  btnCancel.disabled = true;
-  controls.enabled = true;
-  updateUI();
-}
-
-// Événements souris
-renderer.domElement.addEventListener('click', (event) => {
-  if (!drawing) {
-    // En mode édition, cliquer sur un pivot pour le sélectionner et le déplacer
-    const pivot = getPivotAt(event);
-    if (pivot) {
-      selectedPivot = pivot;
-      statusEl.innerHTML = `🔵 Pivot sélectionné · cliquez sur le sol pour le déplacer en hauteur`;
-      return;
-    }
-    return;
-  }
-  
-  // En mode tracé : ajouter un pivot
-  const pt = getGroundPoint(event);
-  if (!pt) return;
-  
-  // Hauteur par défaut : 2m au-dessus du sol
-  pt.y = 2.0;
-  createPivot(pt);
-  updateCurve();
-  updateUI();
 });
 
-// Déplacement du pivot sélectionné (clic sur le sol)
-renderer.domElement.addEventListener('dblclick', (event) => {
-  if (!selectedPivot) return;
-  const pt = getGroundPoint(event);
-  if (!pt) return;
-  
-  // Déplacer le pivot en hauteur (Y)
-  const oldY = selectedPivot.mesh.position.y;
-  selectedPivot.mesh.position.y = pt.y;
-  updateHeightLine(selectedPivot);
-  updateCurve();
-  statusEl.innerHTML = `📐 Hauteur du pivot : ${pt.y.toFixed(1)}m`;
-  selectedPivot = null;
-});
-
-// Clavier
+// ============================================================
+// CLAVIER
+// ============================================================
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && drawing) {
-    finishExtension();
-    cancelDrawing();
+  if (event.key === 'Enter') {
+    if (drawing) finishDrawing();
+    else if (editingExtId !== null) finishEdit();
   }
   if (event.key === 'Escape') {
     if (drawing) cancelDrawing();
-    selectedPivot = null;
+    else if (editingExtId !== null) cancelEdit();
   }
   if (event.key === 'Backspace' && drawing) {
-    popPivot();
-    updateCurve();
-  }
-  if (event.key === 'Delete' && !drawing) {
-    // Supprimer l'extension sélectionnée (au clic)
-    // Pour simplifier, on supprime la dernière
-    if (extensionMeshes.length) {
-      deleteExtension(extensionMeshes[extensionMeshes.length - 1].id);
-    }
+    removeLastPivot();
   }
 });
-
-// Boutons
-btnDraw.addEventListener('click', () => {
-  if (drawing) {
-    cancelDrawing();
-  } else {
-    startDrawing();
-  }
-});
-
-btnFinish.addEventListener('click', () => {
-  if (drawing) {
-    finishExtension();
-    cancelDrawing();
-  }
-});
-
-btnCancel.addEventListener('click', cancelDrawing);
 
 // ============================================================
-// RENDU
+// REDIMENSIONNEMENT
 // ============================================================
 function resize() {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
+  const w = viewport.clientWidth;
+  const h = viewport.clientHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
 }
 window.addEventListener('resize', resize);
 
+// ============================================================
+// ANIMATION
+// ============================================================
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
@@ -565,13 +764,16 @@ function animate() {
 }
 animate();
 
-// Status initial
-updateUI();
+// ============================================================
+// INIT
+// ============================================================
+updateStatus();
+renderExtList();
 
-console.log('🚀 Extension avec pivots 3D prête !');
-console.log('💡 Tracer : cliquez au sol pour placer des pivots (hauteur automatique 2m)');
-console.log('💡 Modifier : double-cliquez sur un pivot pour changer sa hauteur');
-console.log('💡 Entrée : valider · Échap : annuler · Suppr : supprimer la dernière extension');
+console.log('🚀 Extension système prêt !');
+console.log('💡 Cliquez sur "Nouvelle extension" puis sur le sol pour placer des pivots');
+console.log('💡 Double-cliquez sur un pivot pour ajuster sa hauteur');
+console.log('💡 Entrée : valider · Échap : annuler · Backspace : supprimer le dernier pivot');
 </script>
 </body>
 </html>
