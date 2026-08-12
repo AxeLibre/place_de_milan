@@ -1228,37 +1228,45 @@ function fixProceduralMaterials(){
    ex. en mode démo). Un clic dans le polygone plante un arbre ; un
    clic sur un arbre existant le retire.
    ============================================================ */
-let treeTemplate = null; // {geometry, material, baseScale}
+let treeTemplate = null; // {object: THREE.Group, baseScale}
 function findIcosphereTemplate(){
+  // IMPORTANT : quand un objet Blender a plusieurs matériaux (ex. tronc + feuillage),
+  // l'export glTF le scinde en PLUSIEURS primitives, et THREE.GLTFLoader charge ça
+  // comme un Group (le noeud "Icosphère.NNN") contenant DEUX Mesh enfants — pas un
+  // seul Mesh multi-matériaux. En cherchant uniquement `o.isMesh`, on ne récupérait
+  // que le premier enfant rencontré (le tronc), d'où le feuillage manquant : ce
+  // n'était pas un problème de matériau cassé, mais un sous-arbre entier ignoré.
+  // On cherche donc le premier noeud (Mesh OU Group) dont le nom matche, et on
+  // clone TOUT son sous-arbre.
   let found = null;
-  siteRoot.traverse(o=>{ if(!found && o.isMesh && /icosph/i.test(o.name)) found = o; });
+  siteRoot.traverse(o=>{ if(!found && /icosph/i.test(o.name||'')) found = o; });
   if(found){
-    // On clone et RECENTRE systématiquement la géométrie sur sa propre base locale
-    // (X/Z centrés, Y=0 au point le plus bas). C'est indispensable si l'export
-    // Blender a "appliqué" la position mondiale directement dans les sommets
-    // (cas fréquent) : sans ça, réutiliser found.geometry telle quelle ailleurs
-    // dans la scène rajoute l'offset d'origine par-dessus la nouvelle position et
-    // envoie l'arbre à des dizaines de mètres de là où on a cliqué.
-    const geo = found.geometry.clone();
+    const inner = found.clone(true); // clone profond (tronc + feuillage), géométrie/matériaux partagés par référence
+    inner.position.set(0,0,0);
+    inner.rotation.set(0,0,0);
+    inner.scale.set(1,1,1);
     // Les arbres qu'on plante vivent dans treesGroup, hors de la hiérarchie de
     // gltf.scene — ils n'héritent donc PAS de la rotation Z-up→Y-up appliquée à
-    // la maquette. Sans ce correctif, ils gardent l'orientation locale d'origine
-    // (Z vers le haut) et se retrouvent couchés sur le côté une fois posés dans
-    // notre monde Y-up. On applique donc la même rotation directement à la
-    // géométrie du gabarit, une fois pour toutes, avant de la recentrer.
-    if(siteUpCorrected) geo.rotateX(-Math.PI/2);
-    geo.computeBoundingBox();
-    const bb = geo.boundingBox;
+    // la maquette. On l'applique donc ici, une fois pour toutes.
+    if(siteUpCorrected) inner.rotation.x = -Math.PI/2;
+    inner.updateMatrixWorld(true);
+    // Recentre sur sa propre base locale (X/Z centrés, Y=0 au point le plus bas) :
+    // indispensable si l'export a "appliqué" la position mondiale dans les sommets.
+    const bb = new THREE.Box3().setFromObject(inner);
     const cx = (bb.min.x+bb.max.x)/2, cz = (bb.min.z+bb.max.z)/2, baseY = bb.min.y;
-    geo.translate(-cx, -baseY, -cz);
-    const worldScale = found.getWorldScale(new THREE.Vector3()); // capture aussi un éventuel scale porté par un parent
-    treeTemplate = { geometry: geo, material: found.material, baseScale: worldScale };
+    inner.position.set(-cx, -baseY, -cz);
+    const wrapper = new THREE.Group();
+    wrapper.add(inner);
+    const worldScale = found.getWorldScale(new THREE.Vector3());
+    treeTemplate = { object: wrapper, baseScale: worldScale };
   } else {
-    treeTemplate = {
-      geometry: new THREE.IcosahedronGeometry(1.4, 0),
-      material: new THREE.MeshStandardMaterial({ color:0x4a7c4e, roughness:0.85, flatShading:true }),
-      baseScale: new THREE.Vector3(1,1,1)
-    };
+    const mesh = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(1.4, 0),
+      new THREE.MeshStandardMaterial({ color:0x4a7c4e, roughness:0.85, flatShading:true })
+    );
+    mesh.position.y = 1.4;
+    const wrapper = new THREE.Group(); wrapper.add(mesh);
+    treeTemplate = { object: wrapper, baseScale: new THREE.Vector3(1,1,1) };
   }
 }
 
@@ -1290,14 +1298,14 @@ window.addEventListener('keydown', (ev)=>{
 
 function addTree(pt){
   if(!treeTemplate) findIcosphereTemplate();
-  const mesh = new THREE.Mesh(treeTemplate.geometry, treeTemplate.material);
-  mesh.position.set(pt.x, pt.y||0, pt.z);
-  mesh.rotation.y = Math.random()*Math.PI*2;
+  const obj = treeTemplate.object.clone(true);
+  obj.position.set(pt.x, pt.y||0, pt.z);
+  obj.rotation.y = Math.random()*Math.PI*2;
   const variance = 0.85 + Math.random()*0.3;
-  mesh.scale.copy(treeTemplate.baseScale).multiplyScalar(variance);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  treesGroup.add(mesh);
-  trees.push({ id: treeIdCounter++, mesh, x:pt.x, z:pt.z });
+  obj.scale.copy(treeTemplate.baseScale).multiplyScalar(variance);
+  obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+  treesGroup.add(obj);
+  trees.push({ id: treeIdCounter++, mesh: obj, x:pt.x, z:pt.z });
   renderTreeCount();
 }
 function removeTree(id){
@@ -1326,10 +1334,14 @@ renderer.domElement.addEventListener('click', (ev)=>{
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
 
-  // clic sur un arbre existant : on le retire
-  const treeHit = raycaster.intersectObjects(trees.map(t=>t.mesh))[0];
+  // clic sur un arbre existant : on le retire (recursive:true, car chaque arbre
+  // est maintenant un groupe tronc+feuillage, pas un mesh unique — il faut
+  // remonter jusqu'au groupe racine référencé dans trees[].mesh)
+  const treeHit = raycaster.intersectObjects(trees.map(t=>t.mesh), true)[0];
   if(treeHit){
-    const hitTree = trees.find(t=>t.mesh===treeHit.object);
+    let obj = treeHit.object;
+    while(obj && !trees.some(t=>t.mesh===obj)) obj = obj.parent;
+    const hitTree = trees.find(t=>t.mesh===obj);
     if(hitTree){ removeTree(hitTree.id); return; }
   }
 
@@ -1828,6 +1840,21 @@ function renderCrosswalkControls(){
   });
 }
 
+// Projette un point (x,z) sur le sol réel de la maquette (quartier/hall/polygone),
+// par un rayon vertical descendant. Sert à recaler la hauteur des voies importées :
+// la coordonnée Y d'un routes.json peut être incohérente avec le reste de la scène
+// (ex. objets Blender non "appliqués" au même moment que le reste), donc on ne lui
+// fait pas confiance aveuglément — on retrouve le vrai niveau du sol à cet endroit.
+function groundHeightAt(x, z, fallback){
+  const from = new THREE.Vector3(x, 1e5, z);
+  const rc = new THREE.Raycaster(from, new THREE.Vector3(0,-1,0), 0, 3e5);
+  const targets = [];
+  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) targets.push(o); });
+  if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) targets.push(o); });
+  if(polygonMesh) targets.push(polygonMesh);
+  const hit = rc.intersectObjects(targets, true)[0];
+  return hit ? hit.point.y + 0.05 : fallback;
+}
 // Charge un routes.json exporté de Blender : { "Route_Tram_1":[[x,y,z],...], "Route_Bus_A":[...], ... }
 // Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
 function importRoutesFromJSON(data, sourceLabel){
@@ -1838,7 +1865,7 @@ function importRoutesFromJSON(data, sourceLabel){
     const key = name.toLowerCase();
     let type = 'voiture';
     for(const t of Object.keys(ROUTE_TYPES)){ if(key.includes(t)){ type=t; break; } }
-    const points = pts.map(p=>({x:p[0], y:(p[1]??0.15), z:p[2]}));
+    const points = pts.map(p=> ({x:p[0], y: groundHeightAt(p[0], p[2], p[1]??0.15), z:p[2]}));
     createRoute(points, type, name);
     created.push(name);
   });
