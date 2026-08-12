@@ -177,6 +177,40 @@
     margin-left:8px;flex-shrink:0;
   }
   #site-status-banner button:hover{color:var(--paper);}
+
+  .ext-edit-controls{
+    background:#0b1116;
+    border:1px solid #4fae8f;
+    border-radius:4px;
+    padding:12px;
+    margin-bottom:12px;
+  }
+  .ext-edit-controls .row{
+    display:flex;
+    gap:6px;
+    align-items:center;
+    margin:4px 0;
+    flex-wrap:wrap;
+  }
+  .ext-edit-controls label{
+    font-size:10px;
+    color:var(--muted);
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .ext-edit-controls input[type=number]{
+    width:46px;
+    background:#0b1116;
+    border:1px solid #23303b;
+    color:var(--paper);
+    border-radius:3px;
+    padding:3px 4px;
+    font-size:10.5px;
+  }
+  .ext-edit-controls .btn-group{
+    display:flex;
+    gap:6px;
+    margin-top:6px;
+  }
 </style>
 </head>
 <body>
@@ -218,7 +252,7 @@
 
       <div class="section-title">Extensions du hall <span id="ext-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
       <div id="ext-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">
-        Aucune extension. Cliquez sur <b style="color:var(--paper)">+ Extension du hall</b>, puis sur la façade du hall pour en créer une copie que vous pourrez positionner et redimensionner.
+        Aucune extension. Cliquez sur <b style="color:var(--paper)">+ Extension du hall</b>, puis sur la façade du hall pour en créer une copie.
       </div>
       <div id="ext-list"></div>
 
@@ -258,6 +292,7 @@
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
@@ -363,6 +398,19 @@ groundGroup.add(ilotOutline);
 let gridVisible = true;
 
 /* ============================================================
+   TRANSFORM CONTROLS (GIZMOS)
+   ============================================================ */
+const transformControls = new TransformControls(camera, renderer.domElement);
+transformControls.setSize(0.8);
+transformControls.setSpace('world');
+scene.add(transformControls);
+
+// Désactiver OrbitControls quand on utilise les gizmos
+transformControls.addEventListener('dragging-changed', (event) => {
+  controls.enabled = !event.value;
+});
+
+/* ============================================================
    MAQUETTE BLENDER
    ============================================================ */
 let hallFacadeWorldNormal = new THREE.Vector3(0,0,1);
@@ -371,16 +419,19 @@ let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
 scene.add(siteRoot);
 let polygonMesh = null;
 let siteUpCorrected = false;
-let hallMesh = null;
 let hallGroup = null;
+let hallMesh = null;
 let quartierGroup = null;
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z}));
 
 function clearSite(){
   siteRoot.clear();
-  polygonMesh = null; hallMesh = null; hallGroup = null; quartierGroup = null;
+  polygonMesh = null; hallGroup = null; hallMesh = null; quartierGroup = null;
   treeTemplate = null;
-  extensions.forEach(e => { scene.remove(e.group); if(e.mesh) { e.mesh.geometry.dispose(); e.mesh.material.dispose(); } });
+  extensions.forEach(e => { 
+    scene.remove(e.group); 
+    if(e.mesh) { e.mesh.geometry.dispose(); e.mesh.material.dispose(); }
+  });
   extensions = [];
   renderExtList();
 }
@@ -835,22 +886,15 @@ window.addEventListener('keydown', (ev)=>{
 });
 
 /* ============================================================
-   EXTENSION DU HALL DE GARE — Nouvelle approche : clone + placement libre
+   EXTENSION DU HALL DE GARE — Avec gizmos et modification après validation
    ============================================================ */
 let extending = false;
-let extClone = null;          // Groupe cloné du hall
-let extOriginalMesh = null;   // Référence au mesh original pour la fusion
-let extControls = null;       // TransformControls (pas utilisé pour éviter la dépendance)
+let extClone = null;
+let extOriginalGroup = null;
 let extensions = [];
 let extIdCounter = 1;
 let selectedExtId = null;
-
-// Stockage des transformations de l'extension en cours d'édition
-let extTransform = {
-  position: new THREE.Vector3(0, 0, 0),
-  rotation: new THREE.Euler(0, 0, 0),
-  scale: new THREE.Vector3(1, 1, 1)
-};
+let editMode = 'translate'; // 'translate', 'rotate', 'scale'
 
 const btnExtend = document.getElementById('btn-extend');
 const drawHintText = document.getElementById('draw-hint-text');
@@ -871,8 +915,10 @@ function cancelExtend(){
   extending = false;
   if(extClone) {
     scene.remove(extClone);
+    // Nettoyer les gizmos
+    transformControls.detach();
     extClone = null;
-    extOriginalMesh = null;
+    extOriginalGroup = null;
   }
   btnExtend.classList.remove('active');
   btnExtend.textContent = '+ Extension du hall';
@@ -880,16 +926,16 @@ function cancelExtend(){
   drawHintText.textContent = 'Cliquez sur le sol pour poser les sommets du bâtiment';
   controls.enabled = true;
   selectedExtId = null;
+  document.getElementById('ext-edit-controls')?.remove();
 }
 
 function createExtensionClone(hitPoint, hitNormal){
-  // Clone le hall group entier
   if(!hallGroup) return;
   
   extClone = hallGroup.clone();
-  // Positionner le clone à l'endroit cliqué
   extClone.position.copy(hitPoint);
-  // Orienter vers la normale de la face cliquée
+  
+  // Orienter vers la normale de la face
   const up = new THREE.Vector3(0, 1, 0);
   const quat = new THREE.Quaternion().setFromUnitVectors(up, hitNormal);
   extClone.quaternion.copy(quat);
@@ -909,20 +955,24 @@ function createExtensionClone(hitPoint, hitNormal){
     }
   });
   
-  // Ajouter une bordure pour visualiser l'extension
+  extOriginalGroup = hallGroup;
+  scene.add(extClone);
+  
+  // Ajouter une bordure
   const box = new THREE.Box3().setFromObject(extClone);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
-  const wireframe = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const wireframe = new THREE.BoxGeometry(size.x + 0.2, size.y + 0.2, size.z + 0.2);
   const wireMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, transparent: true, opacity: 0.8 });
   const wireLine = new THREE.LineSegments(new THREE.EdgesGeometry(wireframe), wireMat);
   wireLine.position.copy(center);
   extClone.add(wireLine);
   
-  extOriginalMesh = hallGroup;
-  scene.add(extClone);
+  // Attacher les gizmos
+  transformControls.attach(extClone);
+  transformControls.setMode(editMode);
   
-  drawHintText.textContent = "Placez l'extension avec les commandes ci-dessous · ✅ Valider · ❌ Annuler";
+  drawHintText.textContent = "Utilisez les gizmos pour positionner l'extension · ✅ Valider · ❌ Annuler";
   
   // Afficher les contrôles dans le panneau
   renderExtEditControls();
@@ -943,7 +993,6 @@ function pickHallFacade(ev){
   const hit = hits[0];
   const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
   
-  // Vérifier que c'est bien la façade (normale horizontale)
   if(Math.abs(worldNormal.y) > 0.3) {
     flashStatus("Cliquez sur une façade verticale, pas le toit");
     return;
@@ -955,7 +1004,6 @@ function pickHallFacade(ev){
     return;
   }
   
-  // Créer le clone à cet endroit
   createExtensionClone(hit.point, worldNormal);
 }
 
@@ -974,12 +1022,15 @@ function validateExtension(){
     }
   });
   
-  // Supprimer la wireframe
+  // Supprimer la bordure
   const toRemove = [];
   extClone.children.forEach(c => {
     if(c.isLineSegments) toRemove.push(c);
   });
   toRemove.forEach(c => extClone.remove(c));
+  
+  // Détacher les gizmos
+  transformControls.detach();
   
   // Ajouter l'extension à la liste
   const ext = {
@@ -987,54 +1038,58 @@ function validateExtension(){
     name: `Extension ${extIdCounter-1}`,
     group: extClone,
     position: extClone.position.clone(),
-    rotation: extClone.quaternion.clone(),
+    quaternion: extClone.quaternion.clone(),
     scale: extClone.scale.clone(),
-    original: extOriginalMesh
+    original: extOriginalGroup
   };
   extensions.push(ext);
   selectedExtId = ext.id;
   
   extClone = null;
-  extOriginalMesh = null;
+  extOriginalGroup = null;
   renderExtList();
   cancelExtend();
 }
 
 function renderExtEditControls(){
+  // Supprimer l'ancien contrôle
+  document.getElementById('ext-edit-controls')?.remove();
+  
   const list = document.getElementById('ext-list');
-  // Afficher temporairement les contrôles en haut de la liste
   const controlsDiv = document.createElement('div');
   controlsDiv.id = 'ext-edit-controls';
-  controlsDiv.style.cssText = 'background:#0b1116;border:1px solid #4fae8f;border-radius:4px;padding:12px;margin-bottom:12px;';
+  controlsDiv.className = 'ext-edit-controls';
   controlsDiv.innerHTML = `
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-family:IBM Plex Mono,monospace;">🔄 Déplacez l'extension avec les commandes ci-dessous</div>
-    <div class="ext-controls">
-      <div class="row">
-        <label>X</label>
-        <input type="number" id="ext-pos-x" step="0.5" value="0">
-        <label>Y</label>
-        <input type="number" id="ext-pos-y" step="0.5" value="0">
-        <label>Z</label>
-        <input type="number" id="ext-pos-z" step="0.5" value="0">
-      </div>
-      <div class="row">
-        <label>Échelle</label>
-        <input type="number" id="ext-scale" step="0.05" min="0.1" max="3" value="1">
-      </div>
-      <div class="row" style="gap:6px;margin-top:6px;">
-        <button class="small-action" id="ext-validate" style="background:var(--ser);color:var(--ink);">✅ Valider</button>
-        <button class="small-action danger" id="ext-cancel">❌ Annuler</button>
-      </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-family:IBM Plex Mono,monospace;">
+      🔧 Utilisez les gizmos pour positionner l'extension
+    </div>
+    <div class="row">
+      <label>Mode</label>
+      <button class="mini-btn" id="mode-translate" style="background:var(--blue);color:var(--ink);">↕</button>
+      <button class="mini-btn" id="mode-rotate" style="color:var(--muted);">↻</button>
+      <button class="mini-btn" id="mode-scale" style="color:var(--muted);">⤡</button>
+      <button class="mini-btn" id="mode-world" style="color:var(--muted);">🌍</button>
+    </div>
+    <div class="row">
+      <label>X</label>
+      <input type="number" id="ext-pos-x" step="0.5" value="0">
+      <label>Y</label>
+      <input type="number" id="ext-pos-y" step="0.5" value="0">
+      <label>Z</label>
+      <input type="number" id="ext-pos-z" step="0.5" value="0">
+    </div>
+    <div class="row">
+      <label>Échelle</label>
+      <input type="number" id="ext-scale" step="0.05" min="0.1" max="3" value="1">
+    </div>
+    <div class="btn-group">
+      <button class="small-action" id="ext-validate" style="background:var(--ser);color:var(--ink);">✅ Valider</button>
+      <button class="small-action danger" id="ext-cancel">❌ Annuler</button>
     </div>
   `;
   
-  // Insérer en haut de la liste
   const empty = document.getElementById('ext-empty-note');
   if(empty) empty.style.display = 'none';
-  
-  // Supprimer l'ancien contrôle s'il existe
-  const old = document.getElementById('ext-edit-controls');
-  if(old) old.remove();
   
   list.prepend(controlsDiv);
   
@@ -1045,6 +1100,10 @@ function renderExtEditControls(){
   const scaleInp = document.getElementById('ext-scale');
   const validateBtn = document.getElementById('ext-validate');
   const cancelBtn = document.getElementById('ext-cancel');
+  const modeTranslate = document.getElementById('mode-translate');
+  const modeRotate = document.getElementById('mode-rotate');
+  const modeScale = document.getElementById('mode-scale');
+  const modeWorld = document.getElementById('mode-world');
   
   if(extClone) {
     posX.value = extClone.position.x.toFixed(2);
@@ -1069,15 +1128,79 @@ function renderExtEditControls(){
   posZ.addEventListener('input', updateExtTransform);
   scaleInp.addEventListener('input', updateExtTransform);
   
+  // Mettre à jour les gizmos quand les champs changent
+  const updateGizmos = () => {
+    if(extClone) {
+      transformControls.detach();
+      transformControls.attach(extClone);
+    }
+  };
+  
+  // Mode translation
+  modeTranslate.addEventListener('click', () => {
+    editMode = 'translate';
+    transformControls.setMode('translate');
+    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.background = '');
+    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.color = 'var(--muted)');
+    modeTranslate.style.background = 'var(--blue)';
+    modeTranslate.style.color = 'var(--ink)';
+  });
+  
+  // Mode rotation
+  modeRotate.addEventListener('click', () => {
+    editMode = 'rotate';
+    transformControls.setMode('rotate');
+    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.background = '');
+    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.color = 'var(--muted)');
+    modeRotate.style.background = 'var(--blue)';
+    modeRotate.style.color = 'var(--ink)';
+  });
+  
+  // Mode scale
+  modeScale.addEventListener('click', () => {
+    editMode = 'scale';
+    transformControls.setMode('scale');
+    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.background = '');
+    [modeTranslate, modeRotate, modeScale].forEach(b => b.style.color = 'var(--muted)');
+    modeScale.style.background = 'var(--blue)';
+    modeScale.style.color = 'var(--ink)';
+  });
+  
+  // Mode world/local
+  let worldSpace = true;
+  modeWorld.addEventListener('click', () => {
+    worldSpace = !worldSpace;
+    transformControls.setSpace(worldSpace ? 'world' : 'local');
+    modeWorld.style.color = worldSpace ? 'var(--blue)' : 'var(--muted)';
+    modeWorld.textContent = worldSpace ? '🌍' : '🔲';
+  });
+  
   validateBtn.addEventListener('click', validateExtension);
   cancelBtn.addEventListener('click', () => {
     if(extClone) {
+      transformControls.detach();
       scene.remove(extClone);
       extClone = null;
-      extOriginalMesh = null;
+      extOriginalGroup = null;
     }
     cancelExtend();
   });
+  
+  // Mettre à jour les champs quand les gizmos bougent
+  const updateFields = () => {
+    if(extClone) {
+      posX.value = extClone.position.x.toFixed(2);
+      posY.value = extClone.position.y.toFixed(2);
+      posZ.value = extClone.position.z.toFixed(2);
+      scaleInp.value = extClone.scale.x.toFixed(2);
+    }
+  };
+  
+  transformControls.addEventListener('change', updateFields);
+  // Stocker la référence pour nettoyage
+  controlsDiv._cleanup = () => {
+    transformControls.removeEventListener('change', updateFields);
+  };
 }
 
 btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExtend());
@@ -1085,7 +1208,6 @@ btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExten
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!extending) return;
   if(!extClone){ pickHallFacade(ev); return; }
-  // Si déjà un clone, on ignore les clics (l'utilisateur utilise les contrôles)
 });
 
 window.addEventListener('keydown', (ev)=>{
@@ -1093,19 +1215,79 @@ window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Enter') validateExtension();
   if(ev.key==='Escape') {
     if(extClone) {
+      transformControls.detach();
       scene.remove(extClone);
       extClone = null;
-      extOriginalMesh = null;
+      extOriginalGroup = null;
     }
     cancelExtend();
   }
 });
 
+// Éditer une extension existante
+function editExtension(id){
+  const ext = extensions.find(e => e.id === id);
+  if(!ext) return;
+  
+  // Supprimer l'extension de la liste
+  extensions = extensions.filter(e => e.id !== id);
+  scene.remove(ext.group);
+  
+  // Utiliser son groupe comme clone d'édition
+  extClone = ext.group;
+  extClone.traverse(o => {
+    if(o.isMesh) {
+      if(Array.isArray(o.material)) {
+        o.material.forEach(m => { m.transparent = true; m.opacity = 0.7; });
+      } else if(o.material) {
+        o.material.transparent = true;
+        m.opacity = 0.7;
+      }
+    }
+  });
+  
+  // Ajouter une bordure
+  const box = new THREE.Box3().setFromObject(extClone);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const wireframe = new THREE.BoxGeometry(size.x + 0.2, size.y + 0.2, size.z + 0.2);
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x4fae8f, transparent: true, opacity: 0.8 });
+  const wireLine = new THREE.LineSegments(new THREE.EdgesGeometry(wireframe), wireMat);
+  wireLine.position.copy(center);
+  extClone.add(wireLine);
+  
+  scene.add(extClone);
+  transformControls.attach(extClone);
+  transformControls.setMode(editMode);
+  
+  extOriginalGroup = ext.original;
+  selectedExtId = null;
+  
+  extending = true;
+  btnExtend.classList.add('active');
+  btnExtend.textContent = 'Édition en cours…';
+  drawHint.classList.add('show');
+  drawHintText.textContent = "Modifiez l'extension avec les gizmos · ✅ Valider · ❌ Annuler";
+  controls.enabled = false;
+  
+  renderExtEditControls();
+  renderExtList();
+}
+
 function deleteExtension(id){
   const e = extensions.find(x=>x.id===id);
   if(!e) return;
+  
+  // Si c'est celui en cours d'édition, on annule d'abord
+  if(extClone === e.group) {
+    transformControls.detach();
+    scene.remove(extClone);
+    extClone = null;
+    cancelExtend();
+    return;
+  }
+  
   scene.remove(e.group);
-  // Nettoyer les ressources
   e.group.traverse(o => {
     if(o.isMesh) {
       o.geometry.dispose();
@@ -1123,14 +1305,13 @@ function renderExtList(){
   const empty = document.getElementById('ext-empty-note');
   const count = document.getElementById('ext-count');
   
-  // Ne pas effacer les contrôles d'édition s'ils existent
+  // Garder les contrôles d'édition s'ils existent
   const controls = document.getElementById('ext-edit-controls');
   const hasControls = !!controls;
   
   if(!hasControls) {
     list.innerHTML = '';
   } else {
-    // Garder les contrôles, effacer le reste
     const children = list.children;
     for(let i = children.length - 1; i >= 0; i--) {
       if(children[i].id !== 'ext-edit-controls') {
@@ -1161,6 +1342,13 @@ function renderExtList(){
     info.textContent = `pos: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`;
     info.style.cssText = 'font-size:10px;color:var(--muted);font-family:IBM Plex Mono,monospace;';
     
+    const editBtn = document.createElement('button');
+    editBtn.className = 'mini-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Modifier l\'extension';
+    editBtn.style.color = 'var(--blue)';
+    editBtn.addEventListener('click', () => editExtension(e.id));
+    
     const focusBtn = document.createElement('button');
     focusBtn.className = 'mini-btn';
     focusBtn.textContent = '⊙';
@@ -1179,8 +1367,7 @@ function renderExtList(){
     del.textContent = '✕';
     del.addEventListener('click', ()=> deleteExtension(e.id));
     
-    card.append(label, info, focusBtn, del);
-    // Insérer après les contrôles s'ils existent
+    card.append(label, info, editBtn, focusBtn, del);
     if(controls) {
       list.insertBefore(card, controls.nextSibling);
     } else {
@@ -1601,12 +1788,12 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
    ============================================================ */
 document.getElementById('btn-save-json').addEventListener('click', ()=>{
   const data = {
-    version: 3,
+    version: 4,
     buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
     extensions: extensions.map(e=>({
       name: e.name,
       position: {x:e.position.x, y:e.position.y, z:e.position.z},
-      rotation: {x:e.rotation.x, y:e.rotation.y, z:e.rotation.z, w:e.rotation.w},
+      quaternion: {x:e.quaternion.x, y:e.quaternion.y, z:e.quaternion.z, w:e.quaternion.w},
       scale: {x:e.scale.x, y:e.scale.y, z:e.scale.z}
     }))
   };
@@ -1632,8 +1819,10 @@ fileLoad.addEventListener('change', (e)=>{
       (data.buildings||[]).forEach(b=> createBuilding(b.points, {name:b.name, floors:b.floors, bands:b.bands}));
       selectedId = null;
       
-      // Restaurer les extensions
-      extensions.forEach(e => { scene.remove(e.group); });
+      extensions.forEach(e => { 
+        scene.remove(e.group);
+        e.group.traverse(o => { if(o.isMesh) { o.geometry.dispose(); if(o.material) o.material.dispose(); } });
+      });
       extensions = [];
       extIdCounter = 1;
       
@@ -1641,7 +1830,7 @@ fileLoad.addEventListener('change', (e)=>{
         data.extensions.forEach(extData => {
           const clone = hallGroup.clone();
           clone.position.set(extData.position.x, extData.position.y, extData.position.z);
-          clone.quaternion.set(extData.rotation.x, extData.rotation.y, extData.rotation.z, extData.rotation.w);
+          clone.quaternion.set(extData.quaternion.x, extData.quaternion.y, extData.quaternion.z, extData.quaternion.w);
           clone.scale.set(extData.scale.x, extData.scale.y, extData.scale.z);
           clone.traverse(o => { if(o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
           scene.add(clone);
@@ -1651,7 +1840,7 @@ fileLoad.addEventListener('change', (e)=>{
             name: extData.name || `Extension ${extIdCounter-1}`,
             group: clone,
             position: clone.position.clone(),
-            rotation: clone.quaternion.clone(),
+            quaternion: clone.quaternion.clone(),
             scale: clone.scale.clone(),
             original: hallGroup
           };
