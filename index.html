@@ -1222,7 +1222,7 @@ function fixProceduralMaterials(){
         } else if(name.includes('glass')){
         // VITRES.
         // VITREs.
-        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x989DB4, metalness:1.0, roughness:0.22, flatShading:true });
+        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x989DB4, metalness:0.75, roughness:0.2, flatShading:true });
       } else if(isLikelyBrokenShader(m)){
         const guessGreen = /leaf|vert|green|arbre|tree|icosph|folia/.test(name);
         replacement = new THREE.MeshStandardMaterial({
