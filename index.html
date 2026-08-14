@@ -271,6 +271,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
 /* ============================================================
    CONFIG
@@ -315,6 +316,12 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffe
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Tone mapping : sans ça, une lumière trop forte (ex. une lampe Blender
+// exportée avec une intensité très élevée) part directement en blanc cramé au
+// lieu de "s'écraser" progressivement — c'est ce qui rendait toute la scène
+// blanche en mode nuit.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 viewport.appendChild(renderer.domElement);
 
 // Environnement neutre généré (pas de HDRI à charger) : indispensable pour que les
@@ -435,8 +442,15 @@ function clearSite(){
 // emprises concaves (en L, etc.), contrairement à une simple enveloppe convexe.
 function extractBoundaryXZ(mesh){
   mesh.updateWorldMatrix(true,false);
-  const pos = mesh.geometry.attributes.position;
-  const idx = mesh.geometry.index;
+  // Fusionne les sommets dupliqués/quasi-coïncidents (ex. une face ajoutée dans
+  // Blender sans la souder au reste du mesh) : sans ça, une arête réellement
+  // partagée par deux triangles référence deux paires de sommets différentes,
+  // notre détection "arête utilisée une seule fois" la prend alors à tort pour
+  // une arête de bord, et la boucle se referme avant d'atteindre la nouvelle
+  // partie — exactement le symptôme "le polygone n'inclut pas la zone ajoutée".
+  const geo = mergeVertices(mesh.geometry, 1e-4);
+  const pos = geo.attributes.position;
+  const idx = geo.index;
   const v = new THREE.Vector3();
   const world = [];
   for(let i=0;i<pos.count;i++){
