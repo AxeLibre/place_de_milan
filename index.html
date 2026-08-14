@@ -1620,7 +1620,7 @@ function collectSiteLights(){
     // hors d'échelle pour la taille de notre scène : sans plafond, une seule
     // lampe peut cramer toute l'image en blanc. On les ramène à une plage
     // raisonnable plutôt que de faire confiance aveuglément à la valeur brute.
-    const maxIntensity = (o.isPointLight || o.isSpotLight) ? 14 : 4;
+    const maxIntensity = (o.isPointLight || o.isSpotLight) ? 20 : 6;
     if(o.intensity > maxIntensity) o.intensity = maxIntensity;
     if(o.isPointLight || o.isSpotLight){
       o.decay = 1.6;
@@ -1635,7 +1635,7 @@ const btnNight = document.getElementById('btn-night');
 function setNightMode(night){
   isNight = night;
   sun.visible = !night;
-  sun.intensity = night ? 0.05 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
+  sun.intensity = night ? 0.1 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
   hemiLight.intensity = night ? 0.4 : 0.75;
   hemiLight.color.setHex(night ? 0x24344f : 0xdfe8ef);
   scene.environment = night ? nightEnvTexture : dayEnvTexture;
