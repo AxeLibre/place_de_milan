@@ -193,10 +193,11 @@
     <div id="ribbon">
       <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
-      <button class="tool-btn ghost" id="btn-extend-hall">Étendre le hall</button>
       <button class="tool-btn ghost" id="btn-tree">+ Arbre</button>
       <button class="tool-btn ghost admin-only" id="btn-load-glb">Charger maquette (.glb)</button>
+      <button class="tool-btn ghost" id="btn-paint-grass">🖌 Gazon</button>
       <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
+      <button class="tool-btn ghost" id="btn-night">🌙 Nuit</button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
     <div id="compass">N↑</div>
@@ -224,18 +225,22 @@
       <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette. Le tracé est contraint au polygone d'implantation.</div>
       <div id="bldg-list"></div>
 
-      <div class="section-title">Extensions du hall</div>
-      <div id="ext-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune extension. Cliquez sur <b style="color:var(--paper)">Étendre le hall</b>, puis sur la façade exposée du hall pour démarrer un tracé.</div>
-      <div id="ext-list"></div>
-
       <div class="section-title">Arbres <span id="tree-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
       <div id="tree-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucun arbre. Cliquez sur <b style="color:var(--paper)">+ Arbre</b> puis dans le polygone d'implantation pour en planter un ; recliquez sur un arbre pour le retirer.</div>
       <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;">🗑 Supprimer tous les arbres</button>
 
+      <div class="section-title">Gazon</div>
+      <div style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;margin-bottom:8px;">Cliquez <b style="color:var(--paper)">🖌 Gazon</b> puis glissez sur la place pour peindre ; clic droit pour effacer.</div>
+      <div style="display:flex;gap:6px;margin-bottom:16px;">
+        <button class="small-action" id="brush-small">Petit</button>
+        <button class="small-action" id="brush-medium">Moyen</button>
+        <button class="small-action" id="brush-large">Grand</button>
+      </div>
+
       <div class="section-title">Circulation</div>
       <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender (voir avec l'administrateur du site).</div>
       <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
-      <div id="route-list"></div>
+      <div class="admin-only" id="route-list" style="flex-direction:column;"></div>
 
       <div class="section-title admin-only">Admin · couleurs véhicules</div>
       <div class="admin-only" id="vehicle-colors" style="flex-direction:column;gap:8px;margin-bottom:16px;"></div>
@@ -334,7 +339,8 @@ controls.minDistance = 15;
 controls.maxDistance = 700;
 
 // Lighting — soft overcast "plan de présentation" look
-scene.add(new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.9));
+const hemiLight = new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.9);
+scene.add(hemiLight);
 const sun = new THREE.DirectionalLight(0xfff2df, 1.15);
 sun.position.set(120, 200, 60);
 sun.castShadow = true;
@@ -636,10 +642,13 @@ function onSiteLoaded(){
   fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
   renderCrosswalkControls();
   if(polygonMesh){
-    polygonMesh.visible = false;
+    polygonMesh.visible = true;
+    polygonMesh.receiveShadow = true;
     buildZone = extractBoundaryXZ(polygonMesh);
     updateBuildZoneVisual();
+    setupGrassPaintOverlay();
   }
+  collectSiteLights();
   if(hallMesh){
     hallMesh.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
     if(polygonMesh && buildZone.length>=3){
@@ -804,6 +813,7 @@ function groundPointFromEvent(ev){
    ============================================================ */
 const btnDraw = document.getElementById('btn-draw');
 const drawHint = document.getElementById('draw-hint');
+const drawHintText = document.getElementById('draw-hint-text');
 
 function startDraw(){
   drawing = true; drawPoints = [];
@@ -889,7 +899,6 @@ function finishDraw(){
 }
 
 btnDraw.addEventListener('click', ()=>{
-  if(extending) return;
   drawing ? cancelDraw() : startDraw();
 });
 
@@ -903,250 +912,6 @@ window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Enter') finishDraw();
   if(ev.key==='Escape') cancelDraw();
 });
-
-/* ============================================================
-   EXTENSION DU HALL DE GARE
-   ============================================================
-   Étape 1 : clic sur la façade exposée du hall (normale locale +Z)
-             → on tranche le mesh du hall par un plan parallèle à la
-             façade pour extraire automatiquement son profil (contour),
-             quelle que soit sa forme réelle (arche, toit arrondi...).
-   Étape 2 : clic successifs au sol / sur les bâtiments / le quartier
-             pour tracer le chemin (droit ou courbe) de l'extension.
-   Étape 3 : Entrée → on "loft" le profil le long du chemin (repères
-             de Frenet), avec un fuseau de hauteur/largeur réglable.
-   ============================================================ */
-let extending = false;
-let extPickedProfile = null; // {points:[Vector3 local autour du centroïde], centroid, normal}
-let extPathPoints = [];      // Vector3 monde
-let extMarkers = new THREE.Group(); worldRoot.add(extMarkers);
-let extPreviewLine = null;
-let extensions = []; // {id, name, mesh, group}
-let extIdCounter = 1;
-let extScaleStart = 1.0, extScaleEnd = 1.0, extHeightOffset = 0;
-
-const btnExtend = document.getElementById('btn-extend-hall');
-const drawHintText = document.getElementById('draw-hint-text');
-
-function startExtend(){
-  if(drawing) return;
-  if(!hallMesh){ alert("Aucun objet 'Hall_Gare' trouvé dans la maquette chargée."); return; }
-  extending = true; extPickedProfile = null; extPathPoints = [];
-  extMarkers.clear();
-  btnExtend.classList.add('active'); btnExtend.textContent = 'Extension : cliquez la façade…';
-  drawHint.classList.add('show');
-  drawHintText.textContent = "Cliquez la façade exposée du hall pour démarrer l'extension";
-  controls.enabled = false;
-}
-function cancelExtend(){
-  extending = false; extPickedProfile = null; extPathPoints = [];
-  extMarkers.clear();
-  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-  btnExtend.classList.remove('active'); btnExtend.textContent = 'Étendre le hall';
-  drawHint.classList.remove('show');
-  drawHintText.textContent = 'Cliquez sur le sol pour poser les sommets du bâtiment';
-  controls.enabled = true;
-}
-
-// Tranche un mesh (monde) par un plan et renvoie le plus grand contour fermé obtenu.
-function sliceMeshByPlane(mesh, planePoint, planeNormal){
-  mesh.updateWorldMatrix(true,false);
-  const geo = mesh.geometry;
-  const pos = geo.attributes.position;
-  const idx = geo.index;
-  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, planePoint);
-  const a=new THREE.Vector3(), b=new THREE.Vector3(), c=new THREE.Vector3();
-  const segs = [];
-  const triCount = idx ? idx.count/3 : pos.count/3;
-  const getVertex=(i)=>{
-    const ii = idx ? idx.getX(i) : i;
-    return new THREE.Vector3().fromBufferAttribute(pos, ii).applyMatrix4(mesh.matrixWorld);
-  };
-  const edgeIntersect=(p1,p2)=>{
-    const d1 = plane.distanceToPoint(p1), d2 = plane.distanceToPoint(p2);
-    if((d1>0 && d2>0) || (d1<0 && d2<0)) return null;
-    if(Math.abs(d1-d2)<1e-9) return null;
-    const t = d1/(d1-d2);
-    return p1.clone().lerp(p2, t);
-  };
-  for(let t=0;t<triCount;t++){
-    a.copy(getVertex(t*3)); b.copy(getVertex(t*3+1)); c.copy(getVertex(t*3+2));
-    const pts = [edgeIntersect(a,b), edgeIntersect(b,c), edgeIntersect(c,a)].filter(Boolean);
-    if(pts.length===2) segs.push([pts[0], pts[1]]);
-  }
-  if(!segs.length) return null;
-  // chaîne les segments en boucles (par proximité des extrémités)
-  const used = new Array(segs.length).fill(false);
-  const loops = [];
-  for(let i=0;i<segs.length;i++){
-    if(used[i]) continue;
-    used[i]=true;
-    const loop = [segs[i][0], segs[i][1]];
-    let extended = true;
-    while(extended){
-      extended = false;
-      for(let j=0;j<segs.length;j++){
-        if(used[j]) continue;
-        const [p,q] = segs[j];
-        const tail = loop[loop.length-1];
-        if(tail.distanceTo(p)<0.05){ loop.push(q); used[j]=true; extended=true; }
-        else if(tail.distanceTo(q)<0.05){ loop.push(p); used[j]=true; extended=true; }
-      }
-    }
-    loops.push(loop);
-  }
-  // le plus grand contour (par nombre de points) = le profil principal de la façade
-  loops.sort((a,b)=>b.length-a.length);
-  return loops[0];
-}
-
-function pickHallFacade(ev){
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  const meshes = [];
-  hallMesh.traverse(o=>{ if(o.isMesh) meshes.push(o); });
-  const hits = raycaster.intersectObjects(meshes, true);
-  if(!hits.length){ flashStatus("Aucune surface du hall touchée"); return; }
-  const hit = hits[0];
-  const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
-  const facadeWorldNormal = hallFacadeWorldNormal;
-  if(worldNormal.dot(facadeWorldNormal) < 0.6){
-    flashStatus("Cliquez la façade exposée (+Y Blender) du hall, pas une autre paroi");
-    return;
-  }
-  // tranche légèrement en retrait pour capter le contour plein de la façade
-  const planePoint = hit.point.clone().addScaledVector(facadeWorldNormal, -0.05);
-  const loop = sliceMeshByPlane(hallMesh, planePoint, facadeWorldNormal);
-  if(!loop || loop.length<3){ flashStatus("Profil de façade introuvable — cliquez ailleurs sur la façade"); return; }
-  const centroid = loop.reduce((s,p)=>s.add(p), new THREE.Vector3()).multiplyScalar(1/loop.length);
-  extPickedProfile = { points: loop.map(p=>p.clone().sub(centroid)), centroid, normal: facadeWorldNormal };
-  const marker = new THREE.Line(new THREE.BufferGeometry().setFromPoints([...loop, loop[0]]), new THREE.LineBasicMaterial({color:0x4fae8f}));
-  extMarkers.add(marker);
-  extPathPoints = [centroid.clone()];
-  drawHintText.textContent = "Tracez le chemin de l'extension, Entrée pour valider (Échap annule)";
-  flashStatus("Façade capturée — tracez le chemin de l'extension");
-}
-
-function refreshExtPreview(){
-  if(extPreviewLine){ scene.remove(extPreviewLine); extPreviewLine.geometry.dispose(); extPreviewLine=null; }
-  if(extPathPoints.length<2) return;
-  extPreviewLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(extPathPoints), new THREE.LineBasicMaterial({color:0x4fae8f}));
-  worldRoot.add(extPreviewLine);
-}
-
-function extendPathPointFromEvent(ev){
-  // Autorise à cliquer sur le sol, les bâtiments existants ou le quartier
-  // (pour permettre à l'extension de "grimper" au-dessus / de viser une façade cible).
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  const targets = [ground];
-  buildings.forEach(b=> b.group.traverse(o=>{ if(o.isMesh) targets.push(o); }));
-  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) targets.push(o); });
-  const hit = raycaster.intersectObjects(targets, true)[0];
-  return hit ? hit.point.clone() : null;
-}
-
-// Construit la géométrie loftée : profil balayé le long d'une courbe (repères de Frenet),
-// avec un fuseau d'échelle et un décalage de hauteur réglables.
-function buildLoftGeometry(profile, pathPoints, segments=48){
-  const curve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.25);
-  const frames = curve.computeFrenetFrames(segments, false);
-  const ring = profile.points; // Vector3 locaux autour du centroïde, dans le plan de la façade
-  const positions = [], indices = [];
-  for(let s=0;s<=segments;s++){
-    const t = s/segments;
-    const center = curve.getPointAt(t).clone();
-    center.y += extHeightOffset * t;
-    const scale = THREE.MathUtils.lerp(extScaleStart, extScaleEnd, t);
-    const normal = frames.normals[s], binormal = frames.binormals[s];
-    for(const p of ring){
-      // reprojette chaque point du profil (exprimé dans le plan facade d'origine)
-      // dans le repère local (normal/binormal) de la courbe au paramètre t
-      const local = p.clone().multiplyScalar(scale);
-      const projN = local.dot(normal), projB = local.dot(binormal);
-      const worldPt = center.clone().addScaledVector(normal, projN).addScaledVector(binormal, projB);
-      positions.push(worldPt.x, worldPt.y, worldPt.z);
-    }
-  }
-  const ringLen = ring.length;
-  for(let s=0;s<segments;s++){
-    for(let i=0;i<ringLen;i++){
-      const a = s*ringLen+i, b = s*ringLen+((i+1)%ringLen);
-      const c = (s+1)*ringLen+i, d = (s+1)*ringLen+((i+1)%ringLen);
-      indices.push(a,c,b, b,c,d);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function finishExtend(){
-  if(!extPickedProfile || extPathPoints.length<2){ cancelExtend(); return; }
-  const geo = buildLoftGeometry(extPickedProfile, extPathPoints);
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x9fb8c4, roughness:0.55, metalness:0.1,
-    transparent:true, opacity:0.96, depthWrite:true
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.renderOrder = 2; // s'affiche par-dessus les bâtiments qu'elle traverse visuellement
-  const group = new THREE.Group();
-  group.add(mesh);
-  worldRoot.add(group);
-  const ext = { id: extIdCounter++, name:`Extension hall ${extIdCounter-1}`, mesh, group };
-  extensions.push(ext);
-  renderExtList();
-  cancelExtend();
-}
-
-btnExtend.addEventListener('click', ()=> extending ? cancelExtend() : startExtend());
-
-renderer.domElement.addEventListener('click', (ev)=>{
-  if(!extending) return;
-  if(!extPickedProfile){ pickHallFacade(ev); return; }
-  const pt = extendPathPointFromEvent(ev);
-  if(pt){ extPathPoints.push(pt); refreshExtPreview(); }
-});
-window.addEventListener('keydown', (ev)=>{
-  if(!extending) return;
-  if(ev.key==='Enter') finishExtend();
-  if(ev.key==='Escape') cancelExtend();
-});
-
-function deleteExtension(id){
-  const e = extensions.find(x=>x.id===id);
-  if(!e) return;
-  scene.remove(e.group);
-  e.mesh.geometry.dispose(); e.mesh.material.dispose();
-  extensions = extensions.filter(x=>x.id!==id);
-  renderExtList();
-}
-function renderExtList(){
-  const list = document.getElementById('ext-list');
-  const empty = document.getElementById('ext-empty-note');
-  empty.style.display = extensions.length ? 'none' : 'block';
-  list.innerHTML = '';
-  extensions.forEach(e=>{
-    const card = document.createElement('div');
-    card.className = 'bldg-card';
-    card.style.padding = '9px 10px';
-    card.style.display = 'flex'; card.style.alignItems='center'; card.style.gap='8px';
-    const label = document.createElement('span');
-    label.textContent = e.name; label.style.flex='1'; label.style.fontSize='12.5px';
-    const del = document.createElement('button');
-    del.className='mini-btn danger'; del.textContent='✕';
-    del.addEventListener('click', ()=> deleteExtension(e.id));
-    card.append(label, del);
-    list.appendChild(card);
-  });
-}
 
 /* ============================================================
    MATÉRIAUX PROCÉDURAUX — remplace les shaders Blender qui ne survivent
@@ -1219,10 +984,6 @@ function fixProceduralMaterials(){
         // remplacement systématique, qu'il ait l'air "cassé" ou non (le diagnostic
         // heuristique noir/sans-texture ne suffisait pas à le détecter à coup sûr).
         replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x4a7c4e, roughness:0.85, flatShading:true });
-        } else if(name.includes('glass')){
-        // VITRES.
-        // VITREs.
-        replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x989DB4, metalness:0.75, roughness:0.2, flatShading:true });
       } else if(isLikelyBrokenShader(m)){
         const guessGreen = /leaf|vert|green|arbre|tree|icosph|folia/.test(name);
         replacement = new THREE.MeshStandardMaterial({
@@ -1293,7 +1054,7 @@ let treePlacing = false;
 const btnTree = document.getElementById('btn-tree');
 
 function startTreeTool(){
-  if(drawing || extending) return;
+  if(drawing) return;
   treePlacing = true;
   btnTree.classList.add('active'); btnTree.textContent = 'Arbre : cliquez le polygone…';
   drawHint.classList.add('show');
@@ -1382,6 +1143,100 @@ renderer.domElement.addEventListener('click', (ev)=>{
 });
 
 /* ============================================================
+   GAZON — peinture au sol sur le polygone d'implantation
+   ============================================================
+   Pas besoin de subdiviser le mesh Blender en petites faces : on peint dans
+   une texture (canvas 2D) posée en surcouche sur le polygone, à l'endroit où
+   le rayon de la souris touche le mesh — le point d'impact donne directement
+   ses coordonnées UV (Raycaster les fournit automatiquement si le mesh a un
+   attribut UV, ce qui est le cas ici). La résolution du pinceau est donc
+   limitée par la résolution de la texture, pas par le nombre de faces.
+   ============================================================ */
+let grassCanvas = null, grassCtx = null, grassTexture = null, grassOverlayMesh = null;
+let grassBrushRadius = 45; // px, sur un canvas de 1024 — "moyen" par défaut
+
+function setupGrassPaintOverlay(){
+  if(!polygonMesh) return;
+  const size = 1024;
+  grassCanvas = document.createElement('canvas');
+  grassCanvas.width = size; grassCanvas.height = size;
+  grassCtx = grassCanvas.getContext('2d');
+  grassCtx.clearRect(0,0,size,size); // rien de peint au départ : transparent partout
+  grassTexture = new THREE.CanvasTexture(grassCanvas);
+  const mat = new THREE.MeshStandardMaterial({
+    map: grassTexture, transparent:true, roughness:0.9, metalness:0,
+    depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1
+  });
+  // Même géométrie que le polygone (mêmes UV) posée juste au-dessus, en enfant
+  // direct : hérite automatiquement de la position/échelle/rotation exactes du
+  // polygone, quel que soit l'axe de la maquette.
+  grassOverlayMesh = new THREE.Mesh(polygonMesh.geometry, mat);
+  grassOverlayMesh.position.y = 0.02;
+  grassOverlayMesh.renderOrder = 1;
+  polygonMesh.add(grassOverlayMesh);
+}
+
+let grassPainting = false;
+let grassPointerActive = false;
+const btnGrass = document.getElementById('btn-paint-grass');
+
+function startGrassTool(){
+  if(drawing || treePlacing) return;
+  grassPainting = true;
+  btnGrass.classList.add('active'); btnGrass.textContent = 'Gazon : glissez pour peindre…';
+  drawHint.classList.add('show');
+  drawHintText.textContent = "Glissez sur la place pour peindre du gazon · clic droit pour effacer (Échap pour arrêter)";
+}
+function stopGrassTool(){
+  grassPainting = false;
+  btnGrass.classList.remove('active'); btnGrass.textContent = '🖌 Gazon';
+  drawHint.classList.remove('show');
+}
+btnGrass.addEventListener('click', ()=> grassPainting ? stopGrassTool() : startGrassTool());
+window.addEventListener('keydown', (ev)=>{ if(grassPainting && ev.key==='Escape') stopGrassTool(); });
+
+function paintGrassAt(ev, erase){
+  if(!polygonMesh || !grassCtx) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObject(polygonMesh, true)[0];
+  if(!hit || !hit.uv) return;
+  const px = hit.uv.x * grassCanvas.width;
+  const py = (1-hit.uv.y) * grassCanvas.height;
+  grassCtx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+  const grad = grassCtx.createRadialGradient(px,py,0, px,py,grassBrushRadius);
+  if(erase){
+    grad.addColorStop(0,'rgba(0,0,0,1)'); grad.addColorStop(1,'rgba(0,0,0,0)');
+  } else {
+    grad.addColorStop(0,'rgba(94,168,84,0.95)');
+    grad.addColorStop(1,'rgba(94,168,84,0)');
+  }
+  grassCtx.fillStyle = grad;
+  grassCtx.beginPath();
+  grassCtx.arc(px,py,grassBrushRadius,0,Math.PI*2);
+  grassCtx.fill();
+  grassTexture.needsUpdate = true;
+}
+
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!grassPainting) return;
+  grassPointerActive = true;
+  paintGrassAt(ev, ev.button===2);
+});
+window.addEventListener('pointermove', (ev)=>{
+  if(!grassPainting || !grassPointerActive) return;
+  paintGrassAt(ev, ev.buttons===2);
+});
+window.addEventListener('pointerup', ()=>{ grassPointerActive = false; });
+renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting) ev.preventDefault(); });
+
+document.getElementById('brush-small').addEventListener('click', ()=> grassBrushRadius = 20);
+document.getElementById('brush-medium').addEventListener('click', ()=> grassBrushRadius = 45);
+document.getElementById('brush-large').addEventListener('click', ()=> grassBrushRadius = 85);
+
+/* ============================================================
    BUILDING MODEL
    ============================================================ */
 function defaultBands(floors){
@@ -1416,6 +1271,7 @@ function rebuildMesh(b){
   // the shape's local Y axis into world Z. We negate Z here so the built
   // volume lines up exactly with the footprint the user traced on the ground.
   const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,-p.z)));
+  const editing = editingBuildingId === b.id;
 
   for(let f=1; f<=b.floors; f++){
     const usage = usageAtFloor(b, f);
@@ -1423,16 +1279,17 @@ function rebuildMesh(b){
     geo.rotateX(-Math.PI/2);
     const mat = new THREE.MeshStandardMaterial({
       color: USAGE_COLORS[usage],
-      roughness: 0.75, metalness: 0.05
+      roughness: 0.75, metalness: 0.05,
+      transparent: editing, opacity: editing ? 0.25 : 1.0
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.y = (f-1)*FLOOR_HEIGHT;
-    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.castShadow = !editing; mesh.receiveShadow = true;
     b.group.add(mesh);
 
     // slab edge line for a clean architectural-model look
     const edges = new THREE.EdgesGeometry(geo, 25);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity:0.35 }));
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.35 }));
     line.position.y = mesh.position.y;
     b.group.add(line);
   }
@@ -1451,6 +1308,7 @@ function rebuildAll(){ buildings.forEach(rebuildMesh); }
 function deleteBuilding(id){
   const b = buildings.find(x=>x.id===id);
   if(!b) return;
+  if(editingBuildingId===id) stopEditBuildingShape();
   scene.remove(b.group);
   buildings = buildings.filter(x=>x.id!==id);
   if(selectedId===id) selectedId = null;
@@ -1462,6 +1320,86 @@ function selectBuilding(id){
   rebuildAll();
   renderList();
 }
+
+/* ============================================================
+   ÉDITION DE LA FORME D'UN BÂTIMENT — sommets déplaçables
+   ============================================================
+   Le bâtiment devient semi-transparent (voir rebuildMesh) pour qu'on voie les
+   poignées à travers, et chaque sommet du polygone tracé est représenté par
+   une petite sphère qu'on peut glisser (même logique de glisser-déposer que
+   les arbres/l'extension : la caméra reste libre, elle n'est bloquée que le
+   temps exact du glissement d'un sommet).
+   ============================================================ */
+let editingBuildingId = null;
+let bldgVertexGroup = new THREE.Group(); worldRoot.add(bldgVertexGroup);
+let bldgVertexHandles = []; // [{mesh, index}]
+
+function startEditBuildingShape(b){
+  if(editingBuildingId && editingBuildingId!==b.id) stopEditBuildingShape();
+  editingBuildingId = b.id;
+  rebuildBldgVertexHandles(b);
+  rebuildMesh(b);
+  renderList();
+  flashStatus("Glissez les points pour modifier la forme · reclic sur Modifier pour terminer");
+}
+function stopEditBuildingShape(){
+  const id = editingBuildingId;
+  editingBuildingId = null;
+  bldgVertexGroup.clear();
+  bldgVertexHandles = [];
+  const b = buildings.find(x=>x.id===id);
+  if(b) rebuildMesh(b);
+  renderList();
+}
+function rebuildBldgVertexHandles(b){
+  bldgVertexGroup.clear();
+  bldgVertexHandles = b.points.map((p,i)=>{
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.8,14,14),
+      new THREE.MeshStandardMaterial({ color:0xe0663f, emissive:0xe0663f, emissiveIntensity:0.25 })
+    );
+    mesh.position.set(p.x, 0.3, p.z);
+    bldgVertexGroup.add(mesh);
+    return { mesh, index:i };
+  });
+}
+
+let bldgVertexDrag = null; // {index, x, y, moved}
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!editingBuildingId || ev.button!==0) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(bldgVertexHandles.map(h=>h.mesh));
+  if(!hits.length) return;
+  const idx = bldgVertexHandles.findIndex(h=>h.mesh===hits[0].object);
+  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
+  controls.enabled = false;
+});
+window.addEventListener('pointermove', (ev)=>{
+  if(!bldgVertexDrag) return;
+  const dx = ev.clientX-bldgVertexDrag.x, dy = ev.clientY-bldgVertexDrag.y;
+  if(Math.hypot(dx,dy) > 3) bldgVertexDrag.moved = true;
+  if(!bldgVertexDrag.moved) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  if(!b) return;
+  // le sommet reste contraint au polygone d'implantation, comme au tracé initial
+  if(buildZone.length>=3 && !pointInPolygon(pt, buildZone)) return;
+  b.points[bldgVertexDrag.index] = { x: pt.x, z: pt.z };
+  bldgVertexHandles[bldgVertexDrag.index].mesh.position.set(pt.x, 0.3, pt.z);
+  rebuildMesh(b);
+});
+window.addEventListener('pointerup', ()=>{
+  if(!bldgVertexDrag) return;
+  bldgVertexDrag = null;
+  controls.enabled = true;
+});
+window.addEventListener('keydown', (ev)=>{
+  if(editingBuildingId && ev.key==='Escape') stopEditBuildingShape();
+});
 
 /* ============================================================
    SIDE PANEL — building list & editors
@@ -1577,13 +1515,16 @@ function renderList(){
 
     const actions = document.createElement('div');
     actions.className='btn-row';
+    const editBtn = document.createElement('button');
+    editBtn.className='small-action'; editBtn.textContent = editingBuildingId===b.id ? 'Terminer' : 'Modifier la forme';
+    editBtn.addEventListener('click', ()=> editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b));
     const focusBtn = document.createElement('button');
     focusBtn.className='small-action'; focusBtn.textContent='Centrer la vue';
     focusBtn.addEventListener('click', ()=> focusOn(b));
     const delBtn = document.createElement('button');
     delBtn.className='small-action danger'; delBtn.textContent='Supprimer';
     delBtn.addEventListener('click', ()=> deleteBuilding(b.id));
-    actions.append(focusBtn, delBtn);
+    actions.append(editBtn, focusBtn, delBtn);
     body.appendChild(actions);
 
     card.append(head, meta, body);
@@ -1608,6 +1549,35 @@ document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
   gridGroup.visible = gridVisible;
   ilotOutline.visible = gridVisible;
 });
+
+/* ============================================================
+   JOUR / NUIT
+   ============================================================
+   Si des lampes ont été placées dans Blender ET exportées (cocher "Lampes
+   ponctuelles" / "Punctual Lights" dans le panneau d'export glTF — three.js
+   les importe alors automatiquement en vraies THREE.PointLight/SpotLight,
+   pas besoin d'un JSON séparé comme pour les routes), elles sont détectées
+   ici et allumées uniquement la nuit.
+   ============================================================ */
+let siteLights = [];
+function collectSiteLights(){
+  siteLights = [];
+  siteRoot.traverse(o=>{ if(o.isLight) siteLights.push(o); });
+  siteLights.forEach(l=> l.visible = isNight);
+}
+let isNight = false;
+const btnNight = document.getElementById('btn-night');
+function setNightMode(night){
+  isNight = night;
+  sun.visible = !night;
+  hemiLight.intensity = night ? 0.12 : 0.9;
+  hemiLight.color.setHex(night ? 0x1a2740 : 0xdfe8ef);
+  scene.background.setHex(night ? 0x03050a : 0x101820);
+  scene.fog.color.setHex(night ? 0x03050a : 0x101820);
+  siteLights.forEach(l=> l.visible = night);
+  btnNight.textContent = night ? '☀️ Jour' : '🌙 Nuit';
+}
+btnNight.addEventListener('click', ()=> setNightMode(!isNight));
 
 /* ============================================================
    EXPORT PNG
@@ -1666,13 +1636,19 @@ fileLoad.addEventListener('change', (e)=>{
    la courbe via curve.getPointAt(t), rendus en instanced mesh low-poly.
    ============================================================ */
 const ROUTE_TYPES = {
-  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  scale:[2.2,2.6,9]  },
+  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  scale:[2.2,2.6,9], wagons:3 },
   bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  scale:[2,2.4,6]  },
   voiture:{ label:'Voiture', color:0x2c0a71, speed:10,  count:7,  scale:[1.7,1.3,3.4]},
   pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, scale:[0.4,1.4,0.5]}
 };
-let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,offset}]}
+let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,wagonOffset}]}
 let routeIdCounter = 1;
+
+// Un "wagon" est un décalage d'arc-longueur fixe derrière le t de base de son
+// unité (train/bus/etc) — pas un agent indépendant. Toute l'unité (ex. les 3
+// wagons d'un tram, tous de la même taille que la boîte scale[]) avance donc
+// exactement au même rythme, sans jamais se désynchroniser.
+const WAGON_GAP = 0.4; // mètres entre deux wagons consécutifs
 
 function createRoute(points, type, name){
   if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
@@ -1683,12 +1659,19 @@ function createRoute(points, type, name){
   const geo = new THREE.BoxGeometry(...cfg.scale);
   const mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
   const count = cfg.count;
-  const inst = new THREE.InstancedMesh(geo, mat, count);
+  const wagons = cfg.wagons || 1;
+  const inst = new THREE.InstancedMesh(geo, mat, count*wagons);
   inst.castShadow = true;
   worldRoot.add(inst);
 
   const agents = [];
-  for(let i=0;i<count;i++) agents.push({ t: i/count, speed: cfg.speed * (0.9+Math.random()*0.2) });
+  for(let u=0;u<count;u++){
+    const baseT = u/count;
+    const speed = cfg.speed * (0.9+Math.random()*0.2);
+    for(let w=0;w<wagons;w++){
+      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.scale[2]+WAGON_GAP) });
+    }
+  }
 
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
   line.visible = false; // le tracé lui-même reste caché ; seuls les véhicules/piétons animés sont visibles
@@ -1707,8 +1690,11 @@ function tickAgents(dt){
     if(len<=0) continue;
     r.agents.forEach((a,i)=>{
       a.t = (a.t + (a.speed*dt)/len) % 1;
-      const pos = r.curve.getPointAt(a.t);
-      const tangent = r.curve.getTangentAt(a.t);
+      // le wagon n'est jamais exactement à a.t : il traîne derrière de
+      // wagonOffset mètres (converti en fraction de la longueur de la courbe).
+      const wagonT = ((a.t - (a.wagonOffset||0)/len) % 1 + 1) % 1;
+      const pos = r.curve.getPointAt(wagonT);
+      const tangent = r.curve.getTangentAt(wagonT);
       dummy.position.copy(pos);
       dummy.position.y += 0.05;
       dummy.lookAt(pos.clone().add(tangent));
