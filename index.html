@@ -321,7 +321,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // lieu de "s'écraser" progressivement — c'est ce qui rendait toute la scène
 // blanche en mode nuit.
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 0.65;
 viewport.appendChild(renderer.domElement);
 
 // Environnement neutre généré (pas de HDRI à charger) : indispensable pour que les
@@ -512,7 +512,7 @@ function convexHullXZ(pts){
 }
 
 function updateBuildZoneVisual(){
-  scene.remove(ilotOutline);
+  groundGroup.remove(ilotOutline);
   const pts = buildZone.map(p=>new THREE.Vector3(p.x,0.05,p.z));
   pts.push(pts[0].clone());
   const geo = new THREE.BufferGeometry().setFromPoints(pts);
@@ -649,18 +649,46 @@ function findByNameCI(root, name){
   root.traverse(o=>{ if(!found && o.name && o.name.toLowerCase()===target) found = o; });
   return found;
 }
+// Certains ajouts dans Blender se retrouvent comme un DEUXIÈME objet distinct
+// (ex. "Polygone_Implantation.001") plutôt que fusionnés dans le même mesh —
+// on récupère donc TOUTES les pièces dont le nom commence par ce préfixe, pas
+// juste la première trouvée.
+function findAllByNameCI(root, namePrefix){
+  const target = namePrefix.toLowerCase();
+  const found = [];
+  root.traverse(o=>{ if(o.isMesh && o.name && o.name.toLowerCase().startsWith(target)) found.push(o); });
+  return found;
+}
+// Union de toutes les pièces du polygone d'implantation, sous forme d'enveloppe
+// convexe. On abandonne volontairement le chaînage d'arêtes de bord (fragile
+// face à des sommets dupliqués/non soudés entre pièces, ou à plusieurs objets
+// séparés) au profit d'une méthode qui NE PEUT PAS laisser une zone de côté :
+// l'enveloppe convexe inclut par construction tous les points fournis.
+function computeBuildZoneFromParts(parts){
+  const pts = [];
+  parts.forEach(mesh=>{
+    mesh.updateWorldMatrix(true,false);
+    const pos = mesh.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    for(let i=0;i<pos.count;i++){
+      v.fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
+      pts.push({x:v.x, z:v.z});
+    }
+  });
+  return convexHullXZ(dedupe(pts));
+}
 function onSiteLoaded(){
-  polygonMesh = findByNameCI(siteRoot, 'Polygone_Implantation');
+  const polygonParts = findAllByNameCI(siteRoot, 'polygone_implantation');
+  polygonMesh = polygonParts[0] || null; // pièce "principale", utilisée pour la normale de façade etc.
   hallMesh    = findByNameCI(siteRoot, 'Hall_Gare');
   quartierGroup = findByNameCI(siteRoot, 'Quartier');
   fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
   renderCrosswalkControls();
-  if(polygonMesh){
-    polygonMesh.visible = true;
-    polygonMesh.receiveShadow = true;
-    buildZone = extractBoundaryXZ(polygonMesh);
+  if(polygonParts.length){
+    polygonParts.forEach(p=>{ p.visible = true; p.receiveShadow = true; });
+    buildZone = computeBuildZoneFromParts(polygonParts);
     updateBuildZoneVisual();
-    setupGrassPaintOverlay();
+    setupGrassPaintOverlay(polygonParts);
   }
   collectSiteLights();
   if(hallMesh){
@@ -847,10 +875,10 @@ function cancelDraw(){
 }
 function clearMarkers(){
   drawMarkers.clear();
-  if(previewLine){ scene.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
+  if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
 }
 function refreshPreview(){
-  if(previewLine){ scene.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
+  if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
   if(drawPoints.length<2) return;
   const pts = drawPoints.map(p=>new THREE.Vector3(p.x,0.15,p.z));
   pts.push(pts[0].clone());
@@ -1143,7 +1171,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   // de secours à Y=0, qui peut être à des dizaines de mètres du vrai niveau du
   // sol une fois la maquette mise à l'échelle/translatée.
   const groundTargets = [];
-  if(polygonMesh) groundTargets.push(polygonMesh);
+  groundTargets.push(...grassParts.map(g=>g.mesh));
   if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
   if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
   groundTargets.push(ground);
@@ -1166,28 +1194,30 @@ renderer.domElement.addEventListener('click', (ev)=>{
    attribut UV, ce qui est le cas ici). La résolution du pinceau est donc
    limitée par la résolution de la texture, pas par le nombre de faces.
    ============================================================ */
-let grassCanvas = null, grassCtx = null, grassTexture = null, grassOverlayMesh = null;
+let grassParts = []; // [{mesh, overlayMesh, canvas, ctx, texture}]
 let grassBrushRadius = 45; // px, sur un canvas de 1024 — "moyen" par défaut
 
-function setupGrassPaintOverlay(){
-  if(!polygonMesh) return;
-  const size = 1024;
-  grassCanvas = document.createElement('canvas');
-  grassCanvas.width = size; grassCanvas.height = size;
-  grassCtx = grassCanvas.getContext('2d');
-  grassCtx.clearRect(0,0,size,size); // rien de peint au départ : transparent partout
-  grassTexture = new THREE.CanvasTexture(grassCanvas);
-  const mat = new THREE.MeshStandardMaterial({
-    map: grassTexture, transparent:true, roughness:0.9, metalness:0,
-    depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1
+function setupGrassPaintOverlay(parts){
+  grassParts = [];
+  parts.forEach(mesh=>{
+    const size = 1024;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,size,size); // rien de peint au départ : transparent partout
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture, transparent:true, roughness:0.9, metalness:0,
+      depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1
+    });
+    // Même géométrie que la pièce du polygone (mêmes UV) posée juste au-dessus,
+    // en enfant direct : hérite automatiquement de sa position/échelle/rotation.
+    const overlayMesh = new THREE.Mesh(mesh.geometry, mat);
+    overlayMesh.position.y = 0.02;
+    overlayMesh.renderOrder = 1;
+    mesh.add(overlayMesh);
+    grassParts.push({ mesh, overlayMesh, canvas, ctx, texture });
   });
-  // Même géométrie que le polygone (mêmes UV) posée juste au-dessus, en enfant
-  // direct : hérite automatiquement de la position/échelle/rotation exactes du
-  // polygone, quel que soit l'axe de la maquette.
-  grassOverlayMesh = new THREE.Mesh(polygonMesh.geometry, mat);
-  grassOverlayMesh.position.y = 0.02;
-  grassOverlayMesh.renderOrder = 1;
-  polygonMesh.add(grassOverlayMesh);
 }
 
 let grassPainting = false;
@@ -1210,28 +1240,29 @@ btnGrass.addEventListener('click', ()=> grassPainting ? stopGrassTool() : startG
 window.addEventListener('keydown', (ev)=>{ if(grassPainting && ev.key==='Escape') stopGrassTool(); });
 
 function paintGrassAt(ev, erase){
-  if(!polygonMesh || !grassCtx) return;
+  if(!grassParts.length) return;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObject(polygonMesh, true)[0];
+  const hit = raycaster.intersectObjects(grassParts.map(g=>g.mesh), true)[0];
   if(!hit || !hit.uv) return;
-  const px = hit.uv.x * grassCanvas.width;
-  const py = (1-hit.uv.y) * grassCanvas.height;
-  grassCtx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
-  const grad = grassCtx.createRadialGradient(px,py,0, px,py,grassBrushRadius);
+  const part = grassParts.find(g=>g.mesh===hit.object) || grassParts[0];
+  const px = hit.uv.x * part.canvas.width;
+  const py = (1-hit.uv.y) * part.canvas.height;
+  part.ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+  const grad = part.ctx.createRadialGradient(px,py,0, px,py,grassBrushRadius);
   if(erase){
     grad.addColorStop(0,'rgba(0,0,0,1)'); grad.addColorStop(1,'rgba(0,0,0,0)');
   } else {
     grad.addColorStop(0,'rgba(94,168,84,0.95)');
     grad.addColorStop(1,'rgba(94,168,84,0)');
   }
-  grassCtx.fillStyle = grad;
-  grassCtx.beginPath();
-  grassCtx.arc(px,py,grassBrushRadius,0,Math.PI*2);
-  grassCtx.fill();
-  grassTexture.needsUpdate = true;
+  part.ctx.fillStyle = grad;
+  part.ctx.beginPath();
+  part.ctx.arc(px,py,grassBrushRadius,0,Math.PI*2);
+  part.ctx.fill();
+  part.texture.needsUpdate = true;
 }
 
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
@@ -1323,7 +1354,7 @@ function deleteBuilding(id){
   const b = buildings.find(x=>x.id===id);
   if(!b) return;
   if(editingBuildingId===id) stopEditBuildingShape();
-  scene.remove(b.group);
+  worldRoot.remove(b.group);
   buildings = buildings.filter(x=>x.id!==id);
   if(selectedId===id) selectedId = null;
   renderList();
@@ -1576,7 +1607,20 @@ document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
 let siteLights = [];
 function collectSiteLights(){
   siteLights = [];
-  siteRoot.traverse(o=>{ if(o.isLight) siteLights.push(o); });
+  siteRoot.traverse(o=>{
+    if(!o.isLight) return;
+    // Les intensités exportées depuis Blender (candela/lux) sont souvent
+    // hors d'échelle pour la taille de notre scène : sans plafond, une seule
+    // lampe peut cramer toute l'image en blanc. On les ramène à une plage
+    // raisonnable plutôt que de faire confiance aveuglément à la valeur brute.
+    const maxIntensity = (o.isPointLight || o.isSpotLight) ? 6 : 2.5;
+    if(o.intensity > maxIntensity) o.intensity = maxIntensity;
+    if(o.isPointLight || o.isSpotLight){
+      o.decay = 2;
+      o.distance = (o.distance && o.distance>0) ? Math.min(o.distance, 60) : 45;
+    }
+    siteLights.push(o);
+  });
   siteLights.forEach(l=> l.visible = isNight);
 }
 let isNight = false;
@@ -1584,7 +1628,8 @@ const btnNight = document.getElementById('btn-night');
 function setNightMode(night){
   isNight = night;
   sun.visible = !night;
-  hemiLight.intensity = night ? 0.005 : 0.05;
+  sun.intensity = night ? 0.05 : 1.15; // filet de sécurité en plus de .visible
+  hemiLight.intensity = night ? 0.1 : 0.9;
   hemiLight.color.setHex(night ? 0x1a2740 : 0xdfe8ef);
   scene.background.setHex(night ? 0x03050a : 0x101820);
   scene.fog.color.setHex(night ? 0x03050a : 0x101820);
@@ -1628,7 +1673,7 @@ fileLoad.addEventListener('change', (e)=>{
   reader.onload = ()=>{
     try{
       const data = JSON.parse(reader.result);
-      buildings.forEach(b=>scene.remove(b.group));
+      buildings.forEach(b=>worldRoot.remove(b.group));
       buildings = [];
       idCounter = 1;
       (data.buildings||[]).forEach(b=> createBuilding(b.points, {name:b.name, floors:b.floors, bands:b.bands}));
@@ -1727,7 +1772,7 @@ function tickAgents(dt){
 
 function clearRoutes(){
   routes.forEach(r=>{
-    scene.remove(r.instancedMesh); scene.remove(r.line);
+    worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
     r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
     r.line.geometry.dispose(); r.line.material.dispose();
   });
@@ -1737,7 +1782,7 @@ function clearRoutes(){
 function deleteRoute(id){
   const r = routes.find(x=>x.id===id);
   if(!r) return;
-  scene.remove(r.instancedMesh); scene.remove(r.line);
+  worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
   r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
   r.line.geometry.dispose(); r.line.material.dispose();
   routes = routes.filter(x=>x.id!==id);
