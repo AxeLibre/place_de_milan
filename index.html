@@ -1584,7 +1584,7 @@ const btnNight = document.getElementById('btn-night');
 function setNightMode(night){
   isNight = night;
   sun.visible = !night;
-  hemiLight.intensity = night ? 0.04 : 0.3;
+  hemiLight.intensity = night ? 0.005 : 0.05;
   hemiLight.color.setHex(night ? 0x1a2740 : 0xdfe8ef);
   scene.background.setHex(night ? 0x03050a : 0x101820);
   scene.fog.color.setHex(night ? 0x03050a : 0x101820);
