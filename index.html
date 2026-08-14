@@ -321,7 +321,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // lieu de "s'écraser" progressivement — c'est ce qui rendait toute la scène
 // blanche en mode nuit.
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.65;
+renderer.toneMappingExposure = 0.85;
 viewport.appendChild(renderer.domElement);
 
 // Environnement neutre généré (pas de HDRI à charger) : indispensable pour que les
@@ -346,9 +346,9 @@ controls.minDistance = 15;
 controls.maxDistance = 700;
 
 // Lighting — soft overcast "plan de présentation" look
-const hemiLight = new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.9);
+const hemiLight = new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.75);
 scene.add(hemiLight);
-const sun = new THREE.DirectionalLight(0xfff2df, 1.15);
+const sun = new THREE.DirectionalLight(0xfff2df, 0.7);
 sun.position.set(120, 200, 60);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048,2048);
@@ -1613,11 +1613,11 @@ function collectSiteLights(){
     // hors d'échelle pour la taille de notre scène : sans plafond, une seule
     // lampe peut cramer toute l'image en blanc. On les ramène à une plage
     // raisonnable plutôt que de faire confiance aveuglément à la valeur brute.
-    const maxIntensity = (o.isPointLight || o.isSpotLight) ? 6 : 2.5;
+    const maxIntensity = (o.isPointLight || o.isSpotLight) ? 14 : 4;
     if(o.intensity > maxIntensity) o.intensity = maxIntensity;
     if(o.isPointLight || o.isSpotLight){
-      o.decay = 2;
-      o.distance = (o.distance && o.distance>0) ? Math.min(o.distance, 60) : 45;
+      o.decay = 1.6;
+      o.distance = (o.distance && o.distance>0) ? Math.min(o.distance, 90) : 70;
     }
     siteLights.push(o);
   });
@@ -1628,8 +1628,8 @@ const btnNight = document.getElementById('btn-night');
 function setNightMode(night){
   isNight = night;
   sun.visible = !night;
-  sun.intensity = night ? 0.05 : 1.15; // filet de sécurité en plus de .visible
-  hemiLight.intensity = night ? 0.1 : 0.9;
+  sun.intensity = night ? 0.05 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
+  hemiLight.intensity = night ? 0.1 : 0.75;
   hemiLight.color.setHex(night ? 0x1a2740 : 0xdfe8ef);
   scene.background.setHex(night ? 0x03050a : 0x101820);
   scene.fog.color.setHex(night ? 0x03050a : 0x101820);
