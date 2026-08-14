@@ -330,6 +330,12 @@ viewport.appendChild(renderer.domElement);
 const pmrem = new THREE.PMREMGenerator(renderer);
 const dayEnvTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environment = dayEnvTexture;
+// Environnement de nuit : pas complètement coupé (ça donnait un noir total sans
+// aucun relief), juste une ambiance plate très sombre plutôt que la pièce
+// "RoomEnvironment" lumineuse utilisée le jour.
+const nightEnvScene = new THREE.Scene();
+nightEnvScene.background = new THREE.Color(0x0d1420);
+const nightEnvTexture = pmrem.fromScene(nightEnvScene).texture;
 
 function resize(){
   const w = viewport.clientWidth, h = viewport.clientHeight;
@@ -1630,14 +1636,10 @@ function setNightMode(night){
   isNight = night;
   sun.visible = !night;
   sun.intensity = night ? 0.05 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
-  hemiLight.intensity = night ? 0.1 : 0.75;
+  hemiLight.intensity = night ? 0.22 : 0.75;
   hemiLight.color.setHex(night ? 0x1a2740 : 0xdfe8ef);
-  // scene.environment (carte d'environnement pour les reflets/l'ambiance IBL des
-  // matériaux) était réglé une seule fois au démarrage et jamais retouché ici :
-  // c'était en réalité la principale source de lumière restant identique entre
-  // jour et nuit, quoi qu'on fasse au soleil. On la retire complètement la nuit.
-  scene.environment = night ? null : dayEnvTexture;
-  renderer.toneMappingExposure = night ? 0.35 : 0.85;
+  scene.environment = night ? nightEnvTexture : dayEnvTexture;
+  renderer.toneMappingExposure = night ? 0.55 : 0.85;
   scene.background.setHex(night ? 0x03050a : 0x101820);
   scene.fog.color.setHex(night ? 0x03050a : 0x101820);
   siteLights.forEach(l=> l.visible = night);
