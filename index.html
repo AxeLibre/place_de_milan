@@ -1636,12 +1636,12 @@ function setNightMode(night){
   isNight = night;
   sun.visible = !night;
   sun.intensity = night ? 0.05 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
-  hemiLight.intensity = night ? 0.22 : 0.75;
-  hemiLight.color.setHex(night ? 0x1a2740 : 0xdfe8ef);
+  hemiLight.intensity = night ? 0.4 : 0.75;
+  hemiLight.color.setHex(night ? 0x24344f : 0xdfe8ef);
   scene.environment = night ? nightEnvTexture : dayEnvTexture;
-  renderer.toneMappingExposure = night ? 0.55 : 0.85;
-  scene.background.setHex(night ? 0x03050a : 0x101820);
-  scene.fog.color.setHex(night ? 0x03050a : 0x101820);
+  renderer.toneMappingExposure = night ? 0.85 : 0.85;
+  scene.background.setHex(night ? 0x080d16 : 0x101820);
+  scene.fog.color.setHex(night ? 0x080d16 : 0x101820);
   siteLights.forEach(l=> l.visible = night);
   btnNight.textContent = night ? '☀️ Jour' : '🌙 Nuit';
 }
