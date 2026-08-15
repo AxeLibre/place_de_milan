@@ -1830,11 +1830,13 @@ dummy.updateMatrix();
         const up = new THREE.Vector3(0,1,0);
         const side = new THREE.Vector3().crossVectors(up, forward).normalize();
         
-        // Calcul sécurisé de la largeur basé sur la géométrie du wagon
-        if(!r.instancedMesh.geometry.boundingBox) r.instancedMesh.geometry.computeBoundingBox();
-        const bbox = r.instancedMesh.geometry.boundingBox;
-        const vehicleWidth = bbox ? (bbox.max.x - bbox.min.x) : 2;
-        const lightOffset = (vehicleWidth * 0.5) * 0.75; // S'arrête avant le bord
+        // Estimation robuste de la largeur basée sur la longueur (halfLen) 
+        // ou repli sur une largeur standard si halfLen est petit (ex: voitures ~ 1.8m de large, trams/bus ~ 2.4m)
+        const estimatedWidth = Math.max(halfLen * 0.8, 1.8);
+        const lightOffset = estimatedWidth * 0.42; // Juste assez écarté pour faire 2 phares distincts sans dépasser
+
+        // On grossit explicitement la taille des phares pour qu'ils soient bien visibles (voitures, bus, trams)
+        lightDummy.scale.set(1.8, 1.8, 1.8);
 
         if(a.headIdx>=0){
           // Phare avant GAUCHE
@@ -1871,6 +1873,9 @@ dummy.updateMatrix();
           lightDummy.updateMatrix();
           r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
         }
+        
+        // On remet l'échelle à 1 pour ne pas impacter le reste par sécurité
+        lightDummy.scale.set(1, 1, 1);
       }
     });
     r.instancedMesh.instanceMatrix.needsUpdate = true;
