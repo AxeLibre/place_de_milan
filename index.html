@@ -1830,7 +1830,12 @@ function setNightMode(night){
   scene.fog.color.setHex(night ? 0x0b1220 : 0x101820);
   siteLights.forEach(l=> l.visible = night);
   btnNight.querySelector('.tool-btn-label').textContent = night ? 'Jour' : 'Nuit';
-  btnNight.querySelector('i').setAttribute('data-lucide', night ? 'sun' : 'moon');
+  // Après le premier rendu, lucide.createIcons() a remplacé le <i data-lucide="…">
+  // d'origine par un vrai <svg> : on ne peut donc plus faire setAttribute dessus
+  // comme sur un <i>. On remplace l'icône entière (svg ou i) par un <i> tout neuf
+  // avant de relancer createIcons(), qui se charge de le transformer en svg.
+  const iconEl = btnNight.querySelector('svg, i');
+  if(iconEl) iconEl.outerHTML = `<i data-lucide="${night ? 'sun' : 'moon'}"></i>`;
   if(window.lucide) lucide.createIcons();
 }
 btnNight.addEventListener('click', ()=> setNightMode(!isNight));
