@@ -1825,7 +1825,7 @@ function tickAgents(dt){
 dummy.updateMatrix();
       r.instancedMesh.setMatrixAt(i, dummy.matrix);
 
-      // Récupération de l'état de la nuit depuis le bouton ou la variable du script (ex: isNight ou nightMode)
+      // Récupération de l'état de la nuit
       const nightActive = (typeof isNight !== 'undefined' && isNight) || (typeof nightMode !== 'undefined' && nightMode) || (window.isNight === true);
 
       if(nightActive && (a.headIdx>=0 || a.tailIdx>=0)){
@@ -1833,12 +1833,12 @@ dummy.updateMatrix();
         const up = new THREE.Vector3(0,1,0);
         const side = new THREE.Vector3().crossVectors(up, forward).normalize();
         
-        // Largeur estimée et décalage réduit pour que les phares de chaque paire soient bien rapprochés au centre
+        // Juste milieu pour l'écartement (coefficient 0.42 au lieu de 0.12 ou 0.75)
         const estimatedWidth = Math.max(halfLen * 0.8, 1.8);
-        const lightOffset = estimatedWidth * 0.12; // Très rapprochés l'un de l'autre
+        const lightOffset = estimatedWidth * 0.42; 
 
-        // Phares bien plus gros
-        lightDummy.scale.set(2.2, 2.2, 2.2);
+        // Phares bien visibles mais proportionnés
+        lightDummy.scale.set(1.8, 1.8, 1.8);
 
         if(a.headIdx>=0){
           // Phare avant GAUCHE
@@ -1878,7 +1878,7 @@ dummy.updateMatrix();
         
         lightDummy.scale.set(1, 1, 1);
       } else if (a.headIdx>=0 || a.tailIdx>=0) {
-        // Éteints le jour (échelle à 0 pour les masquer proprement)
+        // Éteints le jour
         lightDummy.scale.set(0, 0, 0);
         lightDummy.updateMatrix();
         if(a.headIdx>=0) {
@@ -1892,8 +1892,14 @@ dummy.updateMatrix();
       }
     });
     r.instancedMesh.instanceMatrix.needsUpdate = true;
-    if(r.headInst) r.headInst.instanceMatrix.needsUpdate = true;
-    if(r.tailInst) r.tailInst.instanceMatrix.needsUpdate = true;
+    if(r.headInst) {
+      r.headInst.instanceMatrix.needsUpdate = true;
+      r.headInst.frustumCulled = false; // Empêche les phares de disparaître quand la caméra zoome près du sol
+    }
+    if(r.tailInst) {
+      r.tailInst.instanceMatrix.needsUpdate = true;
+      r.tailInst.frustumCulled = false; // Empêche les feux arrières de disparaître au zoom
+    }
   }
 }
 
