@@ -1830,8 +1830,11 @@ dummy.updateMatrix();
         const up = new THREE.Vector3(0,1,0);
         const side = new THREE.Vector3().crossVectors(up, forward).normalize();
         
-        // On utilise 'width' défini un peu plus haut dans ton code pour calculer le décalage (ex: à 60% de la demi-largeur)
-        const lightOffset = (width * 0.5) * 0.6; 
+        // Calcul sécurisé de la largeur basé sur la géométrie du wagon
+        if(!r.instancedMesh.geometry.boundingBox) r.instancedMesh.geometry.computeBoundingBox();
+        const bbox = r.instancedMesh.geometry.boundingBox;
+        const vehicleWidth = bbox ? (bbox.max.x - bbox.min.x) : 2;
+        const lightOffset = (vehicleWidth * 0.5) * 0.75; // S'arrête avant le bord
 
         if(a.headIdx>=0){
           // Phare avant GAUCHE
