@@ -1103,36 +1103,47 @@ window.addEventListener('keydown', (ev)=>{
    autre matériau qui ressort noir/sans texture (signe classique d'un
    shader procédural non exporté) reçoit un repli neutre générique.
    ============================================================ */
-function makeStripeTexture(){
-  // Un seul motif "moitié blanche / moitié transparente" : c'est texture.repeat
-  // (réglable indépendamment par axe) qui crée l'alternance de bandes, pas le
-  // canvas — évite un double effet d'échelle (motif × répétition) difficile à
-  // calibrer.
-  const size = 64;
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,size,size); // transparent
-  ctx.fillStyle = '#f2f2f0';
-  ctx.fillRect(0, 0, size/2, size); // moitié blanche opaque
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.center.set(0.5,0.5);
-  return tex;
-}
 const crosswalkMaterials = { x:null, y:null }; // référencés par le panneau admin pour ajustement live
-// axis 'y' (ppy) : bandes répétées le long de U (repeat.x), piéton marche selon X.
-// axis 'x' (ppx) : bandes répétées le long de V (repeat.y), piéton marche selon Z.
-// Ce sont des valeurs de départ raisonnables : le panneau admin (mode ?admin=1)
-// permet d'ajuster répétition U/V et rotation en direct sans toucher au code,
-// le temps de caler exactement sur l'UV réelle du mesh Blender.
+// L'alternance des bandes N'EST PLUS pilotée par l'UV du mesh (texture.repeat) :
+// rien ne garantit que l'unwrap Blender soit aligné avec X ou Y du monde, ce qui
+// donnait des bandes mal orientées / mal calées selon les meshes.
+// À la place, on calcule l'alternance directement à partir de la POSITION LOCALE
+// du vertex dans le shader : le mesh "quartier" exporte ses vertices en
+// coordonnées Blender brutes (X, Y horizontal, Z up) — la rotation Z-up→Y-up
+// n'est appliquée qu'au niveau du parent worldRoot, jamais "bakée" dans la
+// géométrie (voir plus haut). Donc position.x / position.y en shader
+// correspondent exactement aux axes Blender X / Y.
+//
+// Convention (donnée par l'utilisateur) :
+//  - ppx : bandes alternées le long de l'axe X (répétition selon X), le piéton
+//          marche vers Y → les bandes sont donc allongées selon Y.
+//  - ppy : bandes alternées le long de l'axe Y (répétition selon Y), le piéton
+//          marche vers X → les bandes sont donc allongées selon X.
 function makeCrosswalkMaterial(axis, name){
-  const tex = makeStripeTexture();
-  if(axis==='x') tex.repeat.set(1, 8); else tex.repeat.set(8, 1);
+  const uniforms = {
+    uPeriod: { value: 0.7 }, // largeur d'une paire "bande blanche + espace" en unités de scène
+    uDuty:   { value: 0.5 }  // proportion de blanc dans la période (0.5 = bandes ≈ espaces)
+  };
   const mat = new THREE.MeshStandardMaterial({
-    name, map:tex, alphaMap:tex, transparent:false, alphaTest:0.5,
-    roughness:0.9, metalness:0.0, side:THREE.DoubleSide
+    name, color: 0x16171a, roughness:0.9, metalness:0.0, side:THREE.DoubleSide
   });
+  mat.onBeforeCompile = (shader)=>{
+    shader.uniforms.uPeriod = uniforms.uPeriod;
+    shader.uniforms.uDuty = uniforms.uDuty;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLocalPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLocalPos = position;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLocalPos;\nuniform float uPeriod;\nuniform float uDuty;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+	{
+		float coord = ${axis==='x' ? 'vLocalPos.x' : 'vLocalPos.y'};
+		float phase = mod(coord, uPeriod) / uPeriod;
+		float stripe = step(phase, uDuty);
+		diffuseColor.rgb = mix(vec3(0.086,0.089,0.102), vec3(0.95,0.95,0.94), stripe);
+	}`);
+  };
+  mat.userData.crosswalkUniforms = uniforms;
   crosswalkMaterials[axis] = mat;
   return mat;
 }
@@ -2163,15 +2174,17 @@ function renderVehicleColorControls(){
 }
 renderVehicleColorControls();
 
-// Admin : réglages live des passages piétons (répétition U/V + rotation), car
-// on ne peut pas connaître l'UV réelle du mesh Blender depuis ici — plus rapide
-// de caler ça à l'oeil que de deviner à l'aveugle dans le code.
+// Admin : réglages live des passages piétons (période + largeur des bandes),
+// pilotés directement sur la position locale du vertex (voir makeCrosswalkMaterial)
+// — plus besoin de deviner un repeat U/V, on règle juste la taille réelle en
+// unités de scène.
 function renderCrosswalkControls(){
   const container = document.getElementById('crosswalk-controls');
   if(!container) return;
   container.innerHTML = '';
-  [['y','ppy'], ['x','ppx']].forEach(([axis,label])=>{
+  [['x','ppx (alterne selon X, piéton→Y)'], ['y','ppy (alterne selon Y, piéton→X)']].forEach(([axis,label])=>{
     const mat = crosswalkMaterials[axis];
+    const uni = mat ? mat.userData.crosswalkUniforms : null;
     const box = document.createElement('div');
     box.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
     const title = document.createElement('div');
@@ -2180,28 +2193,25 @@ function renderCrosswalkControls(){
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
 
-    const mkNumber = (val)=>{
+    const mkNumber = (val, step, min)=>{
       const inp = document.createElement('input');
-      inp.type='number'; inp.min=1; inp.max=40; inp.step=1; inp.value=val;
-      inp.style.cssText = 'width:46px;background:var(--ink);border:1px solid #2a3946;color:var(--paper);border-radius:3px;padding:3px 4px;font-size:11px;';
+      inp.type='number'; inp.min=min; inp.max=10; inp.step=step; inp.value=val;
+      inp.style.cssText = 'width:56px;background:var(--ink);border:1px solid #2a3946;color:var(--paper);border-radius:3px;padding:3px 4px;font-size:11px;';
       return inp;
     };
     const labelSpan = (t)=>{ const s=document.createElement('span'); s.textContent=t; s.style.cssText='font-size:10px;color:var(--muted);'; return s; };
 
-    const repU = mkNumber(mat ? mat.map.repeat.x : (axis==='x'?1:8));
-    const repV = mkNumber(mat ? mat.map.repeat.y : (axis==='x'?8:1));
-    const rotBtn = document.createElement('button');
-    rotBtn.className='mini-btn'; rotBtn.textContent='⟳90°'; rotBtn.style.width='auto'; rotBtn.style.padding='0 8px';
-    rotBtn.title = 'Pivote le motif de 90° (si les bandes ne suivent toujours pas le bon axe après ajustement U/V)';
+    const period = mkNumber(uni ? uni.uPeriod.value : 0.7, 0.05, 0.1);
+    const duty = mkNumber(uni ? uni.uDuty.value : 0.5, 0.05, 0.05);
+    duty.max = 0.95;
 
-    if(mat){
-      repU.addEventListener('input', ()=>{ mat.map.repeat.x = parseFloat(repU.value)||1; });
-      repV.addEventListener('input', ()=>{ mat.map.repeat.y = parseFloat(repV.value)||1; });
-      rotBtn.addEventListener('click', ()=>{ mat.map.rotation += Math.PI/2; });
+    if(uni){
+      period.addEventListener('input', ()=>{ uni.uPeriod.value = parseFloat(period.value)||0.7; });
+      duty.addEventListener('input', ()=>{ uni.uDuty.value = parseFloat(duty.value)||0.5; });
     } else {
-      [repU, repV, rotBtn].forEach(el=> el.disabled = true);
+      [period, duty].forEach(el=> el.disabled = true);
     }
-    row.append(labelSpan('U'), repU, labelSpan('V'), repV, rotBtn);
+    row.append(labelSpan('période (m)'), period, labelSpan('% blanc'), duty);
     box.append(title, row);
     container.appendChild(box);
   });
