@@ -1741,6 +1741,10 @@ let routeIdCounter = 1;
 // exactement au même rythme, sans jamais se désynchroniser.
 const WAGON_GAP = 0.4; // mètres entre deux wagons consécutifs
 
+const headlightGeo = new THREE.SphereGeometry(0.14, 8, 8);
+const headlightMat = new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xffffff, emissiveIntensity:2.5 });
+const taillightMat = new THREE.MeshStandardMaterial({ color:0xff1a1a, emissive:0xff1a1a, emissiveIntensity:2.5 });
+
 function createRoute(points, type, name){
   if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
   const cfg = ROUTE_TYPES[type] || ROUTE_TYPES.voiture;
@@ -1760,25 +1764,44 @@ function createRoute(points, type, name){
     const baseT = u/count;
     const speed = cfg.speed * (0.9+Math.random()*0.2);
     for(let w=0;w<wagons;w++){
-      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.scale[2]+WAGON_GAP) });
+      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.scale[2]+WAGON_GAP), wagonIndex: w });
     }
+  }
+
+  // Phares : blancs à l'avant, rouges à l'arrière — jamais pour les piétons.
+  // Pour un train à plusieurs wagons, seul le PREMIER wagon (wagonIndex 0) a
+  // des phares avant, et seul le DERNIER (wagonIndex wagons-1) a des feux
+  // arrière : les wagons du milieu n'en ont aucun.
+  let headInst = null, tailInst = null;
+  if(type !== 'pieton'){
+    let hc=0, tc=0;
+    agents.forEach(a=>{
+      a.headIdx = (a.wagonIndex===0) ? hc++ : -1;
+      a.tailIdx = (a.wagonIndex===wagons-1) ? tc++ : -1;
+    });
+    if(hc>0){ headInst = new THREE.InstancedMesh(headlightGeo, headlightMat, hc); worldRoot.add(headInst); }
+    if(tc>0){ tailInst = new THREE.InstancedMesh(headlightGeo, taillightMat, tc); worldRoot.add(tailInst); }
+  } else {
+    agents.forEach(a=>{ a.headIdx=-1; a.tailIdx=-1; });
   }
 
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
   line.visible = false; // le tracé lui-même reste caché ; seuls les véhicules/piétons animés sont visibles
   worldRoot.add(line);
 
-  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, line, agents };
+  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, headInst, tailInst, scale: cfg.scale, line, agents };
   routes.push(route);
   renderRouteList();
   return route;
 }
 
 const dummy = new THREE.Object3D();
+const lightDummy = new THREE.Object3D();
 function tickAgents(dt){
   for(const r of routes){
     const len = r.curve.getLength();
     if(len<=0) continue;
+    const halfLen = r.scale[2]/2, lightUp = r.scale[1]*0.3, lightSide = r.scale[0]*0.32;
     r.agents.forEach((a,i)=>{
       a.t = (a.t + (a.speed*dt)/len) % 1;
       // le wagon n'est jamais exactement à a.t : il traîne derrière de
@@ -1797,8 +1820,30 @@ function tickAgents(dt){
       }
       dummy.updateMatrix();
       r.instancedMesh.setMatrixAt(i, dummy.matrix);
+
+      if(a.headIdx>=0 || a.tailIdx>=0){
+        const forward = tangent.clone().normalize();
+        const up = new THREE.Vector3(0,1,0);
+        const side = new THREE.Vector3().crossVectors(up, forward).normalize();
+        if(a.headIdx>=0){
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, halfLen*0.95)
+            .addScaledVector(up, lightUp);
+          lightDummy.updateMatrix();
+          r.headInst.setMatrixAt(a.headIdx, lightDummy.matrix);
+        }
+        if(a.tailIdx>=0){
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, -halfLen*0.95)
+            .addScaledVector(up, lightUp);
+          lightDummy.updateMatrix();
+          r.tailInst.setMatrixAt(a.tailIdx, lightDummy.matrix);
+        }
+      }
     });
     r.instancedMesh.instanceMatrix.needsUpdate = true;
+    if(r.headInst) r.headInst.instanceMatrix.needsUpdate = true;
+    if(r.tailInst) r.tailInst.instanceMatrix.needsUpdate = true;
   }
 }
 
@@ -1807,6 +1852,8 @@ function clearRoutes(){
     worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
     r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
     r.line.geometry.dispose(); r.line.material.dispose();
+    if(r.headInst) worldRoot.remove(r.headInst);
+    if(r.tailInst) worldRoot.remove(r.tailInst);
   });
   routes = [];
   renderRouteList();
@@ -1817,6 +1864,8 @@ function deleteRoute(id){
   worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
   r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
   r.line.geometry.dispose(); r.line.material.dispose();
+  if(r.headInst) worldRoot.remove(r.headInst);
+  if(r.tailInst) worldRoot.remove(r.tailInst);
   routes = routes.filter(x=>x.id!==id);
   renderRouteList();
 }
