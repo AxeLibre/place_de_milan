@@ -1825,7 +1825,6 @@ function tickAgents(dt){
 dummy.updateMatrix();
       r.instancedMesh.setMatrixAt(i, dummy.matrix);
 
-      // Récupération de l'état de la nuit
       const nightActive = (typeof isNight !== 'undefined' && isNight) || (typeof nightMode !== 'undefined' && nightMode) || (window.isNight === true);
 
       if(nightActive && (a.headIdx>=0 || a.tailIdx>=0)){
@@ -1833,11 +1832,11 @@ dummy.updateMatrix();
         const up = new THREE.Vector3(0,1,0);
         const side = new THREE.Vector3().crossVectors(up, forward).normalize();
         
-        // Juste milieu pour l'écartement (coefficient 0.42 au lieu de 0.12 ou 0.75)
+        // Valeur strictement entre 0.12 et 0.42 -> 0.28 (juste milieu parfait)
         const estimatedWidth = Math.max(halfLen * 0.8, 1.8);
-        const lightOffset = estimatedWidth * 0.42; 
+        const lightOffset = estimatedWidth * 0.28; 
 
-        // Phares bien visibles mais proportionnés
+        // Phares bien visibles
         lightDummy.scale.set(1.8, 1.8, 1.8);
 
         if(a.headIdx>=0){
@@ -1894,11 +1893,11 @@ dummy.updateMatrix();
     r.instancedMesh.instanceMatrix.needsUpdate = true;
     if(r.headInst) {
       r.headInst.instanceMatrix.needsUpdate = true;
-      r.headInst.frustumCulled = false; // Empêche les phares de disparaître quand la caméra zoome près du sol
+      r.headInst.frustumCulled = false;
     }
     if(r.tailInst) {
       r.tailInst.instanceMatrix.needsUpdate = true;
-      r.tailInst.frustumCulled = false; // Empêche les feux arrières de disparaître au zoom
+      r.tailInst.frustumCulled = false;
     }
   }
 }
