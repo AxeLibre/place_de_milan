@@ -334,7 +334,7 @@ scene.environment = dayEnvTexture;
 // aucun relief), juste une ambiance plate très sombre plutôt que la pièce
 // "RoomEnvironment" lumineuse utilisée le jour.
 const nightEnvScene = new THREE.Scene();
-nightEnvScene.background = new THREE.Color(0x0d1420);
+nightEnvScene.background = new THREE.Color(0x18243a);
 const nightEnvTexture = pmrem.fromScene(nightEnvScene).texture;
 
 function resize(){
@@ -1614,17 +1614,34 @@ document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
 let siteLights = [];
 function collectSiteLights(){
   siteLights = [];
+  // On sépare point/spot (candela) des directionnelles (lux) : les unités
+  // glTF sont différentes selon le type, on les ramène chacune à une échelle
+  // raisonnable séparément.
+  const pointsSpots = [], directionals = [];
   siteRoot.traverse(o=>{
     if(!o.isLight) return;
-    // Les intensités exportées depuis Blender (candela/lux) sont souvent
-    // hors d'échelle pour la taille de notre scène : sans plafond, une seule
-    // lampe peut cramer toute l'image en blanc. On les ramène à une plage
-    // raisonnable plutôt que de faire confiance aveuglément à la valeur brute.
-    const maxIntensity = (o.isPointLight || o.isSpotLight) ? 20 : 6;
-    if(o.intensity > maxIntensity) o.intensity = maxIntensity;
+    if(o.isPointLight || o.isSpotLight) pointsSpots.push(o);
+    else directionals.push(o);
+  });
+  // IMPORTANT : on ne plafonne plus chaque lampe individuellement (un simple
+  // clamp écrase les écarts d'intensité voulus dans Blender — toutes les
+  // lampes trop fortes finissaient à exactement la même valeur, donc plus
+  // aucune différence entre elles, seule la couleur restait visible). On
+  // calcule un seul facteur d'échelle par groupe, sur la lampe la plus forte,
+  // et on l'applique à toutes : les proportions relatives sont conservées.
+  function scaleGroup(arr, targetMax){
+    if(!arr.length) return;
+    const maxI = Math.max(...arr.map(l=>l.intensity));
+    if(maxI<=0) return;
+    const factor = targetMax / maxI;
+    arr.forEach(l=> l.intensity *= factor);
+  }
+  scaleGroup(pointsSpots, 26);
+  scaleGroup(directionals, 7);
+  [...pointsSpots, ...directionals].forEach(o=>{
     if(o.isPointLight || o.isSpotLight){
-      o.decay = 1.6;
-      o.distance = (o.distance && o.distance>0) ? Math.min(o.distance, 90) : 70;
+      o.decay = 1.4;
+      o.distance = (o.distance && o.distance>0) ? Math.min(o.distance, 110) : 80;
     }
     siteLights.push(o);
   });
@@ -1635,13 +1652,13 @@ const btnNight = document.getElementById('btn-night');
 function setNightMode(night){
   isNight = night;
   sun.visible = !night;
-  sun.intensity = night ? 0.1 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
-  hemiLight.intensity = night ? 0.4 : 0.75;
-  hemiLight.color.setHex(night ? 0x24344f : 0xdfe8ef);
+  sun.intensity = night ? 0.05 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
+  hemiLight.intensity = night ? 0.55 : 0.75;
+  hemiLight.color.setHex(night ? 0x2c405f : 0xdfe8ef);
   scene.environment = night ? nightEnvTexture : dayEnvTexture;
-  renderer.toneMappingExposure = night ? 0.85 : 0.85;
-  scene.background.setHex(night ? 0x080d16 : 0x101820);
-  scene.fog.color.setHex(night ? 0x080d16 : 0x101820);
+  renderer.toneMappingExposure = night ? 1.0 : 0.85;
+  scene.background.setHex(night ? 0x0b1220 : 0x101820);
+  scene.fog.color.setHex(night ? 0x0b1220 : 0x101820);
   siteLights.forEach(l=> l.visible = night);
   btnNight.textContent = night ? '☀️ Jour' : '🌙 Nuit';
 }
