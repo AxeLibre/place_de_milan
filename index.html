@@ -538,6 +538,12 @@ function clearSite(){
 // Extrait le contour XZ réel d'un mesh plat trianglé, en chaînant les arêtes
 // de bord (arêtes utilisées par un seul triangle). Fonctionne aussi pour des
 // emprises concaves (en L, etc.), contrairement à une simple enveloppe convexe.
+// Renvoie `null` si la géométrie n'est pas un contour fermé "propre" (mesh non
+// soudé, doublon non-manifold...) : dans ce cas la boucle obtenue en chaînant
+// à partir d'une arête au hasard ne couvre qu'UNE PARTIE des arêtes de bord —
+// signe qu'il existe en réalité plusieurs boucles déconnectées dans ce même
+// mesh (ex. objet dupliqué "à plat" sur lui-même dans Blender). Mieux vaut
+// alors écarter cette pièce que produire un contour partiel/faux.
 function extractBoundaryXZ(mesh){
   mesh.updateWorldMatrix(true,false);
   // Fusionne les sommets dupliqués/quasi-coïncidents (ex. une face ajoutée dans
@@ -571,7 +577,7 @@ function extractBoundaryXZ(mesh){
     });
   }
   const boundaryEdges = [...edgeCount.values()].filter(e=>e.count===1);
-  if(!boundaryEdges.length) return convexHullXZ(dedupe(world));
+  if(!boundaryEdges.length) return null;
   // chaîne les arêtes de bord en une boucle ordonnée
   const adjacency = new Map();
   boundaryEdges.forEach(e=>{
@@ -591,8 +597,11 @@ function extractBoundaryXZ(mesh){
     loopIdx.push(next); visited.add(next);
     prev = current; current = next;
   }
-  const loop = loopIdx.map(i=>world[i]);
-  return loop.length>=3 ? loop : convexHullXZ(dedupe(world));
+  // Si la boucle trouvée ne couvre pas TOUS les sommets de bord, c'est qu'il
+  // existe une ou plusieurs autres boucles déconnectées dans ce mesh (mesh
+  // non-manifold / doublon) : le contour obtenu serait partiel et donc faux.
+  if(loopIdx.length < 3 || loopIdx.length < adjacency.size) return null;
+  return loopIdx.map(i=>world[i]);
 }
 function dedupe(pts){
   const uniq = [];
@@ -767,16 +776,44 @@ function computeBuildZoneFromParts(parts){
   // enveloppe convexe : l'enveloppe convexe "gonfle" toute forme concave (en L,
   // en U, avec une échancrure...) et la zone constructible affichée ne colle
   // alors plus au polygone d'implantation réellement modélisé dans Blender.
-  if(parts.length === 1){
-    return extractBoundaryXZ(parts[0]);
+  //
+  // Chaque pièce peut être un mesh "propre" (contour fermé en une seule boucle
+  // -> extractBoundaryXZ renvoie ce contour exact) ou une géométrie cassée/
+  // non-manifold (ex. doublon "Polygone_Implantation.002" resté par erreur
+  // dans le fichier Blender, avec des faces non soudées) -> extractBoundaryXZ
+  // renvoie alors `null` plutôt qu'un contour partiel et donc faux.
+  const validLoops = [];
+  const rejected = [];
+  parts.forEach(mesh=>{
+    const loop = extractBoundaryXZ(mesh);
+    if(loop) validLoops.push(loop);
+    else rejected.push(mesh.name);
+  });
+  if(rejected.length){
+    console.warn('[Place de Milan] Pièce(s) "polygone_implantation" ignorée(s) car géométrie non-manifold (mesh non soudé / doublon) :', rejected.join(', '));
   }
-  // Plusieurs pièces distinctes (ex. "Polygone_Implantation.001" ajouté à part) :
-  // on extrait le contour réel de CHAQUE pièce, puis on ne prend l'enveloppe
-  // convexe globale qu'en tout dernier recours pour les souder entre elles —
-  // cas rare, la grande majorité des maquettes n'ayant qu'une seule pièce.
-  const pts = [];
-  parts.forEach(mesh=>{ pts.push(...extractBoundaryXZ(mesh)); });
-  return convexHullXZ(dedupe(pts));
+  computeBuildZoneFromParts.lastRejected = rejected; // exposé pour affichage dans la bannière de statut
+  if(validLoops.length === 1) return validLoops[0];
+  if(validLoops.length > 1){
+    // Plusieurs pièces distinctes ET valides (ex. une véritable extension du
+    // polygone ajoutée à part, "Polygone_Implantation.001") : on ne peut pas
+    // faire l'union exacte de plusieurs polygones ici, donc on soude leurs
+    // contours par une enveloppe convexe globale — cas rare en pratique.
+    return convexHullXZ(dedupe(validLoops.flat()));
+  }
+  // Aucune pièce n'a donné de contour exploitable : dernier recours, on prend
+  // l'enveloppe convexe de tous les sommets bruts (mieux qu'une zone vide).
+  const rawPts = [];
+  parts.forEach(mesh=>{
+    mesh.updateWorldMatrix(true,false);
+    const pos = mesh.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    for(let i=0;i<pos.count;i++){
+      v.fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
+      rawPts.push({x:v.x, z:v.z});
+    }
+  });
+  return convexHullXZ(dedupe(rawPts));
 }
 function onSiteLoaded(){
   const polygonParts = findAllByNameCI(siteRoot, 'polygone_implantation');
@@ -810,6 +847,9 @@ function onSiteLoaded(){
 
   const bits = [];
   bits.push(polygonMesh ? `polygone : ${buildZone.length} sommets` : `<span style="color:var(--com)">polygone d'implantation introuvable</span>`);
+  if(computeBuildZoneFromParts.lastRejected && computeBuildZoneFromParts.lastRejected.length){
+    bits.push(`<span style="color:var(--com)">pièce(s) ignorée(s) (géométrie non soudée) : ${computeBuildZoneFromParts.lastRejected.join(', ')}</span>`);
+  }
   bits.push(hallMesh ? `hall : ok` : `<span style="color:var(--com)">hall introuvable</span>`);
   bits.push(quartierGroup ? `quartier : ok` : `<span style="color:var(--com)">quartier introuvable</span>`);
   if(routeReport.found.length) bits.push(`${routeReport.found.length} voie(s) importée(s) : ${routeReport.found.join(', ')}`);
