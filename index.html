@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <style>
   :root{
     --ink:#101820;
@@ -60,6 +61,58 @@
     margin-left:auto;text-align:right;max-width:280px;
   }
   #status-line b{color:var(--accent);}
+
+  /* ---------- Vertical toolbar (left edge, SimCity-style) ---------- */
+  #toolbar-left{
+    position:absolute;top:84px;left:16px;z-index:6;
+    display:flex;flex-direction:column;gap:6px;
+    background:rgba(24,36,48,.9);border:1px solid #2a3946;border-radius:8px;
+    padding:8px;backdrop-filter:blur(6px);
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #toolbar-left .tool-btn{
+    justify-content:flex-start;width:180px;
+  }
+  #toolbar-left .tool-sep{height:1px;background:#2a3946;margin:4px 2px;}
+  .tool-btn svg{width:16px;height:16px;flex-shrink:0;stroke-width:2;}
+  .tool-btn .tool-btn-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* ---------- Help ("?") button, bottom-left ---------- */
+  #btn-help{
+    position:absolute;bottom:22px;left:16px;z-index:6;
+    width:38px;height:38px;border-radius:50%;
+    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;
+    transition:all .12s ease;
+  }
+  #btn-help:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px);}
+
+  /* ---------- About modal ---------- */
+  #about-overlay{
+    position:fixed;inset:0;z-index:50;display:none;
+    align-items:center;justify-content:center;
+    background:rgba(9,13,17,.45);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  }
+  #about-overlay.show{display:flex;}
+  #about-modal{
+    width:min(420px, 90vw);background:var(--ink-2);border:1px solid #2a3946;
+    border-radius:10px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.5);
+    animation:about-pop .16s ease;
+  }
+  @keyframes about-pop{from{opacity:0;transform:scale(.96) translateY(6px);}to{opacity:1;transform:none;}}
+  #about-modal h2{
+    margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:18px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  #about-modal .about-sub{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px;}
+  #about-modal p{font-size:13px;line-height:1.6;color:var(--paper);margin:0 0 12px;}
+  #about-modal ul{margin:0 0 14px;padding-left:18px;font-size:12.5px;line-height:1.7;color:var(--paper);}
+  #about-close{
+    background:none;border:none;color:var(--muted);cursor:pointer;
+    width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:4px;
+  }
+  #about-close:hover{color:var(--paper);background:#0b1116;}
 
   /* ---------- Draw hint ---------- */
   #draw-hint{
@@ -192,13 +245,32 @@
   <div id="viewport">
     <div id="ribbon">
       <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
-      <button class="tool-btn" id="btn-draw">+ Nouveau bâtiment</button>
-      <button class="tool-btn ghost" id="btn-tree">+ Arbre</button>
       <button class="tool-btn ghost admin-only" id="btn-load-glb">Charger maquette (.glb)</button>
-      <button class="tool-btn ghost" id="btn-paint-grass">🖌 Gazon</button>
-      <button class="tool-btn ghost" id="btn-toggle-grid">Grille</button>
-      <button class="tool-btn ghost" id="btn-night">🌙 Nuit</button>
+      <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légende</span></button>
+      <button class="tool-btn ghost" id="btn-night"><i data-lucide="moon"></i><span class="tool-btn-label">Nuit</span></button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
+    </div>
+    <div id="toolbar-left">
+      <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
+      <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
+      <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
+      <div class="tool-sep"></div>
+      <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
+    </div>
+    <button id="btn-help" title="À propos">?</button>
+    <div id="about-overlay">
+      <div id="about-modal">
+        <h2>Place de Milan <button id="about-close" title="Fermer"><i data-lucide="x"></i></button></h2>
+        <div class="about-sub">Atelier volumétrique · Lyon Part-Dieu</div>
+        <p>Cet outil permet d'esquisser des scénarios de construction sur la maquette 3D de la Place de Milan, directement dans le navigateur.</p>
+        <ul>
+          <li><b>+ Nouveau bâtiment</b> : tracez une emprise au sol, elle est contrainte au polygone d'implantation.</li>
+          <li><b>Arbre / Gazon</b> : plantez des arbres et peignez des zones végétalisées.</li>
+          <li><b>Légende</b> : bascule entre la coloration par usage (résidentiel, bureaux…) et un rendu neutre en verre.</li>
+          <li><b>Exporter / Sauver</b> : générez une image PNG ou sauvegardez votre projet en JSON.</li>
+        </ul>
+        <p style="color:var(--muted);font-size:11.5px;">Maquette 3D et voies importées depuis Blender.</p>
+      </div>
     </div>
     <div id="compass">N↑</div>
     <div id="site-status-banner"></div>
@@ -292,6 +364,25 @@ const USAGE_LABELS = {
   services: "Services"
 };
 const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
+
+// Légende des usages : quand désactivée, tous les bâtiments sont affichés avec
+// un matériau "verre" neutre (façade vitrée) plutôt que la couleur par usage —
+// pratique pour juger des volumes/masses sans être distrait par les couleurs.
+let legendEnabled = true;
+function glassMaterialFor(editing){
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xaecbe0,
+    metalness: 0.1,
+    roughness: 0.12,
+    transmission: 0.55,
+    thickness: 0.6,
+    ior: 1.4,
+    reflectivity: 0.5,
+    clearcoat: 0.3,
+    transparent: true,
+    opacity: editing ? 0.2 : 0.85
+  });
+}
 
 /* ============================================================
    SCENE
@@ -672,16 +763,19 @@ function findAllByNameCI(root, namePrefix){
 // séparés) au profit d'une méthode qui NE PEUT PAS laisser une zone de côté :
 // l'enveloppe convexe inclut par construction tous les points fournis.
 function computeBuildZoneFromParts(parts){
+  // On réutilise extractBoundaryXZ (chaînage des arêtes de bord) plutôt qu'une
+  // enveloppe convexe : l'enveloppe convexe "gonfle" toute forme concave (en L,
+  // en U, avec une échancrure...) et la zone constructible affichée ne colle
+  // alors plus au polygone d'implantation réellement modélisé dans Blender.
+  if(parts.length === 1){
+    return extractBoundaryXZ(parts[0]);
+  }
+  // Plusieurs pièces distinctes (ex. "Polygone_Implantation.001" ajouté à part) :
+  // on extrait le contour réel de CHAQUE pièce, puis on ne prend l'enveloppe
+  // convexe globale qu'en tout dernier recours pour les souder entre elles —
+  // cas rare, la grande majorité des maquettes n'ayant qu'une seule pièce.
   const pts = [];
-  parts.forEach(mesh=>{
-    mesh.updateWorldMatrix(true,false);
-    const pos = mesh.geometry.attributes.position;
-    const v = new THREE.Vector3();
-    for(let i=0;i<pos.count;i++){
-      v.fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
-      pts.push({x:v.x, z:v.z});
-    }
-  });
+  parts.forEach(mesh=>{ pts.push(...extractBoundaryXZ(mesh)); });
   return convexHullXZ(dedupe(pts));
 }
 function onSiteLoaded(){
@@ -868,7 +962,7 @@ function startDraw(){
   drawing = true; drawPoints = [];
   clearMarkers();
   btnDraw.classList.add('active');
-  btnDraw.textContent = 'Dessin en cours…';
+  btnDraw.querySelector('.tool-btn-label').textContent = 'Dessin en cours…';
   drawHint.classList.add('show');
   controls.enabled = false; // left click reserved for placing points while drawing
 }
@@ -876,7 +970,7 @@ function cancelDraw(){
   drawing = false; drawPoints = [];
   clearMarkers();
   btnDraw.classList.remove('active');
-  btnDraw.textContent = '+ Nouveau bâtiment';
+  btnDraw.querySelector('.tool-btn-label').textContent = 'Nouveau bâtiment';
   drawHint.classList.remove('show');
   controls.enabled = true;
 }
@@ -1105,14 +1199,14 @@ const btnTree = document.getElementById('btn-tree');
 function startTreeTool(){
   if(drawing) return;
   treePlacing = true;
-  btnTree.classList.add('active'); btnTree.textContent = 'Arbre : cliquez le polygone…';
+  btnTree.classList.add('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Cliquez le polygone…';
   drawHint.classList.add('show');
   drawHintText.textContent = "Cliquez dans le polygone d'implantation pour planter un arbre · recliquez un arbre pour le retirer (Échap pour arrêter)";
   controls.enabled = false;
 }
 function stopTreeTool(){
   treePlacing = false;
-  btnTree.classList.remove('active'); btnTree.textContent = '+ Arbre';
+  btnTree.classList.remove('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Arbre';
   drawHint.classList.remove('show');
   controls.enabled = true;
 }
@@ -1234,13 +1328,13 @@ const btnGrass = document.getElementById('btn-paint-grass');
 function startGrassTool(){
   if(drawing || treePlacing) return;
   grassPainting = true;
-  btnGrass.classList.add('active'); btnGrass.textContent = 'Gazon : glissez pour peindre…';
+  btnGrass.classList.add('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Glissez pour peindre…';
   drawHint.classList.add('show');
   drawHintText.textContent = "Glissez sur la place pour peindre du gazon · clic droit pour effacer (Échap pour arrêter)";
 }
 function stopGrassTool(){
   grassPainting = false;
-  btnGrass.classList.remove('active'); btnGrass.textContent = '🖌 Gazon';
+  btnGrass.classList.remove('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Gazon';
   drawHint.classList.remove('show');
 }
 btnGrass.addEventListener('click', ()=> grassPainting ? stopGrassTool() : startGrassTool());
@@ -1329,11 +1423,13 @@ function rebuildMesh(b){
     const usage = usageAtFloor(b, f);
     const geo = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_HEIGHT, bevelEnabled:false, curveSegments:1 });
     geo.rotateX(-Math.PI/2);
-    const mat = new THREE.MeshStandardMaterial({
-      color: USAGE_COLORS[usage],
-      roughness: 0.75, metalness: 0.05,
-      transparent: editing, opacity: editing ? 0.25 : 1.0
-    });
+    const mat = legendEnabled
+      ? new THREE.MeshStandardMaterial({
+          color: USAGE_COLORS[usage],
+          roughness: 0.75, metalness: 0.05,
+          transparent: editing, opacity: editing ? 0.25 : 1.0
+        })
+      : glassMaterialFor(editing);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.y = (f-1)*FLOOR_HEIGHT;
     mesh.castShadow = !editing; mesh.receiveShadow = true;
@@ -1596,10 +1692,37 @@ function focusOn(b){
 /* ============================================================
    GRID TOGGLE
    ============================================================ */
-document.getElementById('btn-toggle-grid').addEventListener('click', ()=>{
+/* ============================================================
+   LÉGENDE / MATÉRIAU VERRE
+   ============================================================ */
+const btnToggleLegend = document.getElementById('btn-toggle-legend');
+btnToggleLegend.classList.add('active');
+btnToggleLegend.addEventListener('click', ()=>{
+  legendEnabled = !legendEnabled;
+  btnToggleLegend.classList.toggle('active', legendEnabled);
+  btnToggleLegend.querySelector('.tool-btn-label').textContent = legendEnabled ? 'Légende' : 'Verre';
+  document.querySelectorAll('.legend-item').forEach(el=> el.style.opacity = legendEnabled ? '1' : '.35');
+  rebuildAll();
+});
+
+/* ============================================================
+   MODALE À PROPOS
+   ============================================================ */
+const aboutOverlay = document.getElementById('about-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> aboutOverlay.classList.add('show'));
+document.getElementById('about-close').addEventListener('click', ()=> aboutOverlay.classList.remove('show'));
+aboutOverlay.addEventListener('click', (e)=>{ if(e.target===aboutOverlay) aboutOverlay.classList.remove('show'); });
+window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && aboutOverlay.classList.contains('show')) aboutOverlay.classList.remove('show'); });
+
+if(window.lucide) lucide.createIcons();
+
+const btnToggleGrid = document.getElementById('btn-toggle-grid');
+btnToggleGrid.classList.add('active');
+btnToggleGrid.addEventListener('click', ()=>{
   gridVisible = !gridVisible;
   gridGroup.visible = gridVisible;
   ilotOutline.visible = gridVisible;
+  btnToggleGrid.classList.toggle('active', gridVisible);
 });
 
 /* ============================================================
@@ -1666,7 +1789,9 @@ function setNightMode(night){
   scene.background.setHex(night ? 0x0b1220 : 0x101820);
   scene.fog.color.setHex(night ? 0x0b1220 : 0x101820);
   siteLights.forEach(l=> l.visible = night);
-  btnNight.textContent = night ? '☀️ Jour' : '🌙 Nuit';
+  btnNight.querySelector('.tool-btn-label').textContent = night ? 'Jour' : 'Nuit';
+  btnNight.querySelector('i').setAttribute('data-lucide', night ? 'sun' : 'moon');
+  if(window.lucide) lucide.createIcons();
 }
 btnNight.addEventListener('click', ()=> setNightMode(!isNight));
 
