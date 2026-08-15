@@ -1829,12 +1829,9 @@ dummy.updateMatrix();
         const forward = tangent.clone().normalize();
         const up = new THREE.Vector3(0,1,0);
         const side = new THREE.Vector3().crossVectors(up, forward).normalize();
-
-        // Exemple si tu connais la largeur totale du wagon (ex: sizeX)
-        const halfWidth = (typeof sizeX !== 'undefined' ? sizeX : 2) * 0.5;
         
-        // Décalage pour placer les phares de chaque côté sans dépasser (ex: à 60% de la demi-largeur)
-        const lightOffset = halfWidth * 0.6; 
+        // On utilise 'width' défini un peu plus haut dans ton code pour calculer le décalage (ex: à 60% de la demi-largeur)
+        const lightOffset = (width * 0.5) * 0.6; 
 
         if(a.headIdx>=0){
           // Phare avant GAUCHE
