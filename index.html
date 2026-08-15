@@ -1825,18 +1825,20 @@ function tickAgents(dt){
 dummy.updateMatrix();
       r.instancedMesh.setMatrixAt(i, dummy.matrix);
 
-      if(a.headIdx>=0 || a.tailIdx>=0){
+      // Récupération de l'état de la nuit depuis le bouton ou la variable du script (ex: isNight ou nightMode)
+      const nightActive = (typeof isNight !== 'undefined' && isNight) || (typeof nightMode !== 'undefined' && nightMode) || (window.isNight === true);
+
+      if(nightActive && (a.headIdx>=0 || a.tailIdx>=0)){
         const forward = tangent.clone().normalize();
         const up = new THREE.Vector3(0,1,0);
         const side = new THREE.Vector3().crossVectors(up, forward).normalize();
         
-        // Estimation robuste de la largeur basée sur la longueur (halfLen) 
-        // ou repli sur une largeur standard si halfLen est petit (ex: voitures ~ 1.8m de large, trams/bus ~ 2.4m)
+        // Largeur estimée et décalage réduit pour que les phares de chaque paire soient bien rapprochés au centre
         const estimatedWidth = Math.max(halfLen * 0.8, 1.8);
-        const lightOffset = estimatedWidth * 0.42; // Juste assez écarté pour faire 2 phares distincts sans dépasser
+        const lightOffset = estimatedWidth * 0.12; // Très rapprochés l'un de l'autre
 
-        // On grossit explicitement la taille des phares pour qu'ils soient bien visibles (voitures, bus, trams)
-        lightDummy.scale.set(1.8, 1.8, 1.8);
+        // Phares bien plus gros
+        lightDummy.scale.set(2.2, 2.2, 2.2);
 
         if(a.headIdx>=0){
           // Phare avant GAUCHE
@@ -1874,8 +1876,19 @@ dummy.updateMatrix();
           r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
         }
         
-        // On remet l'échelle à 1 pour ne pas impacter le reste par sécurité
         lightDummy.scale.set(1, 1, 1);
+      } else if (a.headIdx>=0 || a.tailIdx>=0) {
+        // Éteints le jour (échelle à 0 pour les masquer proprement)
+        lightDummy.scale.set(0, 0, 0);
+        lightDummy.updateMatrix();
+        if(a.headIdx>=0) {
+          r.headInst.setMatrixAt(a.headIdx, lightDummy.matrix);
+          r.headInst.setMatrixAt(a.headIdx + 1, lightDummy.matrix);
+        }
+        if(a.tailIdx>=0) {
+          r.tailInst.setMatrixAt(a.tailIdx, lightDummy.matrix);
+          r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
+        }
       }
     });
     r.instancedMesh.instanceMatrix.needsUpdate = true;
