@@ -1768,17 +1768,21 @@ function createRoute(points, type, name){
     }
   }
 
-  // Phares : blancs à l'avant, rouges à l'arrière — jamais pour les piétons.
-  // Pour un train à plusieurs wagons, seul le PREMIER wagon (wagonIndex 0) a
-  // des phares avant, et seul le DERNIER (wagonIndex wagons-1) a des feux
-  // arrière : les wagons du milieu n'en ont aucun.
+// Phares : 2 blancs à l'avant, 2 rouges à l'arrière — jamais pour les piétons.
+  // Seul le PREMIER wagon a des phares avant, et seul le DERNIER a des feux arrière.
+  // Chaque wagon concerné possède désormais 2 instances (gauche et droite).
   let headInst = null, tailInst = null;
   if(type !== 'pieton'){
     let hc=0, tc=0;
     agents.forEach(a=>{
-      a.headIdx = (a.wagonIndex===0) ? hc++ : -1;
-      a.tailIdx = (a.wagonIndex===wagons-1) ? tc++ : -1;
+      // On multiplie par 2 car chaque wagon valide a maintenant 2 phares (gauche et droite)
+      a.headIdx = (a.wagonIndex===0) ? hc : -1;
+      if(a.wagonIndex===0) hc += 2;
+
+      a.tailIdx = (a.wagonIndex===wagons-1) ? tc : -1;
+      if(a.wagonIndex===wagons-1) tc += 2;
     });
+    // On crée un InstancedMesh avec une capacité doublée (hc et tc représentent le nombre total de phares)
     if(hc>0){ headInst = new THREE.InstancedMesh(headlightGeo, headlightMat, hc); worldRoot.add(headInst); }
     if(tc>0){ tailInst = new THREE.InstancedMesh(headlightGeo, taillightMat, tc); worldRoot.add(tailInst); }
   } else {
@@ -1818,26 +1822,51 @@ function tickAgents(dt){
         const side = new THREE.Vector3(-tangent.z,0,tangent.x);
         dummy.position.addScaledVector(side, lateral);
       }
-      dummy.updateMatrix();
+dummy.updateMatrix();
       r.instancedMesh.setMatrixAt(i, dummy.matrix);
 
       if(a.headIdx>=0 || a.tailIdx>=0){
         const forward = tangent.clone().normalize();
         const up = new THREE.Vector3(0,1,0);
         const side = new THREE.Vector3().crossVectors(up, forward).normalize();
+        
+        // Décalage pour placer les phares de chaque côté sans dépasser (ex: à 60% de la demi-largeur)
+        const lightOffset = halfWidth * 0.6; 
+
         if(a.headIdx>=0){
+          // Phare avant GAUCHE
           lightDummy.position.copy(dummy.position)
-            .addScaledVector(forward, halfLen*0.95)
-            .addScaledVector(up, lightUp);
+            .addScaledVector(forward, halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, -lightOffset);
           lightDummy.updateMatrix();
           r.headInst.setMatrixAt(a.headIdx, lightDummy.matrix);
-        }
-        if(a.tailIdx>=0){
+
+          // Phare avant DROIT
           lightDummy.position.copy(dummy.position)
-            .addScaledVector(forward, -halfLen*0.95)
-            .addScaledVector(up, lightUp);
+            .addScaledVector(forward, halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, lightOffset);
+          lightDummy.updateMatrix();
+          r.headInst.setMatrixAt(a.headIdx + 1, lightDummy.matrix);
+        }
+
+        if(a.tailIdx>=0){
+          // Phare arrière GAUCHE
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, -halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, -lightOffset);
           lightDummy.updateMatrix();
           r.tailInst.setMatrixAt(a.tailIdx, lightDummy.matrix);
+
+          // Phare arrière DROIT
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, -halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, lightOffset);
+          lightDummy.updateMatrix();
+          r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
         }
       }
     });
