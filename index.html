@@ -1629,19 +1629,25 @@ function collectSiteLights(){
   // aucune différence entre elles, seule la couleur restait visible). On
   // calcule un seul facteur d'échelle par groupe, sur la lampe la plus forte,
   // et on l'applique à toutes : les proportions relatives sont conservées.
-  function scaleGroup(arr, targetMax){
+  function scaleGroup(arr, targetMax, minFloor){
     if(!arr.length) return;
     const maxI = Math.max(...arr.map(l=>l.intensity));
-    if(maxI<=0) return;
-    const factor = targetMax / maxI;
-    arr.forEach(l=> l.intensity *= factor);
+    if(maxI>0){
+      const factor = targetMax / maxI;
+      arr.forEach(l=> l.intensity *= factor);
+    }
+    // Un plancher en plus de l'échelle proportionnelle : une lampe d'origine
+    // beaucoup plus faible que la plus forte (ex. simple lampadaire face à un
+    // gros projecteur) resterait sinon quasi invisible même après mise à
+    // l'échelle — on garantit qu'elle reste au moins lisible à l'écran.
+    arr.forEach(l=>{ if(l.intensity < minFloor) l.intensity = minFloor; });
   }
-  scaleGroup(pointsSpots, 26);
-  scaleGroup(directionals, 7);
+  scaleGroup(pointsSpots, 60, 18);
+  scaleGroup(directionals, 10, 3);
   [...pointsSpots, ...directionals].forEach(o=>{
     if(o.isPointLight || o.isSpotLight){
-      o.decay = 1.4;
-      o.distance = (o.distance && o.distance>0) ? Math.min(o.distance, 110) : 80;
+      o.decay = 1.1;
+      o.distance = (o.distance && o.distance>0) ? Math.min(o.distance, 150) : 110;
     }
     siteLights.push(o);
   });
