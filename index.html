@@ -1219,6 +1219,20 @@ function clampPointToPolygon(pt, poly){
   }
   return best;
 }
+// Sommet du polygone le plus proche de `pt`, seulement s'il est à moins de
+// `radius` unités — sert à "aimanter" un sommet de bâtiment directement SUR
+// un vrai sommet du polygone, en copiant ses coordonnées telles quelles
+// (exactement le mécanisme fiable de "Emprise pleine" : une copie directe,
+// aucun calcul de clamp/glissement qui pourrait introduire une imprécision).
+function nearestZoneVertex(pt, zone, radius){
+  let best = null, bestDist = radius;
+  for(const v of zone){
+    const d = Math.hypot(v.x-pt.x, v.z-pt.z);
+    if(d <= bestDist){ bestDist = d; best = v; }
+  }
+  return best ? { x: best.x, z: best.z } : null;
+}
+const VERTEX_SNAP_RADIUS = 4; // unités de scène (~4 m) : assez large pour "attraper" le sommet visé sans viser au pixel près
 // Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
 // reste dans le polygone d'implantation, en échantillonnant chaque arête.
 function polygonFullyInsideZone(pts, zone){
@@ -1351,9 +1365,12 @@ function flashStatus(msg){
   flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
 }
 function addDrawPoint(pt){
-  // Étape 1 : ramène le point visé au bord le plus proche s'il tombe dehors
-  // (évite un clic purement ignoré près de la limite).
-  const target = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
+  // Aimantation directe sur un sommet du polygone si on clique à proximité —
+  // même mécanisme fiable que "Emprise pleine" (copie exacte des coordonnées).
+  const snapped = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
+  // Étape 1 : sinon, ramène le point visé au bord le plus proche s'il tombe
+  // dehors (évite un clic purement ignoré près de la limite).
+  const target = snapped || (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
   // Étape 2 : le SEGMENT reliant le point précédent à celui-ci peut couper un
   // renfoncement concave du polygone même si les deux extrémités sont valides
   // chacune de leur côté (même bug que pour le drag d'un sommet existant). On
@@ -1865,9 +1882,13 @@ window.addEventListener('pointermove', (ev)=>{
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
   const idx = bldgVertexDrag.index;
+  // Aimantation directe sur un sommet du polygone si on s'en approche : même
+  // mécanisme fiable que "Emprise pleine" (copie exacte des coordonnées, pas
+  // de calcul intermédiaire). Prioritaire sur le clamp/glissement ci-dessous.
+  const snapped = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
   // Ramène le point visé au bord le plus proche s'il tombe dehors (évite un
   // rejet sec sur un point isolé).
-  const target = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
+  const target = snapped || (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
   if(buildZone.length>=3){
     // Répare le contour EN TEMPS RÉEL, pas seulement au relâchement : on
     // avait laissé l'ancien slideToValid (recherche dichotomique) actif
