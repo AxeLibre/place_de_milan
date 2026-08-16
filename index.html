@@ -257,6 +257,8 @@
       <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
       <div class="tool-sep"></div>
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
+      <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus quasi-orthographique (angle de champ très réduit) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
+      <button class="tool-btn ghost" id="btn-poly-debug" title="Affiche le numéro de chaque sommet réellement utilisé par le code pour la limite du polygone d'implantation — à comparer directement avec Blender."><i data-lucide="hash"></i><span class="tool-btn-label">Repères sommets</span></button>
     </div>
     <button id="btn-help" title="À propos">?</button>
     <div id="about-overlay">
@@ -442,6 +444,69 @@ controls.maxPolarAngle = Math.PI*0.49;
 controls.minDistance = 15;
 controls.maxDistance = 700;
 
+// ==== Vue plan (quasi-orthographique) ====
+// Avec une SEULE caméra en perspective partagée par tout le code (raycaster,
+// contrôles, rendu), un objet haut à proximité (ex. Hall_Gare, 17 m) peut
+// "pencher" visuellement vers la caméra en vue plongeante et sembler
+// recouvrir une zone au sol qui, en coordonnées réelles, ne le touche pas —
+// un effet de parallaxe qui n'a RIEN à voir avec la logique du polygone
+// (vérifiée séparément), mais qui rend impossible tout jugement fiable
+// "à l'oeil" d'un alignement au sol. Plutôt que de gérer une seconde caméra
+// (OrthographicCamera) qu'il faudrait resynchroniser partout, on réduit
+// fortement le champ de vision et on recule d'autant la caméra : à FOV très
+// faible, la perspective devient visuellement négligeable — un "faux
+// orthographique" qui ne nécessite aucun changement ailleurs dans le code.
+let planViewActive = false;
+let planViewSaved = null;
+function togglePlanView(){
+  planViewActive = !planViewActive;
+  const btn = document.getElementById('btn-plan-view');
+  if(planViewActive){
+    planViewSaved = {
+      fov: camera.fov, far: camera.far,
+      position: camera.position.clone(),
+      target: controls.target.clone(),
+      minPolar: controls.minPolarAngle, maxPolar: controls.maxPolarAngle,
+      minDistance: controls.minDistance, maxDistance: controls.maxDistance,
+    };
+    const tx = controls.target.x, tz = controls.target.z;
+    const planFov = 3; // degrés — assez faible pour que la perspective soit visuellement négligeable
+    const halfFovRad = (planFov/2) * Math.PI/180;
+    const dist = 90 / Math.tan(halfFovRad); // cadrage confortable (≈90 m de demi-largeur visible)
+    camera.fov = planFov;
+    camera.far = Math.max(camera.far, dist + 500);
+    camera.position.set(tx, dist, tz + 0.01); // léger décalage en z pour éviter un gimbal lock (visée pile verticale)
+    controls.target.set(tx, 0, tz);
+    controls.minPolarAngle = 0; controls.maxPolarAngle = 0; // verrouille la vue à la verticale : plus de bascule possible
+    controls.minDistance = dist*0.1; controls.maxDistance = dist*4; // le zoom molette reste utilisable, toujours en quasi-ortho
+    camera.updateProjectionMatrix();
+    controls.update();
+    btn.classList.add('active');
+  } else if(planViewSaved){
+    camera.fov = planViewSaved.fov; camera.far = planViewSaved.far;
+    camera.position.copy(planViewSaved.position);
+    controls.target.copy(planViewSaved.target);
+    controls.minPolarAngle = planViewSaved.minPolar; controls.maxPolarAngle = planViewSaved.maxPolar;
+    controls.minDistance = planViewSaved.minDistance; controls.maxDistance = planViewSaved.maxDistance;
+    camera.updateProjectionMatrix();
+    controls.update();
+    btn.classList.remove('active');
+    planViewSaved = null;
+  }
+}
+document.getElementById('btn-plan-view').addEventListener('click', togglePlanView);
+const btnPolyDebug = document.getElementById('btn-poly-debug');
+btnPolyDebug.addEventListener('click', ()=>{
+  polyDebugGroup.visible = !polyDebugGroup.visible;
+  btnPolyDebug.classList.toggle('active', polyDebugGroup.visible);
+  if(polyDebugGroup.visible){
+    // Donne aussi la liste complète en texte (copiable), utile pour comparer
+    // chiffre par chiffre avec les coordonnées lues dans Blender.
+    console.table(buildZone.map((p,i)=>({index:i, x:p.x.toFixed(3), z:p.z.toFixed(3)})));
+    flashStatus(`${buildZone.length} sommets affichés — détail dans la console (F12)`);
+  }
+});
+
 // Lighting — soft overcast "plan de présentation" look
 const hemiLight = new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.75);
 scene.add(hemiLight);
@@ -489,6 +554,46 @@ const ilotOutline = new THREE.Line(
 );
 ilotOutline.computeLineDistances();
 groundGroup.add(ilotOutline);
+
+// ==== Repères de debug sur les sommets de Polygone_Implantation ====
+// Affiche, DIRECTEMENT dans la scène, le numéro de chaque sommet que le code
+// utilise réellement pour buildZone — pour comparer avec Blender sans se fier
+// à une interprétation visuelle d'une capture d'écran (caméra, perspective,
+// etc.). Un sprite = un chiffre lisible même de loin, orienté face caméra.
+function makeIndexSprite(text){
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(15,20,15,0.85)';
+  ctx.beginPath(); ctx.arc(size/2,size/2,size/2-4,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#7CFC98'; ctx.lineWidth = 6; ctx.stroke();
+  ctx.fillStyle = '#7CFC98';
+  ctx.font = 'bold 64px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, size/2, size/2+4);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map:tex, depthTest:false, transparent:true });
+  const spr = new THREE.Sprite(mat);
+  spr.scale.set(3.4,3.4,1);
+  spr.renderOrder = 999;
+  return spr;
+}
+const polyDebugGroup = new THREE.Group();
+polyDebugGroup.visible = false;
+groundGroup.add(polyDebugGroup);
+function rebuildPolyDebugMarkers(){
+  polyDebugGroup.clear();
+  buildZone.forEach((p,i)=>{
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.4,10,10), new THREE.MeshBasicMaterial({color:0x7CFC98, depthTest:false}));
+    dot.position.set(p.x, 0.3, p.z);
+    dot.renderOrder = 998;
+    polyDebugGroup.add(dot);
+    const label = makeIndexSprite(String(i));
+    label.position.set(p.x, 3.2, p.z);
+    polyDebugGroup.add(label);
+  });
+}
 
 let gridVisible = true;
 
@@ -629,6 +734,7 @@ function updateBuildZoneVisual(){
   ilotOutline.geometry = geo;
   ilotOutline.computeLineDistances();
   groundGroup.add(ilotOutline);
+  rebuildPolyDebugMarkers();
   rebuildGrid();
 }
 
