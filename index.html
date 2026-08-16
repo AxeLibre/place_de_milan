@@ -252,6 +252,7 @@
     </div>
     <div id="toolbar-left">
       <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
+      <button class="tool-btn ghost" id="btn-fill-polygon" title="Crée un bâtiment dont l'emprise reprend exactement le polygone d'implantation — aucun tracé manuel, donc aucun écart possible avec la limite réelle."><i data-lucide="maximize"></i><span class="tool-btn-label">Emprise pleine</span></button>
       <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
       <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
       <div class="tool-sep"></div>
@@ -1087,6 +1088,23 @@ btnDraw.addEventListener('click', ()=>{
   drawing ? cancelDraw() : startDraw();
 });
 
+// "Emprise pleine" : crée un bâtiment dont l'emprise est EXACTEMENT buildZone
+// (les points déjà utilisés pour contraindre les tracés manuels), donc sans
+// passer par un clic-par-clic à la main qui laisse toujours un léger retrait
+// par rapport à la vraie limite du polygone d'implantation.
+const btnFillPolygon = document.getElementById('btn-fill-polygon');
+btnFillPolygon.addEventListener('click', ()=>{
+  if(drawing) cancelDraw();
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(buildZone.length<3){
+    flashStatus("Polygone d'implantation introuvable — impossible de créer une emprise pleine");
+    return;
+  }
+  createBuilding(buildZone.map(p=>({x:p.x, z:p.z})));
+  flashStatus("Bâtiment créé sur l'emprise complète du polygone");
+});
+
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!drawing) return;
   const pt = groundPointFromEvent(ev);
@@ -1675,13 +1693,23 @@ function renderList(){
     const editBtn = document.createElement('button');
     editBtn.className='small-action'; editBtn.textContent = editingBuildingId===b.id ? 'Terminer' : 'Modifier la forme';
     editBtn.addEventListener('click', ()=> editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b));
+    const fillBtn = document.createElement('button');
+    fillBtn.className='small-action'; fillBtn.textContent='Étendre au polygone';
+    fillBtn.title = "Recale l'emprise de ce bâtiment exactement sur le polygone d'implantation (supprime tout écart dû à un tracé manuel).";
+    fillBtn.addEventListener('click', ()=>{
+      if(buildZone.length<3) return;
+      b.points = buildZone.map(p=>({x:p.x, z:p.z}));
+      rebuildMesh(b);
+      if(editingBuildingId===b.id) rebuildBldgVertexHandles(b);
+      flashStatus("Emprise recalée sur le polygone d'implantation");
+    });
     const focusBtn = document.createElement('button');
     focusBtn.className='small-action'; focusBtn.textContent='Centrer la vue';
     focusBtn.addEventListener('click', ()=> focusOn(b));
     const delBtn = document.createElement('button');
     delBtn.className='small-action danger'; delBtn.textContent='Supprimer';
     delBtn.addEventListener('click', ()=> deleteBuilding(b.id));
-    actions.append(editBtn, focusBtn, delBtn);
+    actions.append(editBtn, fillBtn, focusBtn, delBtn);
     body.appendChild(actions);
 
     card.append(head, meta, body);
