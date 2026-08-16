@@ -1141,6 +1141,88 @@ function slideToValid(from, to, validAtT){
   }
   return best;
 }
+// ==== Réparation "définitive" d'une arête contre un polygone concave ====
+// slideToValid() ci-dessus suppose qu'une arête ne bascule qu'une fois entre
+// valide/invalide en avançant de `from` vers `to`. FAUX pour un polygone
+// concave : les deux extrémités peuvent être valides (chacune sur le bord
+// réel) alors que tout le milieu du segment sort par un renfoncement — la
+// dichotomie s'arrête alors bien trop tôt et ampute le bâtiment inutilement.
+//
+// Le cas le plus courant (vérifié avec les vraies données du projet) n'est
+// même pas une arête qui "traverse" franchement une autre arête du polygone :
+// c'est un unique SOMMET RENTRANT (concave) du polygone que la ligne droite
+// coupe au plus court. Détecter une traversée d'arête classique rate donc ce
+// cas. La bonne approche : repérer sur quelle arête du polygone repose
+// chaque extrémité, puis insérer les sommets du polygone entre les deux, en
+// suivant le contour réel dans le sens le plus court (comparaison de
+// longueur totale) plutôt que de deviner.
+function nearestZoneEdgeIndex(pt, zone){
+  let best = -1, bestDist = Infinity;
+  for(let i=0;i<zone.length;i++){
+    const a = zone[i], b = zone[(i+1)%zone.length];
+    const proj = closestPointOnSegment(pt, a, b);
+    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
+    if(d < bestDist){ bestDist = d; best = i; }
+  }
+  return best;
+}
+// Sommets du polygone en allant de l'arête i1 vers l'arête i2, dans le sens
+// croissant (forward) ou décroissant (backward) des indices.
+function walkZoneForward(zone, i1, i2){
+  const n = zone.length;
+  const steps = ((i2 - i1) % n + n) % n;
+  const pts = [];
+  for(let k=1;k<=steps;k++) pts.push(zone[(i1+k)%n]);
+  return pts;
+}
+function walkZoneBackward(zone, i1, i2){
+  const n = zone.length;
+  const steps = ((i1 - i2) % n + n) % n;
+  const pts = [];
+  for(let k=0;k<steps;k++) pts.push(zone[(i1-k+n)%n]);
+  return pts;
+}
+function pathLength(a, path, b){
+  let total = 0, prev = a;
+  for(const v of path){ total += Math.hypot(v.x-prev.x, v.z-prev.z); prev = v; }
+  total += Math.hypot(b.x-prev.x, b.z-prev.z);
+  return total;
+}
+// Répare l'arête [a,b] : si elle reste dans la zone, ne change rien. Sinon,
+// retrouve l'arête du polygone la plus proche de chaque extrémité et relie
+// les deux par le chemin le long du contour réel (sens le plus court des
+// deux). Retourne la liste des points de a (exclu) à b (inclus), à insérer à
+// la place de l'arête d'origine.
+function repairEdgeAgainstZone(a, b, zone){
+  if(zone.length<3 || segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
+  const ia = nearestZoneEdgeIndex(a, zone);
+  const ib = nearestZoneEdgeIndex(b, zone);
+  if(ia === ib){
+    // Même arête du polygone des deux côtés : pas de renfoncement identifiable
+    // entre elles (cas dégénéré/numérique) — on retombe sur l'ancien lissage.
+    const validAtT = (t)=> segmentFullyInsideZone(a, {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t}, zone);
+    return [ slideToValid(a, b, validAtT) ];
+  }
+  const fwd = walkZoneForward(zone, ia, ib);
+  const bwd = walkZoneBackward(zone, ia, ib);
+  const chosen = pathLength(a, fwd, b) <= pathLength(a, bwd, b) ? fwd : bwd;
+  return [ ...chosen.map(v=>({x:v.x, z:v.z})), {x:b.x, z:b.z} ];
+}
+// Applique repairEdgeAgainstZone() à chaque arête d'un contour FERMÉ (chaque
+// point relié au suivant, et le dernier au premier).
+function repairClosedPolygonAgainstZone(points, zone){
+  if(zone.length<3) return points.map(p=>({x:p.x,z:p.z}));
+  const result = [{x:points[0].x, z:points[0].z}];
+  for(let i=0;i<points.length;i++){
+    const a = points[i], b = points[(i+1)%points.length];
+    const extra = repairEdgeAgainstZone(a, b, zone);
+    // le dernier point ajouté par repairEdgeAgainstZone == b ; on ne le
+    // rajoute pas une seconde fois quand on boucle sur le premier point.
+    if(i < points.length-1) result.push(...extra);
+    else result.push(...extra.slice(0,-1)); // referme sur result[0] déjà présent
+  }
+  return result;
+}
 function flashStatus(msg){
   statusLine.dataset.orig = statusLine.dataset.orig || statusLine.textContent;
   statusLine.innerHTML = `<b>${msg}</b>`;
@@ -1174,12 +1256,12 @@ function addDrawPoint(pt){
 }
 function finishDraw(){
   if(drawPoints.length<3){ cancelDraw(); return; }
-  if(buildZone.length>=3 && !polygonFullyInsideZone(drawPoints, buildZone)){
-    flashStatus("Emprise hors polygone d'implantation — tracé refusé");
-    cancelDraw();
-    return;
-  }
-  createBuilding(drawPoints.slice());
+  // Répare le contour fermé si besoin : hugue les renfoncements concaves du
+  // polygone au lieu de refuser tout le tracé pour une arête qui coupe court
+  // (l'ancien comportement — voir plus haut pourquoi une arête entre deux
+  // points valides peut quand même sortir de la zone sur un polygone concave).
+  const finalPoints = buildZone.length>=3 ? repairClosedPolygonAgainstZone(drawPoints, buildZone) : drawPoints.slice();
+  createBuilding(finalPoints);
   cancelDraw();
 }
 
@@ -1662,29 +1744,35 @@ window.addEventListener('pointermove', (ev)=>{
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
   const idx = bldgVertexDrag.index;
-  // Étape 1 : ramène le point visé au bord le plus proche s'il tombe dehors
-  // (comme avant — évite un rejet sec sur un point isolé).
+  // Ramène le point visé au bord le plus proche s'il tombe dehors (évite un
+  // rejet sec sur un point isolé).
   const target = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
-  // Étape 2 : même si `target` est valide EN TANT QUE POINT, les arêtes
-  // formées avec les sommets voisins peuvent couper un renfoncement concave
-  // du polygone et en sortir. On valide donc le contour ENTIER du bâtiment
-  // (polygonFullyInsideZone), pas juste ce sommet — et si ça casse, on fait
-  // glisser depuis la dernière position valide jusqu'au point le plus loin
-  // encore acceptable, au lieu de laisser une arête déborder ou de bloquer net.
-  const from = bldgVertexDrag.lastValid || target;
-  let next = target;
   if(buildZone.length>=3){
-    const validAtT = (t)=>{
-      const mid = { x: from.x+(target.x-from.x)*t, z: from.z+(target.z-from.z)*t };
-      const test = b.points.slice();
-      test[idx] = mid;
-      return polygonFullyInsideZone(test, buildZone);
-    };
-    next = slideToValid(from, target, validAtT);
+    // Répare le contour EN TEMPS RÉEL, pas seulement au relâchement : on
+    // avait laissé l'ancien slideToValid (recherche dichotomique) actif
+    // pendant le glissement, qui suppose à tort qu'une arête ne bascule
+    // qu'une fois valide/invalide — sur un renfoncement concave elle rebascule
+    // en valide en approchant le point visé, et la dichotomie s'arrête bien
+    // avant d'y arriver. Le sommet restait alors "coincé" à mi-chemin même
+    // une fois la souris relâchée, puisque la réparation finale ne fait que
+    // légaliser une position déjà figée, sans jamais réessayer d'aller plus
+    // loin. D'où la "marge fantôme" : on répare donc ici, à chaque
+    // mouvement, avec la même insertion de sommets qu'au relâchement.
+    const candidate = b.points.slice();
+    candidate[idx] = { x: target.x, z: target.z };
+    const repaired = repairClosedPolygonAgainstZone(candidate, buildZone);
+    // Retrouve le nouvel index du sommet tiré (repairClosedPolygonAgainstZone
+    // conserve chaque point d'origine tel quel, en insérant seulement entre —
+    // le point qu'on vient de fixer à `target` reste donc présent tel quel).
+    let newIdx = repaired.findIndex(p => p.x===target.x && p.z===target.z);
+    if(newIdx<0) newIdx = idx; // filet de sécurité, ne devrait pas arriver
+    b.points = repaired;
+    bldgVertexDrag.index = newIdx;
+    rebuildBldgVertexHandles(b);
+  } else {
+    b.points[idx] = { x: target.x, z: target.z };
+    bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
   }
-  b.points[idx] = { x: next.x, z: next.z };
-  bldgVertexDrag.lastValid = { x: next.x, z: next.z };
-  bldgVertexHandles[idx].mesh.position.set(next.x, 0.3, next.z);
   rebuildMesh(b);
 });
 window.addEventListener('pointerup', ()=>{
@@ -1988,27 +2076,13 @@ document.getElementById('btn-save-json').addEventListener('click', ()=>{
 // renfoncement concave du polygone, même si chaque sommet pris isolément est
 // valide. Retrace la forme sommet par sommet, comme un tracé manuel : chaque
 // point est glissé vers le précédent si l'arête qu'il forme sort de la zone.
+// Répare une emprise chargée depuis un ancien projet JSON (sauvegardé avant
+// la réparation "hugging" par insertion de sommets) : utilise directement
+// repairClosedPolygonAgainstZone, qui insère les sommets du polygone le long
+// de tout renfoncement concave plutôt que de raccourcir grossièrement l'arête.
 function repairBuildingPoints(points, zone){
   if(!points || points.length<3 || zone.length<3) return points;
-  const repaired = [points[0]];
-  for(let i=1;i<points.length;i++){
-    const from = repaired[repaired.length-1];
-    const to = points[i];
-    const validAtT = (t)=>{
-      const mid = { x: from.x+(to.x-from.x)*t, z: from.z+(to.z-from.z)*t };
-      return segmentFullyInsideZone(from, mid, zone);
-    };
-    repaired.push(slideToValid(from, to, validAtT));
-  }
-  // arête de fermeture (dernier point → premier) : idem, on glisse le DERNIER
-  // point vers le premier si besoin plutôt que de casser toute la forme.
-  const first = repaired[0], last = repaired[repaired.length-1];
-  const validClose = (t)=>{
-    const mid = { x: last.x+(first.x-last.x)*t, z: last.z+(first.z-last.z)*t };
-    return segmentFullyInsideZone(last, mid, zone);
-  };
-  repaired[repaired.length-1] = slideToValid(last, first, validClose);
-  return repaired;
+  return repairClosedPolygonAgainstZone(points, zone);
 }
 const fileLoad = document.getElementById('file-load');
 document.getElementById('btn-load-json').addEventListener('click', ()=> fileLoad.click());
