@@ -585,12 +585,27 @@ groundGroup.add(polyDebugGroup);
 function rebuildPolyDebugMarkers(){
   polyDebugGroup.clear();
   buildZone.forEach((p,i)=>{
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.4,10,10), new THREE.MeshBasicMaterial({color:0x7CFC98, depthTest:false}));
+    // Gros point AU SOL (position exacte, y=0.3, même hauteur que les
+    // poignées de sommet des bâtiments) : c'est CE point qu'il faut comparer
+    // à un sommet de bâtiment, pas le numéro flottant ci-dessous, qui reste
+    // décalé en hauteur pour rester lisible et peut sembler "à côté" du bon
+    // endroit selon l'angle de caméra (même en vue plan, le champ de vision
+    // n'est jamais parfaitement à 0°).
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.6,12,12), new THREE.MeshBasicMaterial({color:0x7CFC98, depthTest:false}));
     dot.position.set(p.x, 0.3, p.z);
     dot.renderOrder = 998;
     polyDebugGroup.add(dot);
+    // Trait vertical reliant le point au sol à son numéro : permet de
+    // vérifier d'un coup d'oeil, quel que soit l'angle de caméra, que le
+    // numéro affiché correspond bien à CE point au sol précis et à aucun autre.
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(p.x, 0.3, p.z), new THREE.Vector3(p.x, 3.0, p.z)
+    ]);
+    const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0x7CFC98, depthTest:false, transparent:true, opacity:0.85}));
+    line.renderOrder = 997;
+    polyDebugGroup.add(line);
     const label = makeIndexSprite(String(i));
-    label.position.set(p.x, 3.2, p.z);
+    label.position.set(p.x, 3.6, p.z);
     polyDebugGroup.add(label);
   });
 }
