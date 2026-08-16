@@ -1042,6 +1042,36 @@ function pointInPolygon(pt, poly){
   }
   return inside;
 }
+// Point le plus proche de `pt` sur le segment [a,b].
+function closestPointOnSegment(pt, a, b){
+  const abx=b.x-a.x, abz=b.z-a.z;
+  const lenSq = abx*abx+abz*abz;
+  if(lenSq < 1e-12) return {x:a.x, z:a.z};
+  let t = ((pt.x-a.x)*abx + (pt.z-a.z)*abz) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return { x: a.x+abx*t, z: a.z+abz*t };
+}
+// Ramène `pt` à l'intérieur (ou pile sur le bord) du polygone, plutôt que de
+// rejeter purement et simplement un point à l'extérieur. Sans ça, un point
+// qui vient d'un raycast (jamais parfaitement identique aux coordonnées du
+// polygone au bit près) peut se retrouver à quelques dixièmes de millimètre
+// à l'extérieur — invisible à l'oeil — et se faire rejeter en bloc : le
+// sommet reste alors figé alors que le joueur/l'utilisateur vise pourtant
+// bien la bonne zone. Ici on ne rejette jamais : si `pt` est dehors, on
+// renvoie le point du contour le plus proche, pour que le déplacement
+// "glisse" le long de la limite au lieu de se bloquer net.
+function clampPointToPolygon(pt, poly){
+  if(poly.length<3) return pt;
+  if(pointInPolygon(pt, poly)) return pt;
+  let best = null, bestDist = Infinity;
+  for(let i=0;i<poly.length;i++){
+    const a = poly[i], b = poly[(i+1)%poly.length];
+    const proj = closestPointOnSegment(pt, a, b);
+    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
+    if(d < bestDist){ bestDist = d; best = proj; }
+  }
+  return best;
+}
 // Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
 // reste dans le polygone d'implantation, en échantillonnant chaque arête.
 function polygonFullyInsideZone(pts, zone){
@@ -1063,13 +1093,14 @@ function flashStatus(msg){
   flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
 }
 function addDrawPoint(pt){
-  if(buildZone.length>=3 && !pointInPolygon(pt, buildZone)){
-    flashStatus("Point hors du polygone d'implantation — refusé");
-    return;
-  }
-  drawPoints.push({x:pt.x, z:pt.z});
+  // même logique que pour l'édition d'un sommet existant : on clampe au bord
+  // le plus proche plutôt que de rejeter le clic, pour éviter qu'un point
+  // visé pile sur la limite (mais à quelques dixièmes de mm à l'extérieur à
+  // cause du raycast) ne soit purement ignoré.
+  const clamped = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
+  drawPoints.push({x:clamped.x, z:clamped.z});
   const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
-  m.position.set(pt.x,0.2,pt.z);
+  m.position.set(clamped.x,0.2,clamped.z);
   drawMarkers.add(m);
   refreshPreview();
 }
@@ -1561,10 +1592,13 @@ window.addEventListener('pointermove', (ev)=>{
   if(!pt) return;
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
-  // le sommet reste contraint au polygone d'implantation, comme au tracé initial
-  if(buildZone.length>=3 && !pointInPolygon(pt, buildZone)) return;
-  b.points[bldgVertexDrag.index] = { x: pt.x, z: pt.z };
-  bldgVertexHandles[bldgVertexDrag.index].mesh.position.set(pt.x, 0.3, pt.z);
+  // le sommet reste contraint au polygone d'implantation : au lieu de rejeter
+  // purement le déplacement quand le point visé tombe juste à l'extérieur
+  // (ce qui le bloquait net, même quand on visait clairement la bonne zone),
+  // on le ramène au point valide le plus proche — il glisse le long du bord.
+  const clamped = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
+  b.points[bldgVertexDrag.index] = { x: clamped.x, z: clamped.z };
+  bldgVertexHandles[bldgVertexDrag.index].mesh.position.set(clamped.x, 0.3, clamped.z);
   rebuildMesh(b);
 });
 window.addEventListener('pointerup', ()=>{
