@@ -1032,16 +1032,6 @@ function refreshPreview(){
   );
   worldRoot.add(previewLine);
 }
-function pointInPolygon(pt, poly){
-  let inside = false;
-  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
-    const xi=poly[i].x, zi=poly[i].z, xj=poly[j].x, zj=poly[j].z;
-    const intersect = ((zi>pt.z)!==(zj>pt.z)) &&
-      (pt.x < (xj-xi)*(pt.z-zi)/(zj-zi)+xi);
-    if(intersect) inside = !inside;
-  }
-  return inside;
-}
 // Point le plus proche de `pt` sur le segment [a,b].
 function closestPointOnSegment(pt, a, b){
   const abx=b.x-a.x, abz=b.z-a.z;
@@ -1050,6 +1040,38 @@ function closestPointOnSegment(pt, a, b){
   let t = ((pt.x-a.x)*abx + (pt.z-a.z)*abz) / lenSq;
   t = Math.max(0, Math.min(1, t));
   return { x: a.x+abx*t, z: a.z+abz*t };
+}
+function distanceToPolygonBoundary(pt, poly){
+  let best = Infinity;
+  for(let i=0;i<poly.length;i++){
+    const a = poly[i], b = poly[(i+1)%poly.length];
+    const proj = closestPointOnSegment(pt, a, b);
+    best = Math.min(best, Math.hypot(proj.x-pt.x, proj.z-pt.z));
+  }
+  return best;
+}
+// Le test "rayon horizontal" (even-odd rule) classique est fiable loin du
+// contour, mais NUMÉRIQUEMENT INSTABLE pour un point posé pile sur une arête
+// (ou aligné avec un sommet) : selon l'arrondi flottant, il peut basculer
+// dedans/dehors de façon imprévisible — et ça peut créer une "limite fantôme"
+// ailleurs dans la forme (rien à voir avec l'arête la plus proche), typique
+// des polygones concaves. Solution : si le test brut dit "dehors" mais que le
+// point est en réalité à quelques centimètres ou moins de n'importe quelle
+// arête du contour, on le considère valide quand même — c'est la même
+// tolérance que le clamp, appliquée en amont pour ne jamais bloquer un point
+// qui vise légitimement le bord.
+const POLYGON_EDGE_TOLERANCE = 0.03; // 3 cm
+function pointInPolygon(pt, poly, tolerance = POLYGON_EDGE_TOLERANCE){
+  let inside = false;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const xi=poly[i].x, zi=poly[i].z, xj=poly[j].x, zj=poly[j].z;
+    const intersect = ((zi>pt.z)!==(zj>pt.z)) &&
+      (pt.x < (xj-xi)*(pt.z-zi)/(zj-zi)+xi);
+    if(intersect) inside = !inside;
+  }
+  if(inside) return true;
+  if(tolerance>0 && poly.length>=3) return distanceToPolygonBoundary(pt, poly) <= tolerance;
+  return false;
 }
 // Ramène `pt` à l'intérieur (ou pile sur le bord) du polygone, plutôt que de
 // rejeter purement et simplement un point à l'extérieur. Sans ça, un point
