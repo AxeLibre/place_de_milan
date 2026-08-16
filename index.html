@@ -1060,8 +1060,12 @@ function distanceToPolygonBoundary(pt, poly){
 // arête du contour, on le considère valide quand même — c'est la même
 // tolérance que le clamp, appliquée en amont pour ne jamais bloquer un point
 // qui vise légitimement le bord.
-const POLYGON_EDGE_TOLERANCE = 0.03; // 3 cm
-function pointInPolygon(pt, poly, tolerance = POLYGON_EDGE_TOLERANCE){
+// Tolérance de distance au bord (voir plus haut) : 3 cm. Valeur inlinée
+// directement (pas de constante séparée) pour éviter tout risque de
+// "temporal dead zone" si cette fonction est appelée tôt au chargement,
+// avant qu'une déclaration plus bas dans le fichier n'ait été exécutée.
+function pointInPolygon(pt, poly, tolerance){
+  if(tolerance===undefined) tolerance = 0.03;
   let inside = false;
   for(let i=0, j=poly.length-1; i<poly.length; j=i++){
     const xi=poly[i].x, zi=poly[i].z, xj=poly[j].x, zj=poly[j].z;
