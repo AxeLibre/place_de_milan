@@ -550,6 +550,9 @@ function extractBoundaryXZ(mesh){
   // notre détection "arête utilisée une seule fois" la prend alors à tort pour
   // une arête de bord, et la boucle se referme avant d'atteindre la nouvelle
   // partie — exactement le symptôme "le polygone n'inclut pas la zone ajoutée".
+  // Tolérance stricte (0,1 mm) : les sommets doivent être soudés proprement à
+  // la source dans Blender (Merge by Distance), pas rattrapés ici par une
+  // tolérance large qui risquerait de souder à tort des sommets distincts.
   const geo = mergeVertices(mesh.geometry, 1e-4);
   const pos = geo.attributes.position;
   const idx = geo.index;
@@ -996,6 +999,8 @@ const drawHint = document.getElementById('draw-hint');
 const drawHintText = document.getElementById('draw-hint-text');
 
 function startDraw(){
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
   drawing = true; drawPoints = [];
   clearMarkers();
   btnDraw.classList.add('active');
@@ -1199,7 +1204,8 @@ let treePlacing = false;
 const btnTree = document.getElementById('btn-tree');
 
 function startTreeTool(){
-  if(drawing) return;
+  if(drawing) cancelDraw();
+  if(grassPainting) stopGrassTool();
   treePlacing = true;
   btnTree.classList.add('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Cliquez le polygone…';
   drawHint.classList.add('show');
@@ -1328,7 +1334,8 @@ let grassPointerActive = false;
 const btnGrass = document.getElementById('btn-paint-grass');
 
 function startGrassTool(){
-  if(drawing || treePlacing) return;
+  if(drawing) cancelDraw();
+  if(treePlacing) stopTreeTool();
   grassPainting = true;
   btnGrass.classList.add('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Glissez pour peindre…';
   drawHint.classList.add('show');
