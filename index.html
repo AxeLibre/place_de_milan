@@ -1112,6 +1112,35 @@ function polygonFullyInsideZone(pts, zone){
   }
   return true;
 }
+// Vérifie qu'UN SEUL segment [a,b] (pas tout un polygone fermé) reste dans la
+// zone — utilisé pendant le tracé d'un nouveau bâtiment, où la forme n'est pas
+// encore fermée.
+function segmentFullyInsideZone(a, b, zone){
+  const steps = Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1.0));
+  for(let s=0;s<=steps;s++){
+    const t=s/steps;
+    const p = {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t};
+    if(!pointInPolygon(p, zone)) return false;
+  }
+  return true;
+}
+// Fait glisser un point de `from` vers `to` le long du segment [from,to], en
+// s'arrêtant au point le plus loin encore accepté par `validAtT(t)`, plutôt
+// que d'accepter `to` tel quel (qui peut faire sortir une ARÊTE du polygone
+// même si `to` lui-même est valide — cas d'un polygone concave, cf. clamp par
+// simple point). Recherche dichotomique : `from` doit être valide (t=0), et
+// si `to` (t=1) l'est aussi, on le retourne direct sans chercher plus loin.
+function slideToValid(from, to, validAtT){
+  if(validAtT(1)) return { x:to.x, z:to.z };
+  if(!validAtT(0)) return { x:from.x, z:from.z };
+  let lo=0, hi=1, best = { x:from.x, z:from.z };
+  for(let i=0;i<20;i++){
+    const t = (lo+hi)/2;
+    const mid = { x: from.x+(to.x-from.x)*t, z: from.z+(to.z-from.z)*t };
+    if(validAtT(t)){ best = mid; lo = t; } else { hi = t; }
+  }
+  return best;
+}
 function flashStatus(msg){
   statusLine.dataset.orig = statusLine.dataset.orig || statusLine.textContent;
   statusLine.innerHTML = `<b>${msg}</b>`;
@@ -1119,14 +1148,27 @@ function flashStatus(msg){
   flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
 }
 function addDrawPoint(pt){
-  // même logique que pour l'édition d'un sommet existant : on clampe au bord
-  // le plus proche plutôt que de rejeter le clic, pour éviter qu'un point
-  // visé pile sur la limite (mais à quelques dixièmes de mm à l'extérieur à
-  // cause du raycast) ne soit purement ignoré.
-  const clamped = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
-  drawPoints.push({x:clamped.x, z:clamped.z});
+  // Étape 1 : ramène le point visé au bord le plus proche s'il tombe dehors
+  // (évite un clic purement ignoré près de la limite).
+  const target = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
+  // Étape 2 : le SEGMENT reliant le point précédent à celui-ci peut couper un
+  // renfoncement concave du polygone même si les deux extrémités sont valides
+  // chacune de leur côté (même bug que pour le drag d'un sommet existant). On
+  // fait donc glisser depuis le dernier point posé jusqu'au point le plus
+  // loin encore valide sur ce segment, plutôt que d'accepter un tracé qui
+  // déborderait entre deux clics.
+  let next = target;
+  if(buildZone.length>=3 && drawPoints.length>0){
+    const from = drawPoints[drawPoints.length-1];
+    const validAtT = (t)=>{
+      const mid = { x: from.x+(target.x-from.x)*t, z: from.z+(target.z-from.z)*t };
+      return segmentFullyInsideZone(from, mid, buildZone);
+    };
+    next = slideToValid(from, target, validAtT);
+  }
+  drawPoints.push({x:next.x, z:next.z});
   const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
-  m.position.set(clamped.x,0.2,clamped.z);
+  m.position.set(next.x,0.2,next.z);
   drawMarkers.add(m);
   refreshPreview();
 }
@@ -1596,7 +1638,7 @@ function rebuildBldgVertexHandles(b){
   });
 }
 
-let bldgVertexDrag = null; // {index, x, y, moved}
+let bldgVertexDrag = null; // {index, x, y, moved, lastValid:{x,z}}
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!editingBuildingId || ev.button!==0) return;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -1606,7 +1648,8 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   const hits = raycaster.intersectObjects(bldgVertexHandles.map(h=>h.mesh));
   if(!hits.length) return;
   const idx = bldgVertexHandles.findIndex(h=>h.mesh===hits[0].object);
-  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false, lastValid: b ? {x:b.points[idx].x, z:b.points[idx].z} : null };
   controls.enabled = false;
 });
 window.addEventListener('pointermove', (ev)=>{
@@ -1618,13 +1661,30 @@ window.addEventListener('pointermove', (ev)=>{
   if(!pt) return;
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
-  // le sommet reste contraint au polygone d'implantation : au lieu de rejeter
-  // purement le déplacement quand le point visé tombe juste à l'extérieur
-  // (ce qui le bloquait net, même quand on visait clairement la bonne zone),
-  // on le ramène au point valide le plus proche — il glisse le long du bord.
-  const clamped = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
-  b.points[bldgVertexDrag.index] = { x: clamped.x, z: clamped.z };
-  bldgVertexHandles[bldgVertexDrag.index].mesh.position.set(clamped.x, 0.3, clamped.z);
+  const idx = bldgVertexDrag.index;
+  // Étape 1 : ramène le point visé au bord le plus proche s'il tombe dehors
+  // (comme avant — évite un rejet sec sur un point isolé).
+  const target = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
+  // Étape 2 : même si `target` est valide EN TANT QUE POINT, les arêtes
+  // formées avec les sommets voisins peuvent couper un renfoncement concave
+  // du polygone et en sortir. On valide donc le contour ENTIER du bâtiment
+  // (polygonFullyInsideZone), pas juste ce sommet — et si ça casse, on fait
+  // glisser depuis la dernière position valide jusqu'au point le plus loin
+  // encore acceptable, au lieu de laisser une arête déborder ou de bloquer net.
+  const from = bldgVertexDrag.lastValid || target;
+  let next = target;
+  if(buildZone.length>=3){
+    const validAtT = (t)=>{
+      const mid = { x: from.x+(target.x-from.x)*t, z: from.z+(target.z-from.z)*t };
+      const test = b.points.slice();
+      test[idx] = mid;
+      return polygonFullyInsideZone(test, buildZone);
+    };
+    next = slideToValid(from, target, validAtT);
+  }
+  b.points[idx] = { x: next.x, z: next.z };
+  bldgVertexDrag.lastValid = { x: next.x, z: next.z };
+  bldgVertexHandles[idx].mesh.position.set(next.x, 0.3, next.z);
   rebuildMesh(b);
 });
 window.addEventListener('pointerup', ()=>{
@@ -1923,6 +1983,33 @@ document.getElementById('btn-save-json').addEventListener('click', ()=>{
   link.click();
 });
 
+// Répare une emprise chargée depuis un ancien projet JSON (sauvegardé avant
+// la validation de contour complet) qui peut contenir une arête sortant d'un
+// renfoncement concave du polygone, même si chaque sommet pris isolément est
+// valide. Retrace la forme sommet par sommet, comme un tracé manuel : chaque
+// point est glissé vers le précédent si l'arête qu'il forme sort de la zone.
+function repairBuildingPoints(points, zone){
+  if(!points || points.length<3 || zone.length<3) return points;
+  const repaired = [points[0]];
+  for(let i=1;i<points.length;i++){
+    const from = repaired[repaired.length-1];
+    const to = points[i];
+    const validAtT = (t)=>{
+      const mid = { x: from.x+(to.x-from.x)*t, z: from.z+(to.z-from.z)*t };
+      return segmentFullyInsideZone(from, mid, zone);
+    };
+    repaired.push(slideToValid(from, to, validAtT));
+  }
+  // arête de fermeture (dernier point → premier) : idem, on glisse le DERNIER
+  // point vers le premier si besoin plutôt que de casser toute la forme.
+  const first = repaired[0], last = repaired[repaired.length-1];
+  const validClose = (t)=>{
+    const mid = { x: last.x+(first.x-last.x)*t, z: last.z+(first.z-last.z)*t };
+    return segmentFullyInsideZone(last, mid, zone);
+  };
+  repaired[repaired.length-1] = slideToValid(last, first, validClose);
+  return repaired;
+}
 const fileLoad = document.getElementById('file-load');
 document.getElementById('btn-load-json').addEventListener('click', ()=> fileLoad.click());
 fileLoad.addEventListener('change', (e)=>{
@@ -1935,9 +2022,18 @@ fileLoad.addEventListener('change', (e)=>{
       buildings.forEach(b=>worldRoot.remove(b.group));
       buildings = [];
       idCounter = 1;
-      (data.buildings||[]).forEach(b=> createBuilding(b.points, {name:b.name, floors:b.floors, bands:b.bands}));
+      let repairedCount = 0;
+      (data.buildings||[]).forEach(b=>{
+        let pts = b.points;
+        if(buildZone.length>=3 && !polygonFullyInsideZone(pts, buildZone)){
+          pts = repairBuildingPoints(pts, buildZone);
+          repairedCount++;
+        }
+        createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands});
+      });
       selectedId = null;
       rebuildAll(); renderList();
+      if(repairedCount) flashStatus(`${repairedCount} bâtiment(s) recalé(s) sur le polygone d'implantation`);
     }catch(err){ alert("Fichier de projet invalide."); }
   };
   reader.readAsText(file);
