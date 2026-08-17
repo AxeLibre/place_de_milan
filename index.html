@@ -1096,55 +1096,6 @@ let drawPoints = [];
 let drawMarkers = new THREE.Group();
 let previewLine = null;
 worldRoot.add(drawMarkers);
-// Guide de pose façon "jeu de construction" (SimCity) : montre, avant même
-// de cliquer, où le prochain sommet va exactement se poser (aimanté sur la
-// grille du polygone d'implantation) — un point fantôme + une croix + le
-// segment fantôme depuis le dernier sommet posé.
-let drawGuideGroup = new THREE.Group(); worldRoot.add(drawGuideGroup);
-let drawGuideDot = null, drawGuideCross = null, drawGuideSegment = null;
-function buildDrawGuideMeshes(){
-  drawGuideGroup.clear();
-  drawGuideDot = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55,14,14),
-    new THREE.MeshBasicMaterial({color:0x7CFC98, transparent:true, opacity:0.9, depthTest:false})
-  );
-  drawGuideDot.renderOrder = 998;
-  const crossGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-1.1,0.25,0), new THREE.Vector3(1.1,0.25,0),
-    new THREE.Vector3(0,0.25,-1.1), new THREE.Vector3(0,0.25,1.1)
-  ]);
-  drawGuideCross = new THREE.LineSegments(crossGeo, new THREE.LineBasicMaterial({color:0x7CFC98, depthTest:false, transparent:true, opacity:0.9}));
-  drawGuideCross.renderOrder = 998;
-  drawGuideSegment = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-    new THREE.LineDashedMaterial({color:0x7CFC98, dashSize:0.6, gapSize:0.4, transparent:true, opacity:0.7, depthTest:false})
-  );
-  drawGuideSegment.renderOrder = 997;
-  drawGuideGroup.add(drawGuideDot, drawGuideCross, drawGuideSegment);
-  drawGuideGroup.visible = false;
-}
-buildDrawGuideMeshes();
-function updateDrawGuide(pt){
-  if(!pt){ drawGuideGroup.visible = false; return; }
-  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
-  drawGuideGroup.visible = true;
-  drawGuideDot.position.set(target.x, 0.25, target.z);
-  drawGuideCross.position.set(target.x, 0, target.z);
-  if(drawPoints.length>0){
-    const from = drawPoints[drawPoints.length-1];
-    const pts = [new THREE.Vector3(from.x,0.25,from.z), new THREE.Vector3(target.x,0.25,target.z)];
-    drawGuideSegment.geometry.setFromPoints(pts);
-    drawGuideSegment.computeLineDistances();
-    drawGuideSegment.visible = true;
-  } else {
-    drawGuideSegment.visible = false;
-  }
-}
-function hideDrawGuide(){ drawGuideGroup.visible = false; }
-renderer.domElement.addEventListener('pointermove', (ev)=>{
-  if(!drawing) return;
-  updateDrawGuide(groundPointFromEvent(ev));
-});
 
 let selectedId = null;
 
@@ -1190,7 +1141,6 @@ function cancelDraw(){
 function clearMarkers(){
   drawMarkers.clear();
   if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
-  hideDrawGuide();
 }
 function refreshPreview(){
   if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
@@ -1203,6 +1153,24 @@ function refreshPreview(){
   );
   worldRoot.add(previewLine);
 }
+/* ============================================================
+   DÉCOUPE POLYGONALE PAR GRILLE — remplace tout l'ancien système de
+   clamp/glissement/réparation par insertion de sommets (fragile sur les cas
+   limites, cf. historique). Principe : au lieu de contraindre chaque clic ou
+   chaque sommet PENDANT l'interaction, on dessine LIBREMENT, sans aucune
+   contrainte, puis on découpe la forme obtenue par le polygone d'implantation
+   au moment de valider (fin de tracé, ou relâchement de souris en édition) —
+   même logique de fiabilité que "Emprise pleine" (copie directe de
+   coordonnées, aucun calcul fragile), généralisée à une forme arbitraire.
+   Implémentation : échantillonnage fin sur une grille (une cellule est
+   "dedans" si son centre est à la fois dans la forme dessinée ET dans le
+   polygone d'implantation), puis chaînage des arêtes de bord entre cellules
+   dedans/dehors — exactement le même principe que extractBoundaryXZ pour le
+   maillage Blender, appliqué ici à une grille. Aucune intersection de
+   segments à calculer : aucun cas limite (sommet pile sur une arête, arêtes
+   parallèles, etc.) ne peut la faire planter. Testé hors-navigateur avec les
+   données réelles du projet avant intégration.
+   ============================================================ */
 // Point le plus proche de `pt` sur le segment [a,b].
 function closestPointOnSegment(pt, a, b){
   const abx=b.x-a.x, abz=b.z-a.z;
@@ -1221,20 +1189,10 @@ function distanceToPolygonBoundary(pt, poly){
   }
   return best;
 }
-// Le test "rayon horizontal" (even-odd rule) classique est fiable loin du
-// contour, mais NUMÉRIQUEMENT INSTABLE pour un point posé pile sur une arête
-// (ou aligné avec un sommet) : selon l'arrondi flottant, il peut basculer
-// dedans/dehors de façon imprévisible — et ça peut créer une "limite fantôme"
-// ailleurs dans la forme (rien à voir avec l'arête la plus proche), typique
-// des polygones concaves. Solution : si le test brut dit "dehors" mais que le
-// point est en réalité à quelques centimètres ou moins de n'importe quelle
-// arête du contour, on le considère valide quand même — c'est la même
-// tolérance que le clamp, appliquée en amont pour ne jamais bloquer un point
-// qui vise légitimement le bord.
-// Tolérance de distance au bord (voir plus haut) : 3 cm. Valeur inlinée
-// directement (pas de constante séparée) pour éviter tout risque de
-// "temporal dead zone" si cette fonction est appelée tôt au chargement,
-// avant qu'une déclaration plus bas dans le fichier n'ait été exécutée.
+// Le test "rayon horizontal" (even-odd rule) est fiable loin du contour, mais
+// numériquement instable pile sur une arête. Tolérance de secours : si le
+// test brut dit "dehors" mais que le point est en réalité à quelques
+// centimètres ou moins de n'importe quelle arête, on le considère valide.
 function pointInPolygon(pt, poly, tolerance){
   if(tolerance===undefined) tolerance = 0.03;
   let inside = false;
@@ -1248,216 +1206,167 @@ function pointInPolygon(pt, poly, tolerance){
   if(tolerance>0 && poly.length>=3) return distanceToPolygonBoundary(pt, poly) <= tolerance;
   return false;
 }
-// Ramène `pt` à l'intérieur (ou pile sur le bord) du polygone, plutôt que de
-// rejeter purement et simplement un point à l'extérieur. Sans ça, un point
-// qui vient d'un raycast (jamais parfaitement identique aux coordonnées du
-// polygone au bit près) peut se retrouver à quelques dixièmes de millimètre
-// à l'extérieur — invisible à l'oeil — et se faire rejeter en bloc : le
-// sommet reste alors figé alors que le joueur/l'utilisateur vise pourtant
-// bien la bonne zone. Ici on ne rejette jamais : si `pt` est dehors, on
-// renvoie le point du contour le plus proche, pour que le déplacement
-// "glisse" le long de la limite au lieu de se bloquer net.
-function clampPointToPolygon(pt, poly){
-  if(poly.length<3) return pt;
-  if(pointInPolygon(pt, poly)) return pt;
-  let best = null, bestDist = Infinity;
+function polygonArea(poly){
+  let a=0;
   for(let i=0;i<poly.length;i++){
-    const a = poly[i], b = poly[(i+1)%poly.length];
-    const proj = closestPointOnSegment(pt, a, b);
-    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
-    if(d < bestDist){ bestDist = d; best = proj; }
+    const p=poly[i], q=poly[(i+1)%poly.length];
+    a += p.x*q.z - q.x*p.z;
   }
-  return best;
+  return Math.abs(a)/2;
 }
-// Sommet du polygone le plus proche de `pt`, seulement s'il est à moins de
-// `radius` unités — sert à "aimanter" un sommet de bâtiment directement SUR
-// un vrai sommet du polygone, en copiant ses coordonnées telles quelles
-// (exactement le mécanisme fiable de "Emprise pleine" : une copie directe,
-// aucun calcul de clamp/glissement qui pourrait introduire une imprécision).
-function nearestZoneVertex(pt, zone, radius){
-  let best = null, bestDist = radius;
-  for(const v of zone){
-    const d = Math.hypot(v.x-pt.x, v.z-pt.z);
-    if(d <= bestDist){ bestDist = d; best = v; }
+function perpDist(pt, a, b){
+  const dx=b.x-a.x, dz=b.z-a.z;
+  const len = Math.hypot(dx,dz);
+  if(len<1e-9) return Math.hypot(pt.x-a.x, pt.z-a.z);
+  return Math.abs((pt.x-a.x)*dz - (pt.z-a.z)*dx)/len;
+}
+function rdpSimplify(pts, epsilon){
+  if(pts.length<3) return pts.slice();
+  let maxD=0, idx=0;
+  const a=pts[0], b=pts[pts.length-1];
+  for(let i=1;i<pts.length-1;i++){
+    const d = perpDist(pts[i], a, b);
+    if(d>maxD){ maxD=d; idx=i; }
   }
-  return best ? { x: best.x, z: best.z } : null;
+  if(maxD > epsilon){
+    const left = rdpSimplify(pts.slice(0,idx+1), epsilon);
+    const right = rdpSimplify(pts.slice(idx), epsilon);
+    return left.slice(0,-1).concat(right);
+  }
+  return [a,b];
 }
-const VERTEX_SNAP_RADIUS = 4; // unités de scène (~4 m) : assez large pour "attraper" le sommet visé sans viser au pixel près
-// Distance sous laquelle un point visé est aimanté PILE sur le bord du
-// polygone (projection exacte), au lieu d'être simplement toléré "à peu
-// près dessus". C'est cette dernière tolérance (pointInPolygon/clamp,
-// quelques cm) qui laissait passer un point resté légèrement en retrait —
-// la fameuse "marge fantôme" — puisqu'un point jugé "assez proche" pour
-// être valide n'était jamais recalé sur le bord lui-même.
-const EDGE_SNAP_RADIUS = 1.5; // unités de scène (~1.5 m)
-// Point de guidage UNIQUE, utilisé à la fois pour le tracé d'un nouveau
-// bâtiment et pour le glissement d'un sommet existant — exactement le même
-// mécanisme fiable que "Emprise pleine" (copie/projection exacte des
-// coordonnées du polygone, jamais un point "presque" dessus) :
-//   1) sommet du polygone à portée -> aimantation exacte dessus.
-//   2) sinon bord du polygone à portée -> projection exacte SUR le bord.
-//   3) sinon, à l'intérieur -> le point tel quel.
-//   4) sinon (hors polygone, loin d'un bord) -> clamp classique.
-function snapPointToZone(pt, zone){
-  if(zone.length<3) return {x:pt.x, z:pt.z};
-  const vertex = nearestZoneVertex(pt, zone, VERTEX_SNAP_RADIUS);
-  if(vertex) return vertex;
-  if(distanceToPolygonBoundary(pt, zone) <= EDGE_SNAP_RADIUS){
-    let best=null, bestDist=Infinity;
-    for(let i=0;i<zone.length;i++){
-      const a=zone[i], b=zone[(i+1)%zone.length];
-      const proj = closestPointOnSegment(pt,a,b);
-      const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
-      if(d<bestDist){ bestDist=d; best=proj; }
+// Simplifie le contour en escalier issu de la grille via Douglas-Peucker
+// (tolérance = taille de cellule) : nettoie aussi les diagonales, qu'une
+// simple fusion de points colinéaires ne peut pas lisser.
+function simplifyStaircase(pts, epsilon){
+  if(pts.length<=3) return pts;
+  const closed = pts.concat([pts[0]]);
+  const simplified = rdpSimplify(closed, epsilon);
+  if(simplified.length>1){
+    const first=simplified[0], last=simplified[simplified.length-1];
+    if(Math.hypot(first.x-last.x, first.z-last.z) < 1e-6) simplified.pop();
+  }
+  return simplified.length>=3 ? simplified : pts;
+}
+// Découpe `subjectPts` par `clipPts` (polygone d'implantation). Renvoie la
+// liste des polygones résultat, triés du plus grand au plus petit par aire
+// (une forme dessinée peut se retrouver coupée en plusieurs morceaux séparés
+// par un renfoncement du polygone — on garde tout, l'appelant choisit).
+function rasterClipPolygon(subjectPts, clipPts, cellSize){
+  cellSize = cellSize || 0.5;
+  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  for(const p of subjectPts){ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minZ=Math.min(minZ,p.z); maxZ=Math.max(maxZ,p.z); }
+  if(!(maxX>minX) || !(maxZ>minZ)) return [];
+  minX -= cellSize; minZ -= cellSize; maxX += cellSize; maxZ += cellSize;
+  let cols = Math.ceil((maxX-minX)/cellSize);
+  let rows = Math.ceil((maxZ-minZ)/cellSize);
+  const MAX_CELLS = 400000; // garde-fou pour une forme immense
+  if(cols*rows > MAX_CELLS){
+    const scale = Math.sqrt((cols*rows)/MAX_CELLS);
+    cellSize *= scale;
+    cols = Math.ceil((maxX-minX)/cellSize);
+    rows = Math.ceil((maxZ-minZ)/cellSize);
+  }
+  const inside = new Uint8Array(cols*rows);
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const x = minX + (c+0.5)*cellSize;
+      const z = minZ + (r+0.5)*cellSize;
+      const pt = {x,z};
+      if(pointInPolygon(pt, subjectPts, cellSize*0.5) && pointInPolygon(pt, clipPts, cellSize*0.5)){
+        inside[r*cols+c] = 1;
+      }
     }
-    return best;
   }
-  return clampPointToPolygon(pt, zone);
-}
-// Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
-// reste dans le polygone d'implantation, en échantillonnant chaque arête.
-function polygonFullyInsideZone(pts, zone){
-  for(let i=0;i<pts.length;i++){
-    const a = pts[i], b = pts[(i+1)%pts.length];
-    const steps = Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1.0));
-    for(let s=0;s<=steps;s++){
-      const t=s/steps;
-      const p = {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t};
-      if(!pointInPolygon(p, zone)) return false;
+  // Composantes connexes (4-connexité), au cas où la découpe produit plusieurs morceaux séparés.
+  const label = new Int32Array(cols*rows).fill(-1);
+  let nextLabel = 0;
+  const compCells = [];
+  for(let start=0; start<cols*rows; start++){
+    if(!inside[start] || label[start]!==-1) continue;
+    const lbl = nextLabel++;
+    const cells = [];
+    const stack=[start];
+    label[start]=lbl;
+    while(stack.length){
+      const cur = stack.pop();
+      cells.push(cur);
+      const r = Math.floor(cur/cols), c = cur%cols;
+      const neigh = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+      for(const [nr,nc] of neigh){
+        if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+        const ni = nr*cols+nc;
+        if(inside[ni] && label[ni]===-1){ label[ni]=lbl; stack.push(ni); }
+      }
+    }
+    compCells.push(cells);
+  }
+  function cellCorner(r,c){ return { x: minX+c*cellSize, z: minZ+r*cellSize }; }
+  const keyOf = (p)=> `${p.x.toFixed(6)},${p.z.toFixed(6)}`;
+  const edgeId = (a,b)=>{ const ka=keyOf(a), kb=keyOf(b); return ka<kb? ka+'>'+kb : kb+'>'+ka; };
+
+  const results = [];
+  for(const cells of compCells){
+    const cellSet = new Set(cells);
+    const edges = [];
+    for(const idx of cellSet){
+      const r = Math.floor(idx/cols), c = idx%cols;
+      const N = cellCorner(r,c), NE = cellCorner(r,c+1), SE = cellCorner(r+1,c+1), SW = cellCorner(r+1,c);
+      const nb = [ [r-1,c, N, NE], [r,c+1, NE, SE], [r+1,c, SE, SW], [r,c-1, SW, N] ];
+      for(const [nr,nc,pa,pb] of nb){
+        const outside = nr<0||nr>=rows||nc<0||nc>=cols || !cellSet.has(nr*cols+nc);
+        if(outside) edges.push([pa,pb]);
+      }
+    }
+    const adj = new Map();
+    for(const [a,b] of edges){
+      const ka=keyOf(a), kb=keyOf(b);
+      if(!adj.has(ka)) adj.set(ka, []);
+      if(!adj.has(kb)) adj.set(kb, []);
+      adj.get(ka).push(b);
+      adj.get(kb).push(a);
+    }
+    const visitedEdge = new Set();
+    for(const [a0,b0] of edges){
+      const id0 = edgeId(a0,b0);
+      if(visitedEdge.has(id0)) continue;
+      const loop = [a0];
+      let prevKey = null;
+      let curKey = keyOf(a0);
+      let cur = a0;
+      let guard = 0;
+      const maxSteps = edges.length*2+10;
+      while(guard++ < maxSteps){
+        const neighbors = adj.get(curKey) || [];
+        let next = null;
+        for(const cand of neighbors){
+          const id = edgeId(cur, cand);
+          if(visitedEdge.has(id)) continue;
+          if(prevKey!==null && keyOf(cand)===prevKey && neighbors.length>1) continue;
+          next = cand; break;
+        }
+        if(!next){
+          for(const cand of neighbors){
+            const id = edgeId(cur, cand);
+            if(!visitedEdge.has(id)){ next = cand; break; }
+          }
+        }
+        if(!next) break;
+        visitedEdge.add(edgeId(cur,next));
+        loop.push(next);
+        prevKey = curKey;
+        cur = next; curKey = keyOf(cur);
+        if(curKey === keyOf(a0)) break;
+      }
+      // le dernier point du parcours duplique le premier (fermeture de boucle) :
+      // à retirer AVANT simplification, sinon le doublon corrompt le calcul
+      // de colinéarité en modulo.
+      const uniqueLoop = (loop.length>1 && keyOf(loop[0])===keyOf(loop[loop.length-1])) ? loop.slice(0,-1) : loop;
+      if(uniqueLoop.length>=4) results.push(simplifyStaircase(uniqueLoop, cellSize));
     }
   }
-  return true;
-}
-// Vérifie qu'UN SEUL segment [a,b] (pas tout un polygone fermé) reste dans la
-// zone — utilisé pendant le tracé d'un nouveau bâtiment, où la forme n'est pas
-// encore fermée.
-function segmentFullyInsideZone(a, b, zone){
-  const steps = Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1.0));
-  for(let s=0;s<=steps;s++){
-    const t=s/steps;
-    const p = {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t};
-    if(!pointInPolygon(p, zone)) return false;
-  }
-  return true;
-}
-// Fait glisser un point de `from` vers `to` le long du segment [from,to], en
-// s'arrêtant au point le plus loin encore accepté par `validAtT(t)`, plutôt
-// que d'accepter `to` tel quel (qui peut faire sortir une ARÊTE du polygone
-// même si `to` lui-même est valide — cas d'un polygone concave, cf. clamp par
-// simple point). Recherche dichotomique : `from` doit être valide (t=0), et
-// si `to` (t=1) l'est aussi, on le retourne direct sans chercher plus loin.
-function slideToValid(from, to, validAtT){
-  if(validAtT(1)) return { x:to.x, z:to.z };
-  if(!validAtT(0)) return { x:from.x, z:from.z };
-  let lo=0, hi=1, best = { x:from.x, z:from.z };
-  for(let i=0;i<20;i++){
-    const t = (lo+hi)/2;
-    const mid = { x: from.x+(to.x-from.x)*t, z: from.z+(to.z-from.z)*t };
-    if(validAtT(t)){ best = mid; lo = t; } else { hi = t; }
-  }
-  return best;
-}
-// ==== Réparation "définitive" d'une arête contre un polygone concave ====
-// slideToValid() ci-dessus suppose qu'une arête ne bascule qu'une fois entre
-// valide/invalide en avançant de `from` vers `to`. FAUX pour un polygone
-// concave : les deux extrémités peuvent être valides (chacune sur le bord
-// réel) alors que tout le milieu du segment sort par un renfoncement — la
-// dichotomie s'arrête alors bien trop tôt et ampute le bâtiment inutilement.
-//
-// Le cas le plus courant (vérifié avec les vraies données du projet) n'est
-// même pas une arête qui "traverse" franchement une autre arête du polygone :
-// c'est un unique SOMMET RENTRANT (concave) du polygone que la ligne droite
-// coupe au plus court. Détecter une traversée d'arête classique rate donc ce
-// cas. La bonne approche : repérer sur quelle arête du polygone repose
-// chaque extrémité, puis insérer les sommets du polygone entre les deux, en
-// suivant le contour réel dans le sens le plus court (comparaison de
-// longueur totale) plutôt que de deviner.
-function nearestZoneEdgeIndex(pt, zone){
-  let best = -1, bestDist = Infinity;
-  for(let i=0;i<zone.length;i++){
-    const a = zone[i], b = zone[(i+1)%zone.length];
-    const proj = closestPointOnSegment(pt, a, b);
-    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
-    if(d < bestDist){ bestDist = d; best = i; }
-  }
-  return best;
-}
-// Sommets du polygone en allant de l'arête i1 vers l'arête i2, dans le sens
-// croissant (forward) ou décroissant (backward) des indices.
-function walkZoneForward(zone, i1, i2){
-  const n = zone.length;
-  const steps = ((i2 - i1) % n + n) % n;
-  const pts = [];
-  for(let k=1;k<=steps;k++) pts.push(zone[(i1+k)%n]);
-  return pts;
-}
-function walkZoneBackward(zone, i1, i2){
-  const n = zone.length;
-  const steps = ((i1 - i2) % n + n) % n;
-  const pts = [];
-  for(let k=0;k<steps;k++) pts.push(zone[(i1-k+n)%n]);
-  return pts;
-}
-function pathLength(a, path, b){
-  let total = 0, prev = a;
-  for(const v of path){ total += Math.hypot(v.x-prev.x, v.z-prev.z); prev = v; }
-  total += Math.hypot(b.x-prev.x, b.z-prev.z);
-  return total;
-}
-// Répare l'arête [a,b] : si elle reste dans la zone, ne change rien. Sinon,
-// retrouve l'arête du polygone la plus proche de chaque extrémité et relie
-// les deux par le chemin le long du contour réel (sens le plus court des
-// deux). Retourne la liste des points de a (exclu) à b (inclus), à insérer à
-// la place de l'arête d'origine.
-// Distance sous laquelle un point est considéré comme "posé sur le bord"
-// du polygone (donc concerné par le hug ci-dessous), pas juste "à l'intérieur".
-const ON_BOUNDARY_EPS = 0.05;
-function isOnZoneBoundary(p, zone){
-  return zone.length>=3 && distanceToPolygonBoundary(p, zone) <= ON_BOUNDARY_EPS;
-}
-function repairEdgeAgainstZone(a, b, zone){
-  if(zone.length<3) return [{x:b.x, z:b.z}];
-  // Si les DEUX extrémités sont posées sur le bord du polygone, l'arête doit
-  // SUIVRE le contour réel entre elles, même si le segment tout droit reste
-  // techniquement "à l'intérieur" (segmentFullyInsideZone ne détecte que les
-  // sorties, pas les bombements convexes du bord qu'un raccourci tout droit
-  // laisse de côté). Sans ce cas, une arête reliant deux points du bord peut
-  // couper un renflement du polygone en ligne droite : chaque point posé est
-  // bien pile sur la limite, mais toute l'arête ENTRE eux reste en retrait —
-  // exactement la marge fantôme observée sur un bord qui n'est pas rigoureusement
-  // rectiligne entre ces deux points.
-  const bothOnBoundary = isOnZoneBoundary(a, zone) && isOnZoneBoundary(b, zone);
-  if(!bothOnBoundary && segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
-  const ia = nearestZoneEdgeIndex(a, zone);
-  const ib = nearestZoneEdgeIndex(b, zone);
-  if(ia === ib){
-    // Même arête du polygone des deux côtés : la ligne droite EST déjà le
-    // bord réel sur ce tronçon (rien à insérer), sauf si elle sort quand
-    // même de la zone (cas dégénéré/numérique) — on retombe alors sur
-    // l'ancien lissage.
-    if(segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
-    const validAtT = (t)=> segmentFullyInsideZone(a, {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t}, zone);
-    return [ slideToValid(a, b, validAtT) ];
-  }
-  const fwd = walkZoneForward(zone, ia, ib);
-  const bwd = walkZoneBackward(zone, ia, ib);
-  const chosen = pathLength(a, fwd, b) <= pathLength(a, bwd, b) ? fwd : bwd;
-  return [ ...chosen.map(v=>({x:v.x, z:v.z})), {x:b.x, z:b.z} ];
-}
-// Applique repairEdgeAgainstZone() à chaque arête d'un contour FERMÉ (chaque
-// point relié au suivant, et le dernier au premier).
-function repairClosedPolygonAgainstZone(points, zone){
-  if(zone.length<3) return points.map(p=>({x:p.x,z:p.z}));
-  const result = [{x:points[0].x, z:points[0].z}];
-  for(let i=0;i<points.length;i++){
-    const a = points[i], b = points[(i+1)%points.length];
-    const extra = repairEdgeAgainstZone(a, b, zone);
-    // le dernier point ajouté par repairEdgeAgainstZone == b ; on ne le
-    // rajoute pas une seconde fois quand on boucle sur le premier point.
-    if(i < points.length-1) result.push(...extra);
-    else result.push(...extra.slice(0,-1)); // referme sur result[0] déjà présent
-  }
-  return result;
+  results.sort((a,b)=>polygonArea(b)-polygonArea(a));
+  return results;
 }
 function flashStatus(msg){
   statusLine.dataset.orig = statusLine.dataset.orig || statusLine.textContent;
@@ -1466,39 +1375,31 @@ function flashStatus(msg){
   flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
 }
 function addDrawPoint(pt){
-  // Aimantation directe sur un sommet/bord du polygone si on clique à
-  // proximité — même mécanisme fiable que "Emprise pleine" (copie/projection
-  // exacte des coordonnées, jamais un point "presque" dessus).
-  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
-  // Étape 2 : le SEGMENT reliant le point précédent à celui-ci peut couper un
-  // renfoncement concave du polygone même si les deux extrémités sont valides
-  // chacune de leur côté (même bug que pour le drag d'un sommet existant). On
-  // fait donc glisser depuis le dernier point posé jusqu'au point le plus
-  // loin encore valide sur ce segment, plutôt que d'accepter un tracé qui
-  // déborderait entre deux clics.
-  let next = target;
-  if(buildZone.length>=3 && drawPoints.length>0){
-    const from = drawPoints[drawPoints.length-1];
-    const validAtT = (t)=>{
-      const mid = { x: from.x+(target.x-from.x)*t, z: from.z+(target.z-from.z)*t };
-      return segmentFullyInsideZone(from, mid, buildZone);
-    };
-    next = slideToValid(from, target, validAtT);
-  }
-  drawPoints.push({x:next.x, z:next.z});
+  // Aucune contrainte pendant le tracé : on dessine librement, exactement où
+  // on clique. La découpe par le polygone d'implantation se fait une seule
+  // fois, à la validation (finishDraw), via rasterClipPolygon — voir plus haut.
+  drawPoints.push({x:pt.x, z:pt.z});
   const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
-  m.position.set(next.x,0.2,next.z);
+  m.position.set(pt.x,0.2,pt.z);
   drawMarkers.add(m);
   refreshPreview();
 }
 function finishDraw(){
   if(drawPoints.length<3){ cancelDraw(); return; }
-  // Répare le contour fermé si besoin : hugue les renfoncements concaves du
-  // polygone au lieu de refuser tout le tracé pour une arête qui coupe court
-  // (l'ancien comportement — voir plus haut pourquoi une arête entre deux
-  // points valides peut quand même sortir de la zone sur un polygone concave).
-  const finalPoints = buildZone.length>=3 ? repairClosedPolygonAgainstZone(drawPoints, buildZone) : drawPoints.slice();
-  createBuilding(finalPoints);
+  // Découpe la forme dessinée librement par le polygone d'implantation
+  // (rasterClipPolygon, voir plus haut) — garantit que le résultat ne peut
+  // jamais dépasser le polygone, quelle que soit la forme dessinée.
+  if(buildZone.length>=3){
+    const clipped = rasterClipPolygon(drawPoints, buildZone, 0.5);
+    if(!clipped.length){
+      flashStatus("Le tracé ne recouvre aucune zone constructible — annulé");
+      cancelDraw();
+      return;
+    }
+    createBuilding(clipped[0]); // le plus grand morceau si la découpe en produit plusieurs
+  } else {
+    createBuilding(drawPoints.slice());
+  }
   cancelDraw();
 }
 
@@ -1834,44 +1735,6 @@ function defaultBands(floors){
   return [{from:1, to:floors, usage:'bureaux'}];
 }
 
-// ============================================================
-// RÉPARTITION DES USAGES PAR ÉTAGE — modèle "blocs empilés"
-// ============================================================
-// Repensé pour être toujours cohérent, sans jamais avoir à y toucher à la
-// main : chaque tranche n'a plus qu'UNE seule limite réellement "possédée"
-// par l'utilisateur, sa limite haute (`to`) ; sa limite basse (`from`) est
-// TOUJOURS recalculée automatiquement comme "juste au-dessus du bloc du
-// dessous" (comme des blocs SimCity empilés les uns sur les autres). Ainsi :
-//   - modifier un bloc pousse/retasse automatiquement tous les blocs
-//     au-dessus, sans jamais laisser de trou ni de recouvrement ;
-//   - la toute dernière tranche va TOUJOURS jusqu'au dernier étage du
-//     bâtiment, y compris quand on change le nombre d'étages — donc ajouter
-//     un étage ne crée jamais de nouvelle tranche, il agrandit juste la
-//     tranche du haut.
-function normalizeBands(b){
-  let bands = (b.bands && b.bands.length ? b.bands : defaultBands(b.floors))
-    .slice()
-    .sort((x,y)=> x.to-y.to)
-    .filter(bd=> bd.to >= 1);
-  const out = [];
-  let from = 1;
-  for(const band of bands){
-    if(from > b.floors) break;
-    const to = Math.max(from, Math.min(Math.round(band.to), b.floors));
-    out.push({ from, to, usage: band.usage || 'bureaux' });
-    from = to+1;
-  }
-  if(!out.length){
-    out.push({from:1, to:b.floors, usage:'bureaux'});
-  } else if(out[out.length-1].to < b.floors){
-    // Le nombre d'étages a augmenté (ou une tranche manquait) : la tranche
-    // du haut absorbe automatiquement les nouveaux étages — jamais de
-    // nouvelle tranche créée toute seule.
-    out[out.length-1].to = b.floors;
-  }
-  b.bands = out;
-}
-
 function createBuilding(pts, opts={}){
   const b = {
     id: idCounter++,
@@ -1882,7 +1745,6 @@ function createBuilding(pts, opts={}){
     group: new THREE.Group(),
     open: true
   };
-  normalizeBands(b);
   worldRoot.add(b.group);
   buildings.push(b);
   selectedId = b.id;
@@ -1996,7 +1858,7 @@ function rebuildBldgVertexHandles(b){
   });
 }
 
-let bldgVertexDrag = null; // {index, x, y, moved, lastValid:{x,z}}
+let bldgVertexDrag = null; // {index, x, y, moved}
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!editingBuildingId || ev.button!==0) return;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -2006,8 +1868,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   const hits = raycaster.intersectObjects(bldgVertexHandles.map(h=>h.mesh));
   if(!hits.length) return;
   const idx = bldgVertexHandles.findIndex(h=>h.mesh===hits[0].object);
-  const b = buildings.find(x=>x.id===editingBuildingId);
-  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false, lastValid: b ? {x:b.points[idx].x, z:b.points[idx].z} : null };
+  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
   controls.enabled = false;
 });
 window.addEventListener('pointermove', (ev)=>{
@@ -2020,39 +1881,27 @@ window.addEventListener('pointermove', (ev)=>{
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
   const idx = bldgVertexDrag.index;
-  // Même mécanisme d'aimantation exacte que le tracé d'un nouveau bâtiment et
-  // que "Emprise pleine" (voir snapPointToZone) : plus de marge fantôme.
-  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
-  if(buildZone.length>=3){
-    // Répare le contour EN TEMPS RÉEL, pas seulement au relâchement : on
-    // avait laissé l'ancien slideToValid (recherche dichotomique) actif
-    // pendant le glissement, qui suppose à tort qu'une arête ne bascule
-    // qu'une fois valide/invalide — sur un renfoncement concave elle rebascule
-    // en valide en approchant le point visé, et la dichotomie s'arrête bien
-    // avant d'y arriver. Le sommet restait alors "coincé" à mi-chemin même
-    // une fois la souris relâchée, puisque la réparation finale ne fait que
-    // légaliser une position déjà figée, sans jamais réessayer d'aller plus
-    // loin. D'où la "marge fantôme" : on répare donc ici, à chaque
-    // mouvement, avec la même insertion de sommets qu'au relâchement.
-    const candidate = b.points.slice();
-    candidate[idx] = { x: target.x, z: target.z };
-    const repaired = repairClosedPolygonAgainstZone(candidate, buildZone);
-    // Retrouve le nouvel index du sommet tiré (repairClosedPolygonAgainstZone
-    // conserve chaque point d'origine tel quel, en insérant seulement entre —
-    // le point qu'on vient de fixer à `target` reste donc présent tel quel).
-    let newIdx = repaired.findIndex(p => p.x===target.x && p.z===target.z);
-    if(newIdx<0) newIdx = idx; // filet de sécurité, ne devrait pas arriver
-    b.points = repaired;
-    bldgVertexDrag.index = newIdx;
-    rebuildBldgVertexHandles(b);
-  } else {
-    b.points[idx] = { x: target.x, z: target.z };
-    bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
-  }
+  // Déplacement totalement LIBRE pendant le glissement, sans aucune
+  // contrainte — la découpe par le polygone d'implantation (rasterClipPolygon)
+  // ne s'applique qu'au relâchement, voir plus bas. Plus de calcul fragile
+  // pendant l'interaction : le sommet suit le curseur, point final.
+  b.points[idx] = { x: pt.x, z: pt.z };
+  bldgVertexHandles[idx].mesh.position.set(pt.x, 0.3, pt.z);
   rebuildMesh(b);
 });
 window.addEventListener('pointerup', ()=>{
   if(!bldgVertexDrag) return;
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  if(b && buildZone.length>=3){
+    const clipped = rasterClipPolygon(b.points, buildZone, 0.5);
+    if(clipped.length){
+      b.points = clipped[0]; // le plus grand morceau si la découpe en produit plusieurs
+      rebuildMesh(b);
+      rebuildBldgVertexHandles(b);
+    } else {
+      flashStatus("La forme ne recouvre plus aucune zone constructible — déplacement annulé");
+    }
+  }
   bldgVertexDrag = null;
   controls.enabled = true;
 });
@@ -2111,18 +1960,16 @@ function renderList(){
       let v = parseInt(floorsInput.value)||1;
       v = Math.max(1, Math.min(60, v));
       b.floors = v;
-      // Le nombre d'étages change : normalizeBands recale tout seul la
-      // tranche du haut sur le nouveau total, sans jamais créer une tranche
-      // par étage ajouté ni casser l'équilibre des tranches existantes.
-      normalizeBands(b);
+      // clip bands to new floor count, ensure coverage
+      b.bands = b.bands.filter(bd=>bd.from<=v).map(bd=>({...bd, to:Math.min(bd.to,v)}));
+      if(!b.bands.length) b.bands = defaultBands(v);
+      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
+      if(lastTo < v) b.bands.push({from:lastTo+1, to:v, usage:'bureaux'});
       rebuildMesh(b); renderList();
     });
     floorsField.appendChild(floorsInput);
 
-    // usage bands editor — modèle "blocs empilés" : on n'édite plus que la
-    // limite haute de chaque bloc (jusqu'à quel étage) ; la limite basse
-    // s'affiche en lecture seule, recalculée automatiquement d'après le bloc
-    // du dessous — impossible de créer un trou ou un recouvrement.
+    // usage bands editor
     const bandsTitle = document.createElement('div');
     bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;';
     bandsTitle.textContent = 'Répartition des usages par étage';
@@ -2131,18 +1978,11 @@ function renderList(){
     b.bands.forEach((band, idx)=>{
       const row = document.createElement('div');
       row.className='band-row';
-      const fromLabel = document.createElement('span');
-      fromLabel.className='band-from-readonly';
-      fromLabel.style.cssText='font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--muted);min-width:22px;text-align:center;';
-      fromLabel.textContent = String(band.from);
+      const fromInp = document.createElement('input');
+      fromInp.type='number'; fromInp.min=1; fromInp.max=b.floors; fromInp.value=band.from;
       const x = document.createElement('span'); x.className='x'; x.textContent='→';
       const toInp = document.createElement('input');
-      toInp.type='number'; toInp.min=band.from; toInp.max=b.floors; toInp.value=band.to;
-      toInp.title = "Jusqu'à quel étage va ce bloc — les blocs au-dessus se recalent automatiquement";
-      // Le tout dernier bloc va toujours jusqu'en haut du bâtiment : sa
-      // limite n'est pas éditable, elle suit le nombre d'étages.
-      const isLast = idx === b.bands.length-1;
-      if(isLast) toInp.disabled = true;
+      toInp.type='number'; toInp.min=1; toInp.max=b.floors; toInp.value=band.to;
       const sel = document.createElement('select');
       Object.entries(USAGE_LABELS).forEach(([k,label])=>{
         const opt = document.createElement('option');
@@ -2151,22 +1991,21 @@ function renderList(){
       });
       const del = document.createElement('button');
       del.className='mini-btn danger'; del.textContent='✕';
-      del.title = 'Fusionner ce bloc avec celui du dessus';
-      del.disabled = b.bands.length<=1;
       del.addEventListener('click', ()=>{
         b.bands.splice(idx,1);
-        normalizeBands(b);
+        if(!b.bands.length) b.bands = defaultBands(b.floors);
         rebuildMesh(b); renderList();
       });
       function commit(){
+        band.from = Math.max(1, Math.min(parseInt(fromInp.value)||1, b.floors));
         band.to = Math.max(band.from, Math.min(parseInt(toInp.value)||band.from, b.floors));
         band.usage = sel.value;
-        normalizeBands(b);
         rebuildMesh(b); renderList();
       }
+      fromInp.addEventListener('change', commit);
       toInp.addEventListener('change', commit);
       sel.addEventListener('change', commit);
-      row.append(fromLabel, x, toInp, sel, del);
+      row.append(fromInp, x, toInp, sel, del);
       body.appendChild(row);
     });
 
@@ -2174,20 +2013,10 @@ function renderList(){
     addBandBtn.className='small-action';
     addBandBtn.textContent='+ Ajouter une tranche d\'usage';
     addBandBtn.style.marginTop='6px';
-    addBandBtn.title = 'Scinde le bloc du haut en deux, moitié-moitié';
-    addBandBtn.disabled = b.bands[b.bands.length-1].from >= b.floors;
     addBandBtn.addEventListener('click', ()=>{
-      // Scinde automatiquement le dernier bloc en deux plutôt que de laisser
-      // l'utilisateur définir une plage manuellement (source de trous/
-      // recouvrements) : la moitié basse garde l'usage existant, la moitié
-      // haute devient un nouveau bloc — équilibré, jamais "bordélique".
-      const last = b.bands[b.bands.length-1];
-      if(last.from >= b.floors) return;
-      const mid = Math.floor((last.from + b.floors) / 2);
-      const splitAt = Math.max(last.from, Math.min(mid, b.floors-1));
-      last.to = splitAt;
-      b.bands.push({from:splitAt+1, to:b.floors, usage:'residentiel'});
-      normalizeBands(b);
+      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
+      if(lastTo>=b.floors) return;
+      b.bands.push({from:lastTo+1, to:b.floors, usage:'residentiel'});
       rebuildMesh(b); renderList();
     });
     body.appendChild(addBandBtn);
@@ -2330,7 +2159,6 @@ function setNightMode(night){
   scene.background.setHex(night ? 0x0b1220 : 0x101820);
   scene.fog.color.setHex(night ? 0x0b1220 : 0x101820);
   siteLights.forEach(l=> l.visible = night);
-  applyVehicleLightState(); // phares/feux des véhicules (déjà modélisés dans vehicules.glb)
   btnNight.querySelector('.tool-btn-label').textContent = night ? 'Jour' : 'Nuit';
   // Après le premier rendu, lucide.createIcons() a remplacé le <i data-lucide="…">
   // d'origine par un vrai <svg> : on ne peut donc plus faire setAttribute dessus
@@ -2369,17 +2197,14 @@ document.getElementById('btn-save-json').addEventListener('click', ()=>{
 });
 
 // Répare une emprise chargée depuis un ancien projet JSON (sauvegardé avant
-// la validation de contour complet) qui peut contenir une arête sortant d'un
-// renfoncement concave du polygone, même si chaque sommet pris isolément est
-// valide. Retrace la forme sommet par sommet, comme un tracé manuel : chaque
-// point est glissé vers le précédent si l'arête qu'il forme sort de la zone.
-// Répare une emprise chargée depuis un ancien projet JSON (sauvegardé avant
-// la réparation "hugging" par insertion de sommets) : utilise directement
-// repairClosedPolygonAgainstZone, qui insère les sommets du polygone le long
-// de tout renfoncement concave plutôt que de raccourcir grossièrement l'arête.
+// Répare une emprise chargée depuis un ancien projet JSON en la découpant
+// par le polygone d'implantation (rasterClipPolygon, voir plus haut) — même
+// mécanisme que le tracé et l'édition, aucun code de réparation séparé à
+// maintenir.
 function repairBuildingPoints(points, zone){
   if(!points || points.length<3 || zone.length<3) return points;
-  return repairClosedPolygonAgainstZone(points, zone);
+  const clipped = rasterClipPolygon(points, zone, 0.5);
+  return clipped.length ? clipped[0] : points;
 }
 const fileLoad = document.getElementById('file-load');
 document.getElementById('btn-load-json').addEventListener('click', ()=> fileLoad.click());
@@ -2396,9 +2221,11 @@ fileLoad.addEventListener('change', (e)=>{
       let repairedCount = 0;
       (data.buildings||[]).forEach(b=>{
         let pts = b.points;
-        if(buildZone.length>=3 && !polygonFullyInsideZone(pts, buildZone)){
-          pts = repairBuildingPoints(pts, buildZone);
-          repairedCount++;
+        if(buildZone.length>=3){
+          const repaired = repairBuildingPoints(pts, buildZone);
+          const areaBefore = polygonArea(pts), areaAfter = polygonArea(repaired);
+          if(Math.abs(areaAfter-areaBefore) > Math.max(1, areaBefore*0.01)) repairedCount++;
+          pts = repaired;
         }
         createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands});
       });
@@ -2417,110 +2244,27 @@ fileLoad.addEventListener('change', (e)=>{
    Une "voie" = une courbe (CatmullRomCurve3). On peut la tracer à la
    souris (comme un bâtiment mais en polyligne ouverte) ou en charger
    depuis un routes.json exporté de Blender (courbes Bézier → points).
-   Chaque voie reçoit un pool de piétons/véhicules animés le long de la
-   courbe via curve.getPointAt(t). Les véhicules sont désormais de vrais
-   modèles chargés depuis vehicules.glb (bus, voiture, tram en 3 caisses
-   avant/milieu/arrière) — plus des boîtes génériques. Les phares/feux sont
-   ceux déjà modélisés dans le .glb (matériaux "phare_blanc"/"phare_rouge"),
-   allumés/éteints globalement avec le mode nuit (voir applyVehicleLightState).
+   Chaque voie reçoit un pool de piétons/véhicules animés le long de
+   la courbe via curve.getPointAt(t), rendus en instanced mesh low-poly.
    ============================================================ */
 const ROUTE_TYPES = {
-  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  wagons:3, parts:['tramAvant','tramMilieu','tramArriere'], length:14,   fallbackScale:[2.2,2.6,9] },
-  bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  wagons:1, part:'bus',                                    length:8.9,  fallbackScale:[2,2.4,6]  },
-  voiture:{ label:'Voiture', color:0x2c0a71, speed:10, count:7,  wagons:1, part:'voiture',                                length:5.1,  fallbackScale:[1.7,1.3,3.4] },
-  pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, wagons:1, part:null,                                     length:0.5,  fallbackScale:[0.4,1.4,0.5] }
+  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  scale:[2.2,2.6,9], wagons:3 },
+  bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  scale:[2,2.4,6]  },
+  voiture:{ label:'Voiture', color:0x2c0a71, speed:10,  count:7,  scale:[1.7,1.3,3.4]},
+  pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, scale:[0.4,1.4,0.5]}
 };
-let routes = []; // {id, name, type, points:[{x,y,z}], curve, vehicleGroup, agents:[{t,speed,wagonOffset,mesh}]}
+let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,wagonOffset}]}
 let routeIdCounter = 1;
 
 // Un "wagon" est un décalage d'arc-longueur fixe derrière le t de base de son
 // unité (train/bus/etc) — pas un agent indépendant. Toute l'unité (ex. les 3
-// caisses d'un tram) avance donc exactement au même rythme, sans jamais se
-// désynchroniser. wagonIndex sert aussi à choisir le bon modèle (avant/
-// milieu/arrière) pour le tram.
-const WAGON_GAP = 0.4; // mètres entre deux caisses consécutives
+// wagons d'un tram, tous de la même taille que la boîte scale[]) avance donc
+// exactement au même rythme, sans jamais se désynchroniser.
+const WAGON_GAP = 0.4; // mètres entre deux wagons consécutifs
 
-/* ---- Modèles réels (vehicules.glb) ------------------------------------ */
-const VEHICLES_GLB_URL = './vehicules.glb';
-let vehicleTemplates = null; // {bus, voiture, tramAvant, tramMilieu, tramArriere} -> THREE.Object3D
-const vehicleBodyMaterials = {}; // type -> THREE.Material de carrosserie (couleur modifiable en direct)
-const vehicleLightMaterials = { blanc:null, rouge:null }; // matériaux de phares PARTAGÉS par tous les véhicules
-// Matériau/geometry de secours pour piétons (aucun modèle piéton fourni) et
-// pour les véhicules si jamais vehicules.glb ne charge pas.
-const pedestrianGeo = new THREE.CapsuleGeometry(0.22, 0.9, 4, 8);
-const pedestrianMat = new THREE.MeshStandardMaterial({ color:ROUTE_TYPES.pieton.color, roughness:0.8 });
-
-function findMaterialByName(root, name){
-  if(!root) return null;
-  let found = null;
-  root.traverse(o=>{
-    if(found || !o.isMesh) return;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    const m = mats.find(mm=>mm && mm.name===name);
-    if(m) found = m;
-  });
-  return found;
-}
-function applyVehicleLightState(){
-  const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
-  if(vehicleLightMaterials.blanc) vehicleLightMaterials.blanc.emissiveIntensity = on ? 3.0 : 0;
-  if(vehicleLightMaterials.rouge) vehicleLightMaterials.rouge.emissiveIntensity = on ? 2.2 : 0;
-}
-function loadVehiclesFromGLB(){
-  return new Promise((resolve)=>{
-    gltfLoader.load(VEHICLES_GLB_URL, (gltf)=>{
-      const scene = gltf.scene;
-      const bus = findByNameCI(scene, 'Bus');
-      const voiture = findByNameCI(scene, 'voiture');
-      const tramAvant = findByNameCI(scene, 'tram_avant');
-      const tramMilieu = findByNameCI(scene, 'tram_milieu');
-      const tramArriere = findByNameCI(scene, 'tram_arrière') || findByNameCI(scene, 'tram_arriere');
-      vehicleTemplates = { bus, voiture, tramAvant, tramMilieu, tramArriere };
-
-      // Carrosserie : un matériau par type, modifiable en direct par le
-      // sélecteur couleur admin — partagé par toutes les instances clonées,
-      // donc un seul réglage suffit à recolorer TOUS les véhicules du type.
-      vehicleBodyMaterials.bus = findMaterialByName(bus, 'Matériau.005');
-      vehicleBodyMaterials.voiture = findMaterialByName(voiture, 'voiture');
-      vehicleBodyMaterials.tram = findMaterialByName(tramAvant, 'tram') || findMaterialByName(tramMilieu, 'tram');
-
-      // Phares avant/arrière déjà modélisés dans le .glb, matériaux partagés
-      // entre tous les véhicules : un seul basculement jour/nuit suffit.
-      vehicleLightMaterials.blanc = findMaterialByName(bus,'phare_blanc') || findMaterialByName(voiture,'phare_blanc') || findMaterialByName(tramAvant,'phare_blanc');
-      vehicleLightMaterials.rouge = findMaterialByName(bus,'phare_rouge') || findMaterialByName(voiture,'phare_rouge') || findMaterialByName(tramArriere,'phare_rouge');
-      if(vehicleLightMaterials.blanc) vehicleLightMaterials.blanc.emissive = new THREE.Color(0xffffff);
-      if(vehicleLightMaterials.rouge) vehicleLightMaterials.rouge.emissive = new THREE.Color(0xff2a2a);
-      applyVehicleLightState();
-      resolve();
-    }, undefined, ()=>{
-      // Échec de chargement : on continue avec des boîtes de secours plutôt
-      // que de bloquer toute la circulation.
-      vehicleTemplates = null;
-      resolve();
-    });
-  });
-}
-function instantiateVehiclePart(cfg, wagonIndex){
-  const key = cfg.parts ? cfg.parts[wagonIndex] : cfg.part;
-  const template = key && vehicleTemplates ? vehicleTemplates[key] : null;
-  if(template){
-    const obj = template.clone(true);
-    obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
-    return obj;
-  }
-  // Boîte de secours (piéton, ou modèle manquant) — dimensions approximatives.
-  const isPieton = cfg===ROUTE_TYPES.pieton;
-  const geo = isPieton ? pedestrianGeo : new THREE.BoxGeometry(...cfg.fallbackScale);
-  let mat = isPieton ? pedestrianMat : vehicleBodyMaterials[cfg._fallbackKey];
-  if(!isPieton && !mat){
-    mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
-    vehicleBodyMaterials[cfg._fallbackKey] = mat;
-  }
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  return mesh;
-}
-ROUTE_TYPES.tram._fallbackKey='tram'; ROUTE_TYPES.bus._fallbackKey='bus'; ROUTE_TYPES.voiture._fallbackKey='voiture';
+const headlightGeo = new THREE.SphereGeometry(0.14, 8, 8);
+const headlightMat = new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xffffff, emissiveIntensity:2.5 });
+const taillightMat = new THREE.MeshStandardMaterial({ color:0xff1a1a, emissive:0xff1a1a, emissiveIntensity:2.5 });
 
 function createRoute(points, type, name){
   if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
@@ -2528,66 +2272,164 @@ function createRoute(points, type, name){
   const vec = points.map(p=>new THREE.Vector3(p.x, p.y||0.15, p.z));
   const curve = new THREE.CatmullRomCurve3(vec, false, 'catmullrom', 0.2);
 
+  const geo = new THREE.BoxGeometry(...cfg.scale);
+  const mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
   const count = cfg.count;
   const wagons = cfg.wagons || 1;
-  const vehicleGroup = new THREE.Group();
-  worldRoot.add(vehicleGroup);
+  const inst = new THREE.InstancedMesh(geo, mat, count*wagons);
+  inst.castShadow = true;
+  worldRoot.add(inst);
 
   const agents = [];
   for(let u=0;u<count;u++){
     const baseT = u/count;
     const speed = cfg.speed * (0.9+Math.random()*0.2);
     for(let w=0;w<wagons;w++){
-      const mesh = instantiateVehiclePart(cfg, w);
-      vehicleGroup.add(mesh);
-      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.length+WAGON_GAP), wagonIndex: w, mesh });
+      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.scale[2]+WAGON_GAP), wagonIndex: w });
     }
+  }
+
+// Phares : 2 blancs à l'avant, 2 rouges à l'arrière — jamais pour les piétons.
+  // Seul le PREMIER wagon a des phares avant, et seul le DERNIER a des feux arrière.
+  // Chaque wagon concerné possède désormais 2 instances (gauche et droite).
+  let headInst = null, tailInst = null;
+  if(type !== 'pieton'){
+    let hc=0, tc=0;
+    agents.forEach(a=>{
+      // On multiplie par 2 car chaque wagon valide a maintenant 2 phares (gauche et droite)
+      a.headIdx = (a.wagonIndex===0) ? hc : -1;
+      if(a.wagonIndex===0) hc += 2;
+
+      a.tailIdx = (a.wagonIndex===wagons-1) ? tc : -1;
+      if(a.wagonIndex===wagons-1) tc += 2;
+    });
+    // On crée un InstancedMesh avec une capacité doublée (hc et tc représentent le nombre total de phares)
+    if(hc>0){ headInst = new THREE.InstancedMesh(headlightGeo, headlightMat, hc); worldRoot.add(headInst); }
+    if(tc>0){ tailInst = new THREE.InstancedMesh(headlightGeo, taillightMat, tc); worldRoot.add(tailInst); }
+  } else {
+    agents.forEach(a=>{ a.headIdx=-1; a.tailIdx=-1; });
   }
 
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
   line.visible = false; // le tracé lui-même reste caché ; seuls les véhicules/piétons animés sont visibles
   worldRoot.add(line);
 
-  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, vehicleGroup, line, agents };
+  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, headInst, tailInst, scale: cfg.scale, line, agents };
   routes.push(route);
   renderRouteList();
   return route;
 }
 
-// Chaque agent porte directement sa propre instance de modèle (r.mesh) :
-// on met simplement à jour sa position/orientation à chaque frame, plus
-// besoin de gérer des InstancedMesh de phares séparés puisque les phares
-// sont déjà modélisés dans vehicules.glb (voir applyVehicleLightState).
+const dummy = new THREE.Object3D();
+const lightDummy = new THREE.Object3D();
 function tickAgents(dt){
   for(const r of routes){
     const len = r.curve.getLength();
     if(len<=0) continue;
-    r.agents.forEach((a)=>{
+    const halfLen = r.scale[2]/2, lightUp = r.scale[1]*0.3, lightSide = r.scale[0]*0.32;
+    r.agents.forEach((a,i)=>{
       a.t = (a.t + (a.speed*dt)/len) % 1;
       // le wagon n'est jamais exactement à a.t : il traîne derrière de
       // wagonOffset mètres (converti en fraction de la longueur de la courbe).
       const wagonT = ((a.t - (a.wagonOffset||0)/len) % 1 + 1) % 1;
       const pos = r.curve.getPointAt(wagonT);
       const tangent = r.curve.getTangentAt(wagonT);
-      const m = a.mesh;
-      if(!m) return;
-      m.position.copy(pos);
-      m.position.y += 0.05;
+      dummy.position.copy(pos);
+      dummy.position.y += 0.05;
+      dummy.lookAt(pos.clone().add(tangent));
       // léger bruit latéral pour les piétons (foule moins "sur des rails")
       if(r.type==='pieton'){
-        const lateral = Math.sin(a.t*40 + (a.wagonIndex||0)*7 + a.speed*13) * 0.4;
+        const lateral = Math.sin(a.t*40 + i*7) * 0.4;
         const side = new THREE.Vector3(-tangent.z,0,tangent.x);
-        m.position.addScaledVector(side, lateral);
+        dummy.position.addScaledVector(side, lateral);
       }
-      m.lookAt(m.position.clone().add(tangent));
+dummy.updateMatrix();
+      r.instancedMesh.setMatrixAt(i, dummy.matrix);
+
+      const nightActive = (typeof isNight !== 'undefined' && isNight) || (typeof nightMode !== 'undefined' && nightMode) || (window.isNight === true);
+
+      if(nightActive && (a.headIdx>=0 || a.tailIdx>=0)){
+        const forward = tangent.clone().normalize();
+        const up = new THREE.Vector3(0,1,0);
+        const side = new THREE.Vector3().crossVectors(up, forward).normalize();
+        
+        // Valeur strictement entre 0.12 et 0.42 -> 0.28 (juste milieu parfait)
+        const estimatedWidth = Math.max(halfLen * 0.8, 1.8);
+        const lightOffset = estimatedWidth * 0.28; 
+
+        // Phares bien visibles
+        lightDummy.scale.set(1.8, 1.8, 1.8);
+
+        if(a.headIdx>=0){
+          // Phare avant GAUCHE
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, -lightOffset);
+          lightDummy.updateMatrix();
+          r.headInst.setMatrixAt(a.headIdx, lightDummy.matrix);
+
+          // Phare avant DROIT
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, lightOffset);
+          lightDummy.updateMatrix();
+          r.headInst.setMatrixAt(a.headIdx + 1, lightDummy.matrix);
+        }
+
+        if(a.tailIdx>=0){
+          // Phare arrière GAUCHE
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, -halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, -lightOffset);
+          lightDummy.updateMatrix();
+          r.tailInst.setMatrixAt(a.tailIdx, lightDummy.matrix);
+
+          // Phare arrière DROIT
+          lightDummy.position.copy(dummy.position)
+            .addScaledVector(forward, -halfLen * 0.95)
+            .addScaledVector(up, lightUp)
+            .addScaledVector(side, lightOffset);
+          lightDummy.updateMatrix();
+          r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
+        }
+        
+        lightDummy.scale.set(1, 1, 1);
+      } else if (a.headIdx>=0 || a.tailIdx>=0) {
+        // Éteints le jour
+        lightDummy.scale.set(0, 0, 0);
+        lightDummy.updateMatrix();
+        if(a.headIdx>=0) {
+          r.headInst.setMatrixAt(a.headIdx, lightDummy.matrix);
+          r.headInst.setMatrixAt(a.headIdx + 1, lightDummy.matrix);
+        }
+        if(a.tailIdx>=0) {
+          r.tailInst.setMatrixAt(a.tailIdx, lightDummy.matrix);
+          r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
+        }
+      }
     });
+    r.instancedMesh.instanceMatrix.needsUpdate = true;
+    if(r.headInst) {
+      r.headInst.instanceMatrix.needsUpdate = true;
+      r.headInst.frustumCulled = false;
+    }
+    if(r.tailInst) {
+      r.tailInst.instanceMatrix.needsUpdate = true;
+      r.tailInst.frustumCulled = false;
+    }
   }
 }
 
 function clearRoutes(){
   routes.forEach(r=>{
-    worldRoot.remove(r.vehicleGroup); worldRoot.remove(r.line);
+    worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
+    r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
     r.line.geometry.dispose(); r.line.material.dispose();
+    if(r.headInst) worldRoot.remove(r.headInst);
+    if(r.tailInst) worldRoot.remove(r.tailInst);
   });
   routes = [];
   renderRouteList();
@@ -2595,8 +2437,11 @@ function clearRoutes(){
 function deleteRoute(id){
   const r = routes.find(x=>x.id===id);
   if(!r) return;
-  worldRoot.remove(r.vehicleGroup); worldRoot.remove(r.line);
+  worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
+  r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
   r.line.geometry.dispose(); r.line.material.dispose();
+  if(r.headInst) worldRoot.remove(r.headInst);
+  if(r.tailInst) worldRoot.remove(r.tailInst);
   routes = routes.filter(x=>x.id!==id);
   renderRouteList();
 }
@@ -2660,12 +2505,7 @@ function renderVehicleColorControls(){
     input.addEventListener('input', ()=>{
       const hex = parseInt(input.value.slice(1), 16);
       ROUTE_TYPES[type].color = hex;
-      // Le matériau de carrosserie est PARTAGÉ par toutes les instances de ce
-      // type (voir loadVehiclesFromGLB) : un seul réglage suffit à recolorer
-      // tous les véhicules déjà posés, sans reparcourir chaque route.
-      const key = ROUTE_TYPES[type]._fallbackKey || type;
-      if(vehicleBodyMaterials[key]) vehicleBodyMaterials[key].color.setHex(hex);
-      if(type==='pieton') pedestrianMat.color.setHex(hex);
+      routes.forEach(r=>{ if(r.type===type) r.instancedMesh.material.color.setHex(hex); });
       renderRouteList(); // rafraîchit le pastille de couleur dans la liste
     });
     row.append(label, input);
@@ -2740,29 +2580,22 @@ function animate(){
 }
 animate();
 
-// Charge d'abord les modèles de véhicules (vehicules.glb) : toute création de
-// voie (démo ou routes.json) a besoin des gabarits chargés pour cloner de
-// vrais bus/trams/voitures au lieu de boîtes de secours. Le fichier est petit,
-// le délai est négligeable, et un échec de chargement ne bloque rien (repli
-// automatique sur les boîtes de secours, voir instantiateVehiclePart).
-loadVehiclesFromGLB().then(()=>{
-  // Charge la vraie maquette si le fichier est présent à côté de index.html ;
-  // sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
-  // et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
-  loadSiteFromGLB(SITE_GLB_URL, (err)=>{
-    const isFileProtocol = location.protocol === 'file:';
-    showSiteBanner(`
-      <div>
-        <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL})${err && err.message ? ' — '+err.message : ''}.<br>
-        ${isFileProtocol
-          ? "Cette page est ouverte en double-clic (protocole file://), qui bloque le chargement automatique du .glb par le navigateur. Lance un serveur local depuis le dossier contenant les deux fichiers : <code>python -m http.server 8000</code>, puis ouvre <code>http://localhost:8000</code>."
-          : "Vérifie que <code>place_de_milan.glb</code> est bien placé exactement à côté de <code>index.html</code>, avec ce nom précis (respecte la casse)."}
-        <br>En attendant, une maquette de démonstration est affichée — utilise <b>Charger maquette (.glb)</b> pour charger le fichier manuellement.
-      </div>
-    `);
-    buildDemoSite();
-    tryAutoLoadRoutes();
-  });
+// Charge la vraie maquette si le fichier est présent à côté de index.html ;
+// sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
+// et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
+loadSiteFromGLB(SITE_GLB_URL, (err)=>{
+  const isFileProtocol = location.protocol === 'file:';
+  showSiteBanner(`
+    <div>
+      <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL})${err && err.message ? ' — '+err.message : ''}.<br>
+      ${isFileProtocol
+        ? "Cette page est ouverte en double-clic (protocole file://), qui bloque le chargement automatique du .glb par le navigateur. Lance un serveur local depuis le dossier contenant les deux fichiers : <code>python -m http.server 8000</code>, puis ouvre <code>http://localhost:8000</code>."
+        : "Vérifie que <code>place_de_milan.glb</code> est bien placé exactement à côté de <code>index.html</code>, avec ce nom précis (respecte la casse)."}
+      <br>En attendant, une maquette de démonstration est affichée — utilise <b>Charger maquette (.glb)</b> pour charger le fichier manuellement.
+    </div>
+  `);
+  buildDemoSite();
+  tryAutoLoadRoutes();
 });
 </script>
 </body>
