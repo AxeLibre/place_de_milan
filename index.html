@@ -58,7 +58,8 @@
 
   #status-line{
     font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
-    margin-left:auto;text-align:right;max-width:280px;
+    margin-left:auto;text-align:right;max-width:380px;
+    white-space:nowrap;
   }
   #status-line b{color:var(--accent);}
 
@@ -1125,7 +1126,12 @@ function buildDrawGuideMeshes(){
 }
 buildDrawGuideMeshes();
 function updateDrawGuide(pt){
-  if(!pt){ drawGuideGroup.visible = false; return; }
+  if(!pt){ drawGuideGroup.visible = false; 
+    if (drawing) {
+      statusLine.innerHTML = `🟢 Mode dessin : déplacez la souris pour voir la position corrigée (cliquez pour poser)`;
+    }
+    return; 
+  }
   const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
   drawGuideGroup.visible = true;
   drawGuideDot.position.set(target.x, 0.25, target.z);
@@ -1138,6 +1144,9 @@ function updateDrawGuide(pt){
     drawGuideSegment.visible = true;
   } else {
     drawGuideSegment.visible = false;
+  }
+  if (drawing) {
+    statusLine.innerHTML = `🟢 Position corrigée : x=${target.x.toFixed(2)}, z=${target.z.toFixed(2)}  (cliquez pour poser) · ${drawPoints.length} sommets posés`;
   }
 }
 function hideDrawGuide(){ drawGuideGroup.visible = false; }
@@ -1178,6 +1187,7 @@ function startDraw(){
   btnDraw.querySelector('.tool-btn-label').textContent = 'Dessin en cours…';
   drawHint.classList.add('show');
   controls.enabled = false; // left click reserved for placing points while drawing
+  statusLine.innerHTML = `🟢 Mode dessin : déplacez la souris pour voir la position corrigée (cliquez pour poser)`;
 }
 function cancelDraw(){
   drawing = false; drawPoints = [];
@@ -1186,6 +1196,7 @@ function cancelDraw(){
   btnDraw.querySelector('.tool-btn-label').textContent = 'Nouveau bâtiment';
   drawHint.classList.remove('show');
   controls.enabled = true;
+  statusLine.innerHTML = 'Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer';
 }
 function clearMarkers(){
   drawMarkers.clear();
@@ -1529,6 +1540,10 @@ function addDrawPoint(pt){
   m.position.set(next.x,0.2,next.z);
   drawMarkers.add(m);
   refreshPreview();
+  // Mettre à jour le statut pour montrer le nombre de points posés
+  if (drawing) {
+    statusLine.innerHTML = `🟢 Position corrigée : x=${next.x.toFixed(2)}, z=${next.z.toFixed(2)}  (cliquez pour poser) · ${drawPoints.length} sommets posés`;
+  }
 }
 function finishDraw(){
   if(drawPoints.length<3){ cancelDraw(); return; }
