@@ -1096,6 +1096,55 @@ let drawPoints = [];
 let drawMarkers = new THREE.Group();
 let previewLine = null;
 worldRoot.add(drawMarkers);
+// Guide de pose façon "jeu de construction" (SimCity) : montre, avant même
+// de cliquer, où le prochain sommet va exactement se poser (aimanté sur la
+// grille du polygone d'implantation) — un point fantôme + une croix + le
+// segment fantôme depuis le dernier sommet posé.
+let drawGuideGroup = new THREE.Group(); worldRoot.add(drawGuideGroup);
+let drawGuideDot = null, drawGuideCross = null, drawGuideSegment = null;
+function buildDrawGuideMeshes(){
+  drawGuideGroup.clear();
+  drawGuideDot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55,14,14),
+    new THREE.MeshBasicMaterial({color:0x7CFC98, transparent:true, opacity:0.9, depthTest:false})
+  );
+  drawGuideDot.renderOrder = 998;
+  const crossGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-1.1,0.25,0), new THREE.Vector3(1.1,0.25,0),
+    new THREE.Vector3(0,0.25,-1.1), new THREE.Vector3(0,0.25,1.1)
+  ]);
+  drawGuideCross = new THREE.LineSegments(crossGeo, new THREE.LineBasicMaterial({color:0x7CFC98, depthTest:false, transparent:true, opacity:0.9}));
+  drawGuideCross.renderOrder = 998;
+  drawGuideSegment = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+    new THREE.LineDashedMaterial({color:0x7CFC98, dashSize:0.6, gapSize:0.4, transparent:true, opacity:0.7, depthTest:false})
+  );
+  drawGuideSegment.renderOrder = 997;
+  drawGuideGroup.add(drawGuideDot, drawGuideCross, drawGuideSegment);
+  drawGuideGroup.visible = false;
+}
+buildDrawGuideMeshes();
+function updateDrawGuide(pt){
+  if(!pt){ drawGuideGroup.visible = false; return; }
+  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
+  drawGuideGroup.visible = true;
+  drawGuideDot.position.set(target.x, 0.25, target.z);
+  drawGuideCross.position.set(target.x, 0, target.z);
+  if(drawPoints.length>0){
+    const from = drawPoints[drawPoints.length-1];
+    const pts = [new THREE.Vector3(from.x,0.25,from.z), new THREE.Vector3(target.x,0.25,target.z)];
+    drawGuideSegment.geometry.setFromPoints(pts);
+    drawGuideSegment.computeLineDistances();
+    drawGuideSegment.visible = true;
+  } else {
+    drawGuideSegment.visible = false;
+  }
+}
+function hideDrawGuide(){ drawGuideGroup.visible = false; }
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!drawing) return;
+  updateDrawGuide(groundPointFromEvent(ev));
+});
 
 let selectedId = null;
 
@@ -1141,6 +1190,7 @@ function cancelDraw(){
 function clearMarkers(){
   drawMarkers.clear();
   if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
+  hideDrawGuide();
 }
 function refreshPreview(){
   if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
@@ -1233,6 +1283,37 @@ function nearestZoneVertex(pt, zone, radius){
   return best ? { x: best.x, z: best.z } : null;
 }
 const VERTEX_SNAP_RADIUS = 4; // unités de scène (~4 m) : assez large pour "attraper" le sommet visé sans viser au pixel près
+// Distance sous laquelle un point visé est aimanté PILE sur le bord du
+// polygone (projection exacte), au lieu d'être simplement toléré "à peu
+// près dessus". C'est cette dernière tolérance (pointInPolygon/clamp,
+// quelques cm) qui laissait passer un point resté légèrement en retrait —
+// la fameuse "marge fantôme" — puisqu'un point jugé "assez proche" pour
+// être valide n'était jamais recalé sur le bord lui-même.
+const EDGE_SNAP_RADIUS = 1.5; // unités de scène (~1.5 m)
+// Point de guidage UNIQUE, utilisé à la fois pour le tracé d'un nouveau
+// bâtiment et pour le glissement d'un sommet existant — exactement le même
+// mécanisme fiable que "Emprise pleine" (copie/projection exacte des
+// coordonnées du polygone, jamais un point "presque" dessus) :
+//   1) sommet du polygone à portée -> aimantation exacte dessus.
+//   2) sinon bord du polygone à portée -> projection exacte SUR le bord.
+//   3) sinon, à l'intérieur -> le point tel quel.
+//   4) sinon (hors polygone, loin d'un bord) -> clamp classique.
+function snapPointToZone(pt, zone){
+  if(zone.length<3) return {x:pt.x, z:pt.z};
+  const vertex = nearestZoneVertex(pt, zone, VERTEX_SNAP_RADIUS);
+  if(vertex) return vertex;
+  if(distanceToPolygonBoundary(pt, zone) <= EDGE_SNAP_RADIUS){
+    let best=null, bestDist=Infinity;
+    for(let i=0;i<zone.length;i++){
+      const a=zone[i], b=zone[(i+1)%zone.length];
+      const proj = closestPointOnSegment(pt,a,b);
+      const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
+      if(d<bestDist){ bestDist=d; best=proj; }
+    }
+    return best;
+  }
+  return clampPointToPolygon(pt, zone);
+}
 // Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
 // reste dans le polygone d'implantation, en échantillonnant chaque arête.
 function polygonFullyInsideZone(pts, zone){
@@ -1365,12 +1446,10 @@ function flashStatus(msg){
   flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
 }
 function addDrawPoint(pt){
-  // Aimantation directe sur un sommet du polygone si on clique à proximité —
-  // même mécanisme fiable que "Emprise pleine" (copie exacte des coordonnées).
-  const snapped = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
-  // Étape 1 : sinon, ramène le point visé au bord le plus proche s'il tombe
-  // dehors (évite un clic purement ignoré près de la limite).
-  const target = snapped || (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
+  // Aimantation directe sur un sommet/bord du polygone si on clique à
+  // proximité — même mécanisme fiable que "Emprise pleine" (copie/projection
+  // exacte des coordonnées, jamais un point "presque" dessus).
+  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
   // Étape 2 : le SEGMENT reliant le point précédent à celui-ci peut couper un
   // renfoncement concave du polygone même si les deux extrémités sont valides
   // chacune de leur côté (même bug que pour le drag d'un sommet existant). On
@@ -1735,6 +1814,44 @@ function defaultBands(floors){
   return [{from:1, to:floors, usage:'bureaux'}];
 }
 
+// ============================================================
+// RÉPARTITION DES USAGES PAR ÉTAGE — modèle "blocs empilés"
+// ============================================================
+// Repensé pour être toujours cohérent, sans jamais avoir à y toucher à la
+// main : chaque tranche n'a plus qu'UNE seule limite réellement "possédée"
+// par l'utilisateur, sa limite haute (`to`) ; sa limite basse (`from`) est
+// TOUJOURS recalculée automatiquement comme "juste au-dessus du bloc du
+// dessous" (comme des blocs SimCity empilés les uns sur les autres). Ainsi :
+//   - modifier un bloc pousse/retasse automatiquement tous les blocs
+//     au-dessus, sans jamais laisser de trou ni de recouvrement ;
+//   - la toute dernière tranche va TOUJOURS jusqu'au dernier étage du
+//     bâtiment, y compris quand on change le nombre d'étages — donc ajouter
+//     un étage ne crée jamais de nouvelle tranche, il agrandit juste la
+//     tranche du haut.
+function normalizeBands(b){
+  let bands = (b.bands && b.bands.length ? b.bands : defaultBands(b.floors))
+    .slice()
+    .sort((x,y)=> x.to-y.to)
+    .filter(bd=> bd.to >= 1);
+  const out = [];
+  let from = 1;
+  for(const band of bands){
+    if(from > b.floors) break;
+    const to = Math.max(from, Math.min(Math.round(band.to), b.floors));
+    out.push({ from, to, usage: band.usage || 'bureaux' });
+    from = to+1;
+  }
+  if(!out.length){
+    out.push({from:1, to:b.floors, usage:'bureaux'});
+  } else if(out[out.length-1].to < b.floors){
+    // Le nombre d'étages a augmenté (ou une tranche manquait) : la tranche
+    // du haut absorbe automatiquement les nouveaux étages — jamais de
+    // nouvelle tranche créée toute seule.
+    out[out.length-1].to = b.floors;
+  }
+  b.bands = out;
+}
+
 function createBuilding(pts, opts={}){
   const b = {
     id: idCounter++,
@@ -1745,6 +1862,7 @@ function createBuilding(pts, opts={}){
     group: new THREE.Group(),
     open: true
   };
+  normalizeBands(b);
   worldRoot.add(b.group);
   buildings.push(b);
   selectedId = b.id;
@@ -1882,13 +2000,9 @@ window.addEventListener('pointermove', (ev)=>{
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
   const idx = bldgVertexDrag.index;
-  // Aimantation directe sur un sommet du polygone si on s'en approche : même
-  // mécanisme fiable que "Emprise pleine" (copie exacte des coordonnées, pas
-  // de calcul intermédiaire). Prioritaire sur le clamp/glissement ci-dessous.
-  const snapped = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
-  // Ramène le point visé au bord le plus proche s'il tombe dehors (évite un
-  // rejet sec sur un point isolé).
-  const target = snapped || (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
+  // Même mécanisme d'aimantation exacte que le tracé d'un nouveau bâtiment et
+  // que "Emprise pleine" (voir snapPointToZone) : plus de marge fantôme.
+  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
   if(buildZone.length>=3){
     // Répare le contour EN TEMPS RÉEL, pas seulement au relâchement : on
     // avait laissé l'ancien slideToValid (recherche dichotomique) actif
@@ -1977,16 +2091,18 @@ function renderList(){
       let v = parseInt(floorsInput.value)||1;
       v = Math.max(1, Math.min(60, v));
       b.floors = v;
-      // clip bands to new floor count, ensure coverage
-      b.bands = b.bands.filter(bd=>bd.from<=v).map(bd=>({...bd, to:Math.min(bd.to,v)}));
-      if(!b.bands.length) b.bands = defaultBands(v);
-      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
-      if(lastTo < v) b.bands.push({from:lastTo+1, to:v, usage:'bureaux'});
+      // Le nombre d'étages change : normalizeBands recale tout seul la
+      // tranche du haut sur le nouveau total, sans jamais créer une tranche
+      // par étage ajouté ni casser l'équilibre des tranches existantes.
+      normalizeBands(b);
       rebuildMesh(b); renderList();
     });
     floorsField.appendChild(floorsInput);
 
-    // usage bands editor
+    // usage bands editor — modèle "blocs empilés" : on n'édite plus que la
+    // limite haute de chaque bloc (jusqu'à quel étage) ; la limite basse
+    // s'affiche en lecture seule, recalculée automatiquement d'après le bloc
+    // du dessous — impossible de créer un trou ou un recouvrement.
     const bandsTitle = document.createElement('div');
     bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;';
     bandsTitle.textContent = 'Répartition des usages par étage';
@@ -1995,11 +2111,18 @@ function renderList(){
     b.bands.forEach((band, idx)=>{
       const row = document.createElement('div');
       row.className='band-row';
-      const fromInp = document.createElement('input');
-      fromInp.type='number'; fromInp.min=1; fromInp.max=b.floors; fromInp.value=band.from;
+      const fromLabel = document.createElement('span');
+      fromLabel.className='band-from-readonly';
+      fromLabel.style.cssText='font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--muted);min-width:22px;text-align:center;';
+      fromLabel.textContent = String(band.from);
       const x = document.createElement('span'); x.className='x'; x.textContent='→';
       const toInp = document.createElement('input');
-      toInp.type='number'; toInp.min=1; toInp.max=b.floors; toInp.value=band.to;
+      toInp.type='number'; toInp.min=band.from; toInp.max=b.floors; toInp.value=band.to;
+      toInp.title = "Jusqu'à quel étage va ce bloc — les blocs au-dessus se recalent automatiquement";
+      // Le tout dernier bloc va toujours jusqu'en haut du bâtiment : sa
+      // limite n'est pas éditable, elle suit le nombre d'étages.
+      const isLast = idx === b.bands.length-1;
+      if(isLast) toInp.disabled = true;
       const sel = document.createElement('select');
       Object.entries(USAGE_LABELS).forEach(([k,label])=>{
         const opt = document.createElement('option');
@@ -2008,21 +2131,22 @@ function renderList(){
       });
       const del = document.createElement('button');
       del.className='mini-btn danger'; del.textContent='✕';
+      del.title = 'Fusionner ce bloc avec celui du dessus';
+      del.disabled = b.bands.length<=1;
       del.addEventListener('click', ()=>{
         b.bands.splice(idx,1);
-        if(!b.bands.length) b.bands = defaultBands(b.floors);
+        normalizeBands(b);
         rebuildMesh(b); renderList();
       });
       function commit(){
-        band.from = Math.max(1, Math.min(parseInt(fromInp.value)||1, b.floors));
         band.to = Math.max(band.from, Math.min(parseInt(toInp.value)||band.from, b.floors));
         band.usage = sel.value;
+        normalizeBands(b);
         rebuildMesh(b); renderList();
       }
-      fromInp.addEventListener('change', commit);
       toInp.addEventListener('change', commit);
       sel.addEventListener('change', commit);
-      row.append(fromInp, x, toInp, sel, del);
+      row.append(fromLabel, x, toInp, sel, del);
       body.appendChild(row);
     });
 
@@ -2030,10 +2154,20 @@ function renderList(){
     addBandBtn.className='small-action';
     addBandBtn.textContent='+ Ajouter une tranche d\'usage';
     addBandBtn.style.marginTop='6px';
+    addBandBtn.title = 'Scinde le bloc du haut en deux, moitié-moitié';
+    addBandBtn.disabled = b.bands[b.bands.length-1].from >= b.floors;
     addBandBtn.addEventListener('click', ()=>{
-      const lastTo = Math.max(...b.bands.map(bd=>bd.to));
-      if(lastTo>=b.floors) return;
-      b.bands.push({from:lastTo+1, to:b.floors, usage:'residentiel'});
+      // Scinde automatiquement le dernier bloc en deux plutôt que de laisser
+      // l'utilisateur définir une plage manuellement (source de trous/
+      // recouvrements) : la moitié basse garde l'usage existant, la moitié
+      // haute devient un nouveau bloc — équilibré, jamais "bordélique".
+      const last = b.bands[b.bands.length-1];
+      if(last.from >= b.floors) return;
+      const mid = Math.floor((last.from + b.floors) / 2);
+      const splitAt = Math.max(last.from, Math.min(mid, b.floors-1));
+      last.to = splitAt;
+      b.bands.push({from:splitAt+1, to:b.floors, usage:'residentiel'});
+      normalizeBands(b);
       rebuildMesh(b); renderList();
     });
     body.appendChild(addBandBtn);
@@ -2176,6 +2310,7 @@ function setNightMode(night){
   scene.background.setHex(night ? 0x0b1220 : 0x101820);
   scene.fog.color.setHex(night ? 0x0b1220 : 0x101820);
   siteLights.forEach(l=> l.visible = night);
+  applyVehicleLightState(); // phares/feux des véhicules (déjà modélisés dans vehicules.glb)
   btnNight.querySelector('.tool-btn-label').textContent = night ? 'Jour' : 'Nuit';
   // Après le premier rendu, lucide.createIcons() a remplacé le <i data-lucide="…">
   // d'origine par un vrai <svg> : on ne peut donc plus faire setAttribute dessus
@@ -2262,27 +2397,110 @@ fileLoad.addEventListener('change', (e)=>{
    Une "voie" = une courbe (CatmullRomCurve3). On peut la tracer à la
    souris (comme un bâtiment mais en polyligne ouverte) ou en charger
    depuis un routes.json exporté de Blender (courbes Bézier → points).
-   Chaque voie reçoit un pool de piétons/véhicules animés le long de
-   la courbe via curve.getPointAt(t), rendus en instanced mesh low-poly.
+   Chaque voie reçoit un pool de piétons/véhicules animés le long de la
+   courbe via curve.getPointAt(t). Les véhicules sont désormais de vrais
+   modèles chargés depuis vehicules.glb (bus, voiture, tram en 3 caisses
+   avant/milieu/arrière) — plus des boîtes génériques. Les phares/feux sont
+   ceux déjà modélisés dans le .glb (matériaux "phare_blanc"/"phare_rouge"),
+   allumés/éteints globalement avec le mode nuit (voir applyVehicleLightState).
    ============================================================ */
 const ROUTE_TYPES = {
-  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  scale:[2.2,2.6,9], wagons:3 },
-  bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  scale:[2,2.4,6]  },
-  voiture:{ label:'Voiture', color:0x2c0a71, speed:10,  count:7,  scale:[1.7,1.3,3.4]},
-  pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, scale:[0.4,1.4,0.5]}
+  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  wagons:3, parts:['tramAvant','tramMilieu','tramArriere'], length:14,   fallbackScale:[2.2,2.6,9] },
+  bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  wagons:1, part:'bus',                                    length:8.9,  fallbackScale:[2,2.4,6]  },
+  voiture:{ label:'Voiture', color:0x2c0a71, speed:10, count:7,  wagons:1, part:'voiture',                                length:5.1,  fallbackScale:[1.7,1.3,3.4] },
+  pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, wagons:1, part:null,                                     length:0.5,  fallbackScale:[0.4,1.4,0.5] }
 };
-let routes = []; // {id, name, type, points:[{x,y,z}], curve, instancedMesh, agents:[{t,speed,wagonOffset}]}
+let routes = []; // {id, name, type, points:[{x,y,z}], curve, vehicleGroup, agents:[{t,speed,wagonOffset,mesh}]}
 let routeIdCounter = 1;
 
 // Un "wagon" est un décalage d'arc-longueur fixe derrière le t de base de son
 // unité (train/bus/etc) — pas un agent indépendant. Toute l'unité (ex. les 3
-// wagons d'un tram, tous de la même taille que la boîte scale[]) avance donc
-// exactement au même rythme, sans jamais se désynchroniser.
-const WAGON_GAP = 0.4; // mètres entre deux wagons consécutifs
+// caisses d'un tram) avance donc exactement au même rythme, sans jamais se
+// désynchroniser. wagonIndex sert aussi à choisir le bon modèle (avant/
+// milieu/arrière) pour le tram.
+const WAGON_GAP = 0.4; // mètres entre deux caisses consécutives
 
-const headlightGeo = new THREE.SphereGeometry(0.14, 8, 8);
-const headlightMat = new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xffffff, emissiveIntensity:2.5 });
-const taillightMat = new THREE.MeshStandardMaterial({ color:0xff1a1a, emissive:0xff1a1a, emissiveIntensity:2.5 });
+/* ---- Modèles réels (vehicules.glb) ------------------------------------ */
+const VEHICLES_GLB_URL = './vehicules.glb';
+let vehicleTemplates = null; // {bus, voiture, tramAvant, tramMilieu, tramArriere} -> THREE.Object3D
+const vehicleBodyMaterials = {}; // type -> THREE.Material de carrosserie (couleur modifiable en direct)
+const vehicleLightMaterials = { blanc:null, rouge:null }; // matériaux de phares PARTAGÉS par tous les véhicules
+// Matériau/geometry de secours pour piétons (aucun modèle piéton fourni) et
+// pour les véhicules si jamais vehicules.glb ne charge pas.
+const pedestrianGeo = new THREE.CapsuleGeometry(0.22, 0.9, 4, 8);
+const pedestrianMat = new THREE.MeshStandardMaterial({ color:ROUTE_TYPES.pieton.color, roughness:0.8 });
+
+function findMaterialByName(root, name){
+  if(!root) return null;
+  let found = null;
+  root.traverse(o=>{
+    if(found || !o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const m = mats.find(mm=>mm && mm.name===name);
+    if(m) found = m;
+  });
+  return found;
+}
+function applyVehicleLightState(){
+  const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
+  if(vehicleLightMaterials.blanc) vehicleLightMaterials.blanc.emissiveIntensity = on ? 3.0 : 0;
+  if(vehicleLightMaterials.rouge) vehicleLightMaterials.rouge.emissiveIntensity = on ? 2.2 : 0;
+}
+function loadVehiclesFromGLB(){
+  return new Promise((resolve)=>{
+    gltfLoader.load(VEHICLES_GLB_URL, (gltf)=>{
+      const scene = gltf.scene;
+      const bus = findByNameCI(scene, 'Bus');
+      const voiture = findByNameCI(scene, 'voiture');
+      const tramAvant = findByNameCI(scene, 'tram_avant');
+      const tramMilieu = findByNameCI(scene, 'tram_milieu');
+      const tramArriere = findByNameCI(scene, 'tram_arrière') || findByNameCI(scene, 'tram_arriere');
+      vehicleTemplates = { bus, voiture, tramAvant, tramMilieu, tramArriere };
+
+      // Carrosserie : un matériau par type, modifiable en direct par le
+      // sélecteur couleur admin — partagé par toutes les instances clonées,
+      // donc un seul réglage suffit à recolorer TOUS les véhicules du type.
+      vehicleBodyMaterials.bus = findMaterialByName(bus, 'Matériau.005');
+      vehicleBodyMaterials.voiture = findMaterialByName(voiture, 'voiture');
+      vehicleBodyMaterials.tram = findMaterialByName(tramAvant, 'tram') || findMaterialByName(tramMilieu, 'tram');
+
+      // Phares avant/arrière déjà modélisés dans le .glb, matériaux partagés
+      // entre tous les véhicules : un seul basculement jour/nuit suffit.
+      vehicleLightMaterials.blanc = findMaterialByName(bus,'phare_blanc') || findMaterialByName(voiture,'phare_blanc') || findMaterialByName(tramAvant,'phare_blanc');
+      vehicleLightMaterials.rouge = findMaterialByName(bus,'phare_rouge') || findMaterialByName(voiture,'phare_rouge') || findMaterialByName(tramArriere,'phare_rouge');
+      if(vehicleLightMaterials.blanc) vehicleLightMaterials.blanc.emissive = new THREE.Color(0xffffff);
+      if(vehicleLightMaterials.rouge) vehicleLightMaterials.rouge.emissive = new THREE.Color(0xff2a2a);
+      applyVehicleLightState();
+      resolve();
+    }, undefined, ()=>{
+      // Échec de chargement : on continue avec des boîtes de secours plutôt
+      // que de bloquer toute la circulation.
+      vehicleTemplates = null;
+      resolve();
+    });
+  });
+}
+function instantiateVehiclePart(cfg, wagonIndex){
+  const key = cfg.parts ? cfg.parts[wagonIndex] : cfg.part;
+  const template = key && vehicleTemplates ? vehicleTemplates[key] : null;
+  if(template){
+    const obj = template.clone(true);
+    obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    return obj;
+  }
+  // Boîte de secours (piéton, ou modèle manquant) — dimensions approximatives.
+  const isPieton = cfg===ROUTE_TYPES.pieton;
+  const geo = isPieton ? pedestrianGeo : new THREE.BoxGeometry(...cfg.fallbackScale);
+  let mat = isPieton ? pedestrianMat : vehicleBodyMaterials[cfg._fallbackKey];
+  if(!isPieton && !mat){
+    mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
+    vehicleBodyMaterials[cfg._fallbackKey] = mat;
+  }
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  return mesh;
+}
+ROUTE_TYPES.tram._fallbackKey='tram'; ROUTE_TYPES.bus._fallbackKey='bus'; ROUTE_TYPES.voiture._fallbackKey='voiture';
 
 function createRoute(points, type, name){
   if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
@@ -2290,164 +2508,66 @@ function createRoute(points, type, name){
   const vec = points.map(p=>new THREE.Vector3(p.x, p.y||0.15, p.z));
   const curve = new THREE.CatmullRomCurve3(vec, false, 'catmullrom', 0.2);
 
-  const geo = new THREE.BoxGeometry(...cfg.scale);
-  const mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
   const count = cfg.count;
   const wagons = cfg.wagons || 1;
-  const inst = new THREE.InstancedMesh(geo, mat, count*wagons);
-  inst.castShadow = true;
-  worldRoot.add(inst);
+  const vehicleGroup = new THREE.Group();
+  worldRoot.add(vehicleGroup);
 
   const agents = [];
   for(let u=0;u<count;u++){
     const baseT = u/count;
     const speed = cfg.speed * (0.9+Math.random()*0.2);
     for(let w=0;w<wagons;w++){
-      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.scale[2]+WAGON_GAP), wagonIndex: w });
+      const mesh = instantiateVehiclePart(cfg, w);
+      vehicleGroup.add(mesh);
+      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.length+WAGON_GAP), wagonIndex: w, mesh });
     }
-  }
-
-// Phares : 2 blancs à l'avant, 2 rouges à l'arrière — jamais pour les piétons.
-  // Seul le PREMIER wagon a des phares avant, et seul le DERNIER a des feux arrière.
-  // Chaque wagon concerné possède désormais 2 instances (gauche et droite).
-  let headInst = null, tailInst = null;
-  if(type !== 'pieton'){
-    let hc=0, tc=0;
-    agents.forEach(a=>{
-      // On multiplie par 2 car chaque wagon valide a maintenant 2 phares (gauche et droite)
-      a.headIdx = (a.wagonIndex===0) ? hc : -1;
-      if(a.wagonIndex===0) hc += 2;
-
-      a.tailIdx = (a.wagonIndex===wagons-1) ? tc : -1;
-      if(a.wagonIndex===wagons-1) tc += 2;
-    });
-    // On crée un InstancedMesh avec une capacité doublée (hc et tc représentent le nombre total de phares)
-    if(hc>0){ headInst = new THREE.InstancedMesh(headlightGeo, headlightMat, hc); worldRoot.add(headInst); }
-    if(tc>0){ tailInst = new THREE.InstancedMesh(headlightGeo, taillightMat, tc); worldRoot.add(tailInst); }
-  } else {
-    agents.forEach(a=>{ a.headIdx=-1; a.tailIdx=-1; });
   }
 
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vec), new THREE.LineBasicMaterial({color:cfg.color, transparent:true, opacity:0.5}));
   line.visible = false; // le tracé lui-même reste caché ; seuls les véhicules/piétons animés sont visibles
   worldRoot.add(line);
 
-  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, instancedMesh: inst, headInst, tailInst, scale: cfg.scale, line, agents };
+  const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, vehicleGroup, line, agents };
   routes.push(route);
   renderRouteList();
   return route;
 }
 
-const dummy = new THREE.Object3D();
-const lightDummy = new THREE.Object3D();
+// Chaque agent porte directement sa propre instance de modèle (r.mesh) :
+// on met simplement à jour sa position/orientation à chaque frame, plus
+// besoin de gérer des InstancedMesh de phares séparés puisque les phares
+// sont déjà modélisés dans vehicules.glb (voir applyVehicleLightState).
 function tickAgents(dt){
   for(const r of routes){
     const len = r.curve.getLength();
     if(len<=0) continue;
-    const halfLen = r.scale[2]/2, lightUp = r.scale[1]*0.3, lightSide = r.scale[0]*0.32;
-    r.agents.forEach((a,i)=>{
+    r.agents.forEach((a)=>{
       a.t = (a.t + (a.speed*dt)/len) % 1;
       // le wagon n'est jamais exactement à a.t : il traîne derrière de
       // wagonOffset mètres (converti en fraction de la longueur de la courbe).
       const wagonT = ((a.t - (a.wagonOffset||0)/len) % 1 + 1) % 1;
       const pos = r.curve.getPointAt(wagonT);
       const tangent = r.curve.getTangentAt(wagonT);
-      dummy.position.copy(pos);
-      dummy.position.y += 0.05;
-      dummy.lookAt(pos.clone().add(tangent));
+      const m = a.mesh;
+      if(!m) return;
+      m.position.copy(pos);
+      m.position.y += 0.05;
       // léger bruit latéral pour les piétons (foule moins "sur des rails")
       if(r.type==='pieton'){
-        const lateral = Math.sin(a.t*40 + i*7) * 0.4;
+        const lateral = Math.sin(a.t*40 + (a.wagonIndex||0)*7 + a.speed*13) * 0.4;
         const side = new THREE.Vector3(-tangent.z,0,tangent.x);
-        dummy.position.addScaledVector(side, lateral);
+        m.position.addScaledVector(side, lateral);
       }
-dummy.updateMatrix();
-      r.instancedMesh.setMatrixAt(i, dummy.matrix);
-
-      const nightActive = (typeof isNight !== 'undefined' && isNight) || (typeof nightMode !== 'undefined' && nightMode) || (window.isNight === true);
-
-      if(nightActive && (a.headIdx>=0 || a.tailIdx>=0)){
-        const forward = tangent.clone().normalize();
-        const up = new THREE.Vector3(0,1,0);
-        const side = new THREE.Vector3().crossVectors(up, forward).normalize();
-        
-        // Valeur strictement entre 0.12 et 0.42 -> 0.28 (juste milieu parfait)
-        const estimatedWidth = Math.max(halfLen * 0.8, 1.8);
-        const lightOffset = estimatedWidth * 0.28; 
-
-        // Phares bien visibles
-        lightDummy.scale.set(1.8, 1.8, 1.8);
-
-        if(a.headIdx>=0){
-          // Phare avant GAUCHE
-          lightDummy.position.copy(dummy.position)
-            .addScaledVector(forward, halfLen * 0.95)
-            .addScaledVector(up, lightUp)
-            .addScaledVector(side, -lightOffset);
-          lightDummy.updateMatrix();
-          r.headInst.setMatrixAt(a.headIdx, lightDummy.matrix);
-
-          // Phare avant DROIT
-          lightDummy.position.copy(dummy.position)
-            .addScaledVector(forward, halfLen * 0.95)
-            .addScaledVector(up, lightUp)
-            .addScaledVector(side, lightOffset);
-          lightDummy.updateMatrix();
-          r.headInst.setMatrixAt(a.headIdx + 1, lightDummy.matrix);
-        }
-
-        if(a.tailIdx>=0){
-          // Phare arrière GAUCHE
-          lightDummy.position.copy(dummy.position)
-            .addScaledVector(forward, -halfLen * 0.95)
-            .addScaledVector(up, lightUp)
-            .addScaledVector(side, -lightOffset);
-          lightDummy.updateMatrix();
-          r.tailInst.setMatrixAt(a.tailIdx, lightDummy.matrix);
-
-          // Phare arrière DROIT
-          lightDummy.position.copy(dummy.position)
-            .addScaledVector(forward, -halfLen * 0.95)
-            .addScaledVector(up, lightUp)
-            .addScaledVector(side, lightOffset);
-          lightDummy.updateMatrix();
-          r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
-        }
-        
-        lightDummy.scale.set(1, 1, 1);
-      } else if (a.headIdx>=0 || a.tailIdx>=0) {
-        // Éteints le jour
-        lightDummy.scale.set(0, 0, 0);
-        lightDummy.updateMatrix();
-        if(a.headIdx>=0) {
-          r.headInst.setMatrixAt(a.headIdx, lightDummy.matrix);
-          r.headInst.setMatrixAt(a.headIdx + 1, lightDummy.matrix);
-        }
-        if(a.tailIdx>=0) {
-          r.tailInst.setMatrixAt(a.tailIdx, lightDummy.matrix);
-          r.tailInst.setMatrixAt(a.tailIdx + 1, lightDummy.matrix);
-        }
-      }
+      m.lookAt(m.position.clone().add(tangent));
     });
-    r.instancedMesh.instanceMatrix.needsUpdate = true;
-    if(r.headInst) {
-      r.headInst.instanceMatrix.needsUpdate = true;
-      r.headInst.frustumCulled = false;
-    }
-    if(r.tailInst) {
-      r.tailInst.instanceMatrix.needsUpdate = true;
-      r.tailInst.frustumCulled = false;
-    }
   }
 }
 
 function clearRoutes(){
   routes.forEach(r=>{
-    worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
-    r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
+    worldRoot.remove(r.vehicleGroup); worldRoot.remove(r.line);
     r.line.geometry.dispose(); r.line.material.dispose();
-    if(r.headInst) worldRoot.remove(r.headInst);
-    if(r.tailInst) worldRoot.remove(r.tailInst);
   });
   routes = [];
   renderRouteList();
@@ -2455,11 +2575,8 @@ function clearRoutes(){
 function deleteRoute(id){
   const r = routes.find(x=>x.id===id);
   if(!r) return;
-  worldRoot.remove(r.instancedMesh); worldRoot.remove(r.line);
-  r.instancedMesh.geometry.dispose(); r.instancedMesh.material.dispose();
+  worldRoot.remove(r.vehicleGroup); worldRoot.remove(r.line);
   r.line.geometry.dispose(); r.line.material.dispose();
-  if(r.headInst) worldRoot.remove(r.headInst);
-  if(r.tailInst) worldRoot.remove(r.tailInst);
   routes = routes.filter(x=>x.id!==id);
   renderRouteList();
 }
@@ -2523,7 +2640,12 @@ function renderVehicleColorControls(){
     input.addEventListener('input', ()=>{
       const hex = parseInt(input.value.slice(1), 16);
       ROUTE_TYPES[type].color = hex;
-      routes.forEach(r=>{ if(r.type===type) r.instancedMesh.material.color.setHex(hex); });
+      // Le matériau de carrosserie est PARTAGÉ par toutes les instances de ce
+      // type (voir loadVehiclesFromGLB) : un seul réglage suffit à recolorer
+      // tous les véhicules déjà posés, sans reparcourir chaque route.
+      const key = ROUTE_TYPES[type]._fallbackKey || type;
+      if(vehicleBodyMaterials[key]) vehicleBodyMaterials[key].color.setHex(hex);
+      if(type==='pieton') pedestrianMat.color.setHex(hex);
       renderRouteList(); // rafraîchit le pastille de couleur dans la liste
     });
     row.append(label, input);
@@ -2598,22 +2720,29 @@ function animate(){
 }
 animate();
 
-// Charge la vraie maquette si le fichier est présent à côté de index.html ;
-// sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
-// et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
-loadSiteFromGLB(SITE_GLB_URL, (err)=>{
-  const isFileProtocol = location.protocol === 'file:';
-  showSiteBanner(`
-    <div>
-      <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL})${err && err.message ? ' — '+err.message : ''}.<br>
-      ${isFileProtocol
-        ? "Cette page est ouverte en double-clic (protocole file://), qui bloque le chargement automatique du .glb par le navigateur. Lance un serveur local depuis le dossier contenant les deux fichiers : <code>python -m http.server 8000</code>, puis ouvre <code>http://localhost:8000</code>."
-        : "Vérifie que <code>place_de_milan.glb</code> est bien placé exactement à côté de <code>index.html</code>, avec ce nom précis (respecte la casse)."}
-      <br>En attendant, une maquette de démonstration est affichée — utilise <b>Charger maquette (.glb)</b> pour charger le fichier manuellement.
-    </div>
-  `);
-  buildDemoSite();
-  tryAutoLoadRoutes();
+// Charge d'abord les modèles de véhicules (vehicules.glb) : toute création de
+// voie (démo ou routes.json) a besoin des gabarits chargés pour cloner de
+// vrais bus/trams/voitures au lieu de boîtes de secours. Le fichier est petit,
+// le délai est négligeable, et un échec de chargement ne bloque rien (repli
+// automatique sur les boîtes de secours, voir instantiateVehiclePart).
+loadVehiclesFromGLB().then(()=>{
+  // Charge la vraie maquette si le fichier est présent à côté de index.html ;
+  // sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
+  // et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
+  loadSiteFromGLB(SITE_GLB_URL, (err)=>{
+    const isFileProtocol = location.protocol === 'file:';
+    showSiteBanner(`
+      <div>
+        <b>Maquette non chargée automatiquement</b> (${SITE_GLB_URL})${err && err.message ? ' — '+err.message : ''}.<br>
+        ${isFileProtocol
+          ? "Cette page est ouverte en double-clic (protocole file://), qui bloque le chargement automatique du .glb par le navigateur. Lance un serveur local depuis le dossier contenant les deux fichiers : <code>python -m http.server 8000</code>, puis ouvre <code>http://localhost:8000</code>."
+          : "Vérifie que <code>place_de_milan.glb</code> est bien placé exactement à côté de <code>index.html</code>, avec ce nom précis (respecte la casse)."}
+        <br>En attendant, une maquette de démonstration est affichée — utilise <b>Charger maquette (.glb)</b> pour charger le fichier manuellement.
+      </div>
+    `);
+    buildDemoSite();
+    tryAutoLoadRoutes();
+  });
 });
 </script>
 </body>
