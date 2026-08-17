@@ -1153,6 +1153,24 @@ function refreshPreview(){
   );
   worldRoot.add(previewLine);
 }
+/* ============================================================
+   DÉCOUPE POLYGONALE PAR GRILLE — remplace tout l'ancien système de
+   clamp/glissement/réparation par insertion de sommets (fragile sur les cas
+   limites, cf. historique). Principe : au lieu de contraindre chaque clic ou
+   chaque sommet PENDANT l'interaction, on dessine LIBREMENT, sans aucune
+   contrainte, puis on découpe la forme obtenue par le polygone d'implantation
+   au moment de valider (fin de tracé, ou relâchement de souris en édition) —
+   même logique de fiabilité que "Emprise pleine" (copie directe de
+   coordonnées, aucun calcul fragile), généralisée à une forme arbitraire.
+   Implémentation : échantillonnage fin sur une grille (une cellule est
+   "dedans" si son centre est à la fois dans la forme dessinée ET dans le
+   polygone d'implantation), puis chaînage des arêtes de bord entre cellules
+   dedans/dehors — exactement le même principe que extractBoundaryXZ pour le
+   maillage Blender, appliqué ici à une grille. Aucune intersection de
+   segments à calculer : aucun cas limite (sommet pile sur une arête, arêtes
+   parallèles, etc.) ne peut la faire planter. Testé hors-navigateur avec les
+   données réelles du projet avant intégration.
+   ============================================================ */
 // Point le plus proche de `pt` sur le segment [a,b].
 function closestPointOnSegment(pt, a, b){
   const abx=b.x-a.x, abz=b.z-a.z;
@@ -1171,20 +1189,10 @@ function distanceToPolygonBoundary(pt, poly){
   }
   return best;
 }
-// Le test "rayon horizontal" (even-odd rule) classique est fiable loin du
-// contour, mais NUMÉRIQUEMENT INSTABLE pour un point posé pile sur une arête
-// (ou aligné avec un sommet) : selon l'arrondi flottant, il peut basculer
-// dedans/dehors de façon imprévisible — et ça peut créer une "limite fantôme"
-// ailleurs dans la forme (rien à voir avec l'arête la plus proche), typique
-// des polygones concaves. Solution : si le test brut dit "dehors" mais que le
-// point est en réalité à quelques centimètres ou moins de n'importe quelle
-// arête du contour, on le considère valide quand même — c'est la même
-// tolérance que le clamp, appliquée en amont pour ne jamais bloquer un point
-// qui vise légitimement le bord.
-// Tolérance de distance au bord (voir plus haut) : 3 cm. Valeur inlinée
-// directement (pas de constante séparée) pour éviter tout risque de
-// "temporal dead zone" si cette fonction est appelée tôt au chargement,
-// avant qu'une déclaration plus bas dans le fichier n'ait été exécutée.
+// Le test "rayon horizontal" (even-odd rule) est fiable loin du contour, mais
+// numériquement instable pile sur une arête. Tolérance de secours : si le
+// test brut dit "dehors" mais que le point est en réalité à quelques
+// centimètres ou moins de n'importe quelle arête, on le considère valide.
 function pointInPolygon(pt, poly, tolerance){
   if(tolerance===undefined) tolerance = 0.03;
   let inside = false;
@@ -1198,191 +1206,164 @@ function pointInPolygon(pt, poly, tolerance){
   if(tolerance>0 && poly.length>=3) return distanceToPolygonBoundary(pt, poly) <= tolerance;
   return false;
 }
-// Ramène `pt` à l'intérieur (ou pile sur le bord) du polygone, plutôt que de
-// rejeter purement et simplement un point à l'extérieur. Sans ça, un point
-// qui vient d'un raycast (jamais parfaitement identique aux coordonnées du
-// polygone au bit près) peut se retrouver à quelques dixièmes de millimètre
-// à l'extérieur — invisible à l'oeil — et se faire rejeter en bloc : le
-// sommet reste alors figé alors que le joueur/l'utilisateur vise pourtant
-// bien la bonne zone. Ici on ne rejette jamais : si `pt` est dehors, on
-// renvoie le point du contour le plus proche, pour que le déplacement
-// "glisse" le long de la limite au lieu de se bloquer net.
-function clampPointToPolygon(pt, poly){
-  if(poly.length<3) return pt;
-  if(pointInPolygon(pt, poly)) return pt;
-  let best = null, bestDist = Infinity;
+function polygonArea(poly){
+  let a=0;
   for(let i=0;i<poly.length;i++){
-    const a = poly[i], b = poly[(i+1)%poly.length];
-    const proj = closestPointOnSegment(pt, a, b);
-    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
-    if(d < bestDist){ bestDist = d; best = proj; }
+    const p=poly[i], q=poly[(i+1)%poly.length];
+    a += p.x*q.z - q.x*p.z;
   }
-  return best;
+  return Math.abs(a)/2;
 }
-// Sommet du polygone le plus proche de `pt`, seulement s'il est à moins de
-// `radius` unités — sert à "aimanter" un sommet de bâtiment directement SUR
-// un vrai sommet du polygone, en copiant ses coordonnées telles quelles
-// (exactement le mécanisme fiable de "Emprise pleine" : une copie directe,
-// aucun calcul de clamp/glissement qui pourrait introduire une imprécision).
-function nearestZoneVertex(pt, zone, radius){
-  let best = null, bestDist = radius;
-  for(const v of zone){
-    const d = Math.hypot(v.x-pt.x, v.z-pt.z);
-    if(d <= bestDist){ bestDist = d; best = v; }
+function perpDist(pt, a, b){
+  const dx=b.x-a.x, dz=b.z-a.z;
+  const len = Math.hypot(dx,dz);
+  if(len<1e-9) return Math.hypot(pt.x-a.x, pt.z-a.z);
+  return Math.abs((pt.x-a.x)*dz - (pt.z-a.z)*dx)/len;
+}
+function rdpSimplify(pts, epsilon){
+  if(pts.length<3) return pts.slice();
+  let maxD=0, idx=0;
+  const a=pts[0], b=pts[pts.length-1];
+  for(let i=1;i<pts.length-1;i++){
+    const d = perpDist(pts[i], a, b);
+    if(d>maxD){ maxD=d; idx=i; }
   }
-  return best ? { x: best.x, z: best.z } : null;
-}
-const VERTEX_SNAP_RADIUS = 4; // unités de scène (~4 m) : assez large pour "attraper" le sommet visé sans viser au pixel près
-
-// --- NOUVEAU : Snap sur la grille ---
-function snapToGrid(pt, gridSize) {
-  // Arrondit les coordonnées à la taille de la grille (gridSize)
-  // On utilise la même taille que celle utilisée dans rebuildGrid (step)
-  // On va récupérer la taille réelle de la grille à partir de buildZone.
-  if (!gridVisible) return pt;
-  if (buildZone.length < 3) return pt;
-  const xs = buildZone.map(p=>p.x), zs = buildZone.map(p=>p.z);
-  const minX=Math.min(...xs), maxX=Math.max(...xs), minZ=Math.min(...zs), maxZ=Math.max(...zs);
-  const span = Math.max(maxX-minX, maxZ-minZ);
-  if (span <= 0) return pt;
-  const step = span/24;
-  // Arrondi à la grille
-  const snapX = Math.round(pt.x / step) * step;
-  const snapZ = Math.round(pt.z / step) * step;
-  // On vérifie que le point snapé reste dans le polygone (tolérance)
-  const snappedPt = {x: snapX, z: snapZ};
-  if (pointInPolygon(snappedPt, buildZone, 0.1)) {
-    return snappedPt;
+  if(maxD > epsilon){
+    const left = rdpSimplify(pts.slice(0,idx+1), epsilon);
+    const right = rdpSimplify(pts.slice(idx), epsilon);
+    return left.slice(0,-1).concat(right);
   }
-  // Si le point snapé est dehors, on garde l'original (mais on pourrait aussi
-  // essayer de clamp après snap, mais c'est plus propre de laisser le clamp existant)
-  return pt;
+  return [a,b];
 }
-
-// Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
-// reste dans le polygone d'implantation, en échantillonnant chaque arête.
-function polygonFullyInsideZone(pts, zone){
-  for(let i=0;i<pts.length;i++){
-    const a = pts[i], b = pts[(i+1)%pts.length];
-    const steps = Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1.0));
-    for(let s=0;s<=steps;s++){
-      const t=s/steps;
-      const p = {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t};
-      if(!pointInPolygon(p, zone)) return false;
+// Simplifie le contour en escalier issu de la grille via Douglas-Peucker
+// (tolérance = taille de cellule * 0.3) : nettoie les diagonales, mais
+// préserve mieux la surface que l'ancienne simplification agressive.
+function simplifyStaircase(pts, epsilon){
+  if(pts.length<=3) return pts;
+  const closed = pts.concat([pts[0]]);
+  const simplified = rdpSimplify(closed, epsilon);
+  if(simplified.length>1){
+    const first=simplified[0], last=simplified[simplified.length-1];
+    if(Math.hypot(first.x-last.x, first.z-last.z) < 1e-6) simplified.pop();
+  }
+  return simplified.length>=3 ? simplified : pts;
+}
+// Découpe `subjectPts` par `clipPts` (polygone d'implantation). Renvoie la
+// liste des polygones résultat, triés du plus grand au plus petit par aire.
+// Utilise une cellule fine (0.2 m) et une simplification légère (epsilon = cellSize * 0.3).
+function rasterClipPolygon(subjectPts, clipPts, cellSize){
+  cellSize = cellSize || 0.2; // plus fin que 0.5 pour éviter la marge fantôme
+  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  for(const p of subjectPts){ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minZ=Math.min(minZ,p.z); maxZ=Math.max(maxZ,p.z); }
+  if(!(maxX>minX) || !(maxZ>minZ)) return [];
+  minX -= cellSize; minZ -= cellSize; maxX += cellSize; maxZ += cellSize;
+  let cols = Math.ceil((maxX-minX)/cellSize);
+  let rows = Math.ceil((maxZ-minZ)/cellSize);
+  const MAX_CELLS = 400000; // garde-fou pour une forme immense
+  if(cols*rows > MAX_CELLS){
+    const scale = Math.sqrt((cols*rows)/MAX_CELLS);
+    cellSize *= scale;
+    cols = Math.ceil((maxX-minX)/cellSize);
+    rows = Math.ceil((maxZ-minZ)/cellSize);
+  }
+  const inside = new Uint8Array(cols*rows);
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const x = minX + (c+0.5)*cellSize;
+      const z = minZ + (r+0.5)*cellSize;
+      const pt = {x,z};
+      if(pointInPolygon(pt, subjectPts, cellSize*0.5) && pointInPolygon(pt, clipPts, cellSize*0.5)){
+        inside[r*cols+c] = 1;
+      }
     }
   }
-  return true;
-}
-// Vérifie qu'UN SEUL segment [a,b] (pas tout un polygone fermé) reste dans la
-// zone — utilisé pendant le tracé d'un nouveau bâtiment, où la forme n'est pas
-// encore fermée.
-function segmentFullyInsideZone(a, b, zone){
-  const steps = Math.max(2, Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1.0));
-  for(let s=0;s<=steps;s++){
-    const t=s/steps;
-    const p = {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t};
-    if(!pointInPolygon(p, zone)) return false;
+  // Composantes connexes (4-connexité), au cas où la découpe produit plusieurs morceaux séparés.
+  const label = new Int32Array(cols*rows).fill(-1);
+  let nextLabel = 0;
+  const compCells = [];
+  for(let start=0; start<cols*rows; start++){
+    if(!inside[start] || label[start]!==-1) continue;
+    const lbl = nextLabel++;
+    const cells = [];
+    const stack=[start];
+    label[start]=lbl;
+    while(stack.length){
+      const cur = stack.pop();
+      cells.push(cur);
+      const r = Math.floor(cur/cols), c = cur%cols;
+      const neigh = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+      for(const [nr,nc] of neigh){
+        if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+        const ni = nr*cols+nc;
+        if(inside[ni] && label[ni]===-1){ label[ni]=lbl; stack.push(ni); }
+      }
+    }
+    compCells.push(cells);
   }
-  return true;
-}
-// Fait glisser un point de `from` vers `to` le long du segment [from,to], en
-// s'arrêtant au point le plus loin encore accepté par `validAtT(t)`, plutôt
-// que d'accepter `to` tel quel (qui peut faire sortir une ARÊTE du polygone
-// même si `to` lui-même est valide — cas d'un polygone concave, cf. clamp par
-// simple point). Recherche dichotomique : `from` doit être valide (t=0), et
-// si `to` (t=1) l'est aussi, on le retourne direct sans chercher plus loin.
-function slideToValid(from, to, validAtT){
-  if(validAtT(1)) return { x:to.x, z:to.z };
-  if(!validAtT(0)) return { x:from.x, z:from.z };
-  let lo=0, hi=1, best = { x:from.x, z:from.z };
-  for(let i=0;i<20;i++){
-    const t = (lo+hi)/2;
-    const mid = { x: from.x+(to.x-from.x)*t, z: from.z+(to.z-from.z)*t };
-    if(validAtT(t)){ best = mid; lo = t; } else { hi = t; }
+  function cellCorner(r,c){ return { x: minX+c*cellSize, z: minZ+r*cellSize }; }
+  const keyOf = (p)=> `${p.x.toFixed(6)},${p.z.toFixed(6)}`;
+  const edgeId = (a,b)=>{ const ka=keyOf(a), kb=keyOf(b); return ka<kb? ka+'>'+kb : kb+'>'+ka; };
+
+  const results = [];
+  const epsilon = cellSize * 0.3; // simplification légère
+  for(const cells of compCells){
+    const cellSet = new Set(cells);
+    const edges = [];
+    for(const idx of cellSet){
+      const r = Math.floor(idx/cols), c = idx%cols;
+      const N = cellCorner(r,c), NE = cellCorner(r,c+1), SE = cellCorner(r+1,c+1), SW = cellCorner(r+1,c);
+      const nb = [ [r-1,c, N, NE], [r,c+1, NE, SE], [r+1,c, SE, SW], [r,c-1, SW, N] ];
+      for(const [nr,nc,pa,pb] of nb){
+        const outside = nr<0||nr>=rows||nc<0||nc>=cols || !cellSet.has(nr*cols+nc);
+        if(outside) edges.push([pa,pb]);
+      }
+    }
+    const adj = new Map();
+    for(const [a,b] of edges){
+      const ka=keyOf(a), kb=keyOf(b);
+      if(!adj.has(ka)) adj.set(ka, []);
+      if(!adj.has(kb)) adj.set(kb, []);
+      adj.get(ka).push(b);
+      adj.get(kb).push(a);
+    }
+    const visitedEdge = new Set();
+    for(const [a0,b0] of edges){
+      const id0 = edgeId(a0,b0);
+      if(visitedEdge.has(id0)) continue;
+      const loop = [a0];
+      let prevKey = null;
+      let curKey = keyOf(a0);
+      let cur = a0;
+      let guard = 0;
+      const maxSteps = edges.length*2+10;
+      while(guard++ < maxSteps){
+        const neighbors = adj.get(curKey) || [];
+        let next = null;
+        for(const cand of neighbors){
+          const id = edgeId(cur, cand);
+          if(visitedEdge.has(id)) continue;
+          if(prevKey!==null && keyOf(cand)===prevKey && neighbors.length>1) continue;
+          next = cand; break;
+        }
+        if(!next){
+          for(const cand of neighbors){
+            const id = edgeId(cur, cand);
+            if(!visitedEdge.has(id)){ next = cand; break; }
+          }
+        }
+        if(!next) break;
+        visitedEdge.add(edgeId(cur,next));
+        loop.push(next);
+        prevKey = curKey;
+        cur = next; curKey = keyOf(cur);
+        if(curKey === keyOf(a0)) break;
+      }
+      const uniqueLoop = (loop.length>1 && keyOf(loop[0])===keyOf(loop[loop.length-1])) ? loop.slice(0,-1) : loop;
+      if(uniqueLoop.length>=4) results.push(simplifyStaircase(uniqueLoop, epsilon));
+    }
   }
-  return best;
-}
-// ==== Réparation "définitive" d'une arête contre un polygone concave ====
-// slideToValid() ci-dessus suppose qu'une arête ne bascule qu'une fois entre
-// valide/invalide en avançant de `from` vers `to`. FAUX pour un polygone
-// concave : les deux extrémités peuvent être valides (chacune sur le bord
-// réel) alors que tout le milieu du segment sort par un renfoncement — la
-// dichotomie s'arrête alors bien trop tôt et ampute le bâtiment inutilement.
-//
-// Le cas le plus courant (vérifié avec les vraies données du projet) n'est
-// même pas une arête qui "traverse" franchement une autre arête du polygone :
-// c'est un unique SOMMET RENTRANT (concave) du polygone que la ligne droite
-// coupe au plus court. Détecter une traversée d'arête classique rate donc ce
-// cas. La bonne approche : repérer sur quelle arête du polygone repose
-// chaque extrémité, puis insérer les sommets du polygone entre les deux, en
-// suivant le contour réel dans le sens le plus court (comparaison de
-// longueur totale) plutôt que de deviner.
-function nearestZoneEdgeIndex(pt, zone){
-  let best = -1, bestDist = Infinity;
-  for(let i=0;i<zone.length;i++){
-    const a = zone[i], b = zone[(i+1)%zone.length];
-    const proj = closestPointOnSegment(pt, a, b);
-    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
-    if(d < bestDist){ bestDist = d; best = i; }
-  }
-  return best;
-}
-// Sommets du polygone en allant de l'arête i1 vers l'arête i2, dans le sens
-// croissant (forward) ou décroissant (backward) des indices.
-function walkZoneForward(zone, i1, i2){
-  const n = zone.length;
-  const steps = ((i2 - i1) % n + n) % n;
-  const pts = [];
-  for(let k=1;k<=steps;k++) pts.push(zone[(i1+k)%n]);
-  return pts;
-}
-function walkZoneBackward(zone, i1, i2){
-  const n = zone.length;
-  const steps = ((i1 - i2) % n + n) % n;
-  const pts = [];
-  for(let k=0;k<steps;k++) pts.push(zone[(i1-k+n)%n]);
-  return pts;
-}
-function pathLength(a, path, b){
-  let total = 0, prev = a;
-  for(const v of path){ total += Math.hypot(v.x-prev.x, v.z-prev.z); prev = v; }
-  total += Math.hypot(b.x-prev.x, b.z-prev.z);
-  return total;
-}
-// Répare l'arête [a,b] : si elle reste dans la zone, ne change rien. Sinon,
-// retrouve l'arête du polygone la plus proche de chaque extrémité et relie
-// les deux par le chemin le long du contour réel (sens le plus court des
-// deux). Retourne la liste des points de a (exclu) à b (inclus), à insérer à
-// la place de l'arête d'origine.
-function repairEdgeAgainstZone(a, b, zone){
-  if(zone.length<3 || segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
-  const ia = nearestZoneEdgeIndex(a, zone);
-  const ib = nearestZoneEdgeIndex(b, zone);
-  if(ia === ib){
-    // Même arête du polygone des deux côtés : pas de renfoncement identifiable
-    // entre elles (cas dégénéré/numérique) — on retombe sur l'ancien lissage.
-    const validAtT = (t)=> segmentFullyInsideZone(a, {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t}, zone);
-    return [ slideToValid(a, b, validAtT) ];
-  }
-  const fwd = walkZoneForward(zone, ia, ib);
-  const bwd = walkZoneBackward(zone, ia, ib);
-  const chosen = pathLength(a, fwd, b) <= pathLength(a, bwd, b) ? fwd : bwd;
-  return [ ...chosen.map(v=>({x:v.x, z:v.z})), {x:b.x, z:b.z} ];
-}
-// Applique repairEdgeAgainstZone() à chaque arête d'un contour FERMÉ (chaque
-// point relié au suivant, et le dernier au premier).
-function repairClosedPolygonAgainstZone(points, zone){
-  if(zone.length<3) return points.map(p=>({x:p.x,z:p.z}));
-  const result = [{x:points[0].x, z:points[0].z}];
-  for(let i=0;i<points.length;i++){
-    const a = points[i], b = points[(i+1)%points.length];
-    const extra = repairEdgeAgainstZone(a, b, zone);
-    // le dernier point ajouté par repairEdgeAgainstZone == b ; on ne le
-    // rajoute pas une seconde fois quand on boucle sur le premier point.
-    if(i < points.length-1) result.push(...extra);
-    else result.push(...extra.slice(0,-1)); // referme sur result[0] déjà présent
-  }
-  return result;
+  results.sort((a,b)=>polygonArea(b)-polygonArea(a));
+  return results;
 }
 function flashStatus(msg){
   statusLine.dataset.orig = statusLine.dataset.orig || statusLine.textContent;
@@ -1391,54 +1372,31 @@ function flashStatus(msg){
   flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
 }
 function addDrawPoint(pt){
-  // Aimantation directe sur un sommet du polygone si on clique à proximité —
-  // même mécanisme fiable que "Emprise pleine" (copie exacte des coordonnées).
-  const snapped = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
-  // Étape 1 : sinon, on essaie de snap sur la grille (si activée)
-  let target = snapped;
-  if (!target && gridVisible) {
-    target = snapToGrid(pt, 1); // step sera calculé à l'intérieur
-  }
-  // Étape 2 : sinon, ramène le point visé au bord le plus proche s'il tombe
-  // dehors (évite un clic purement ignoré près de la limite).
-  if (!target) {
-    target = buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt;
-  } else {
-    // Si on a un snap, on s'assure qu'il est dans le polygone (tolérance)
-    if (buildZone.length>=3 && !pointInPolygon(target, buildZone, 0.1)) {
-      // Si le snap sort, on clamp
-      target = clampPointToPolygon(pt, buildZone);
-    }
-  }
-  // Étape 3 : le SEGMENT reliant le point précédent à celui-ci peut couper un
-  // renfoncement concave du polygone même si les deux extrémités sont valides
-  // chacune de leur côté (même bug que pour le drag d'un sommet existant). On
-  // fait donc glisser depuis le dernier point posé jusqu'au point le plus
-  // loin encore valide sur ce segment, plutôt que d'accepter un tracé qui
-  // déborderait entre deux clics.
-  let next = target;
-  if(buildZone.length>=3 && drawPoints.length>0){
-    const from = drawPoints[drawPoints.length-1];
-    const validAtT = (t)=>{
-      const mid = { x: from.x+(target.x-from.x)*t, z: from.z+(target.z-from.z)*t };
-      return segmentFullyInsideZone(from, mid, buildZone);
-    };
-    next = slideToValid(from, target, validAtT);
-  }
-  drawPoints.push({x:next.x, z:next.z});
+  // Aucune contrainte pendant le tracé : on dessine librement, exactement où
+  // on clique. La découpe par le polygone d'implantation se fait une seule
+  // fois, à la validation (finishDraw), via rasterClipPolygon — voir plus haut.
+  drawPoints.push({x:pt.x, z:pt.z});
   const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
-  m.position.set(next.x,0.2,next.z);
+  m.position.set(pt.x,0.2,pt.z);
   drawMarkers.add(m);
   refreshPreview();
 }
 function finishDraw(){
   if(drawPoints.length<3){ cancelDraw(); return; }
-  // Répare le contour fermé si besoin : hugue les renfoncements concaves du
-  // polygone au lieu de refuser tout le tracé pour une arête qui coupe court
-  // (l'ancien comportement — voir plus haut pourquoi une arête entre deux
-  // points valides peut quand même sortir de la zone sur un polygone concave).
-  const finalPoints = buildZone.length>=3 ? repairClosedPolygonAgainstZone(drawPoints, buildZone) : drawPoints.slice();
-  createBuilding(finalPoints);
+  // Découpe la forme dessinée librement par le polygone d'implantation
+  // (rasterClipPolygon, voir plus haut) — garantit que le résultat ne peut
+  // jamais dépasser le polygone, quelle que soit la forme dessinée.
+  if(buildZone.length>=3){
+    const clipped = rasterClipPolygon(drawPoints, buildZone, 0.2); // cellule fine
+    if(!clipped.length){
+      flashStatus("Le tracé ne recouvre aucune zone constructible — annulé");
+      cancelDraw();
+      return;
+    }
+    createBuilding(clipped[0]); // le plus grand morceau si la découpe en produit plusieurs
+  } else {
+    createBuilding(drawPoints.slice());
+  }
   cancelDraw();
 }
 
@@ -1897,7 +1855,7 @@ function rebuildBldgVertexHandles(b){
   });
 }
 
-let bldgVertexDrag = null; // {index, x, y, moved, lastValid:{x,z}}
+let bldgVertexDrag = null; // {index, x, y, moved}
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!editingBuildingId || ev.button!==0) return;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -1907,8 +1865,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   const hits = raycaster.intersectObjects(bldgVertexHandles.map(h=>h.mesh));
   if(!hits.length) return;
   const idx = bldgVertexHandles.findIndex(h=>h.mesh===hits[0].object);
-  const b = buildings.find(x=>x.id===editingBuildingId);
-  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false, lastValid: b ? {x:b.points[idx].x, z:b.points[idx].z} : null };
+  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
   controls.enabled = false;
 });
 window.addEventListener('pointermove', (ev)=>{
@@ -1921,43 +1878,27 @@ window.addEventListener('pointermove', (ev)=>{
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
   const idx = bldgVertexDrag.index;
-  // Aimantation directe sur un sommet du polygone si on s'en approche : même
-  // mécanisme fiable que "Emprise pleine" (copie exacte des coordonnées, pas
-  // de calcul intermédiaire). Prioritaire sur le clamp/glissement ci-dessous.
-  const snapped = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
-  // Ramène le point visé au bord le plus proche s'il tombe dehors (évite un
-  // rejet sec sur un point isolé).
-  const target = snapped || (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
-  if(buildZone.length>=3){
-    // Répare le contour EN TEMPS RÉEL, pas seulement au relâchement : on
-    // avait laissé l'ancien slideToValid (recherche dichotomique) actif
-    // pendant le glissement, qui suppose à tort qu'une arête ne bascule
-    // qu'une fois valide/invalide — sur un renfoncement concave elle rebascule
-    // en valide en approchant le point visé, et la dichotomie s'arrête bien
-    // avant d'y arriver. Le sommet restait alors "coincé" à mi-chemin même
-    // une fois la souris relâchée, puisque la réparation finale ne fait que
-    // légaliser une position déjà figée, sans jamais réessayer d'aller plus
-    // loin. D'où la "marge fantôme" : on répare donc ici, à chaque
-    // mouvement, avec la même insertion de sommets qu'au relâchement.
-    const candidate = b.points.slice();
-    candidate[idx] = { x: target.x, z: target.z };
-    const repaired = repairClosedPolygonAgainstZone(candidate, buildZone);
-    // Retrouve le nouvel index du sommet tiré (repairClosedPolygonAgainstZone
-    // conserve chaque point d'origine tel quel, en insérant seulement entre —
-    // le point qu'on vient de fixer à `target` reste donc présent tel quel).
-    let newIdx = repaired.findIndex(p => p.x===target.x && p.z===target.z);
-    if(newIdx<0) newIdx = idx; // filet de sécurité, ne devrait pas arriver
-    b.points = repaired;
-    bldgVertexDrag.index = newIdx;
-    rebuildBldgVertexHandles(b);
-  } else {
-    b.points[idx] = { x: target.x, z: target.z };
-    bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
-  }
+  // Déplacement totalement LIBRE pendant le glissement, sans aucune
+  // contrainte — la découpe par le polygone d'implantation (rasterClipPolygon)
+  // ne s'applique qu'au relâchement, voir plus bas. Plus de calcul fragile
+  // pendant l'interaction : le sommet suit le curseur, point final.
+  b.points[idx] = { x: pt.x, z: pt.z };
+  bldgVertexHandles[idx].mesh.position.set(pt.x, 0.3, pt.z);
   rebuildMesh(b);
 });
 window.addEventListener('pointerup', ()=>{
   if(!bldgVertexDrag) return;
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  if(b && buildZone.length>=3){
+    const clipped = rasterClipPolygon(b.points, buildZone, 0.2); // cellule fine
+    if(clipped.length){
+      b.points = clipped[0]; // le plus grand morceau si la découpe en produit plusieurs
+      rebuildMesh(b);
+      rebuildBldgVertexHandles(b);
+    } else {
+      flashStatus("La forme ne recouvre plus aucune zone constructible — déplacement annulé");
+    }
+  }
   bldgVertexDrag = null;
   controls.enabled = true;
 });
@@ -2253,17 +2194,14 @@ document.getElementById('btn-save-json').addEventListener('click', ()=>{
 });
 
 // Répare une emprise chargée depuis un ancien projet JSON (sauvegardé avant
-// la validation de contour complet) qui peut contenir une arête sortant d'un
-// renfoncement concave du polygone, même si chaque sommet pris isolément est
-// valide. Retrace la forme sommet par sommet, comme un tracé manuel : chaque
-// point est glissé vers le précédent si l'arête qu'il forme sort de la zone.
-// Répare une emprise chargée depuis un ancien projet JSON (sauvegardé avant
-// la réparation "hugging" par insertion de sommets) : utilise directement
-// repairClosedPolygonAgainstZone, qui insère les sommets du polygone le long
-// de tout renfoncement concave plutôt que de raccourcir grossièrement l'arête.
+// Répare une emprise chargée depuis un ancien projet JSON en la découpant
+// par le polygone d'implantation (rasterClipPolygon, voir plus haut) — même
+// mécanisme que le tracé et l'édition, aucun code de réparation séparé à
+// maintenir.
 function repairBuildingPoints(points, zone){
   if(!points || points.length<3 || zone.length<3) return points;
-  return repairClosedPolygonAgainstZone(points, zone);
+  const clipped = rasterClipPolygon(points, zone, 0.2);
+  return clipped.length ? clipped[0] : points;
 }
 const fileLoad = document.getElementById('file-load');
 document.getElementById('btn-load-json').addEventListener('click', ()=> fileLoad.click());
@@ -2280,9 +2218,11 @@ fileLoad.addEventListener('change', (e)=>{
       let repairedCount = 0;
       (data.buildings||[]).forEach(b=>{
         let pts = b.points;
-        if(buildZone.length>=3 && !polygonFullyInsideZone(pts, buildZone)){
-          pts = repairBuildingPoints(pts, buildZone);
-          repairedCount++;
+        if(buildZone.length>=3){
+          const repaired = repairBuildingPoints(pts, buildZone);
+          const areaBefore = polygonArea(pts), areaAfter = polygonArea(repaired);
+          if(Math.abs(areaAfter-areaBefore) > Math.max(1, areaBefore*0.01)) repairedCount++;
+          pts = repaired;
         }
         createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands});
       });
