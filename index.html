@@ -1409,13 +1409,33 @@ function pathLength(a, path, b){
 // les deux par le chemin le long du contour réel (sens le plus court des
 // deux). Retourne la liste des points de a (exclu) à b (inclus), à insérer à
 // la place de l'arête d'origine.
+// Distance sous laquelle un point est considéré comme "posé sur le bord"
+// du polygone (donc concerné par le hug ci-dessous), pas juste "à l'intérieur".
+const ON_BOUNDARY_EPS = 0.05;
+function isOnZoneBoundary(p, zone){
+  return zone.length>=3 && distanceToPolygonBoundary(p, zone) <= ON_BOUNDARY_EPS;
+}
 function repairEdgeAgainstZone(a, b, zone){
-  if(zone.length<3 || segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
+  if(zone.length<3) return [{x:b.x, z:b.z}];
+  // Si les DEUX extrémités sont posées sur le bord du polygone, l'arête doit
+  // SUIVRE le contour réel entre elles, même si le segment tout droit reste
+  // techniquement "à l'intérieur" (segmentFullyInsideZone ne détecte que les
+  // sorties, pas les bombements convexes du bord qu'un raccourci tout droit
+  // laisse de côté). Sans ce cas, une arête reliant deux points du bord peut
+  // couper un renflement du polygone en ligne droite : chaque point posé est
+  // bien pile sur la limite, mais toute l'arête ENTRE eux reste en retrait —
+  // exactement la marge fantôme observée sur un bord qui n'est pas rigoureusement
+  // rectiligne entre ces deux points.
+  const bothOnBoundary = isOnZoneBoundary(a, zone) && isOnZoneBoundary(b, zone);
+  if(!bothOnBoundary && segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
   const ia = nearestZoneEdgeIndex(a, zone);
   const ib = nearestZoneEdgeIndex(b, zone);
   if(ia === ib){
-    // Même arête du polygone des deux côtés : pas de renfoncement identifiable
-    // entre elles (cas dégénéré/numérique) — on retombe sur l'ancien lissage.
+    // Même arête du polygone des deux côtés : la ligne droite EST déjà le
+    // bord réel sur ce tronçon (rien à insérer), sauf si elle sort quand
+    // même de la zone (cas dégénéré/numérique) — on retombe alors sur
+    // l'ancien lissage.
+    if(segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
     const validAtT = (t)=> segmentFullyInsideZone(a, {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t}, zone);
     return [ slideToValid(a, b, validAtT) ];
   }
