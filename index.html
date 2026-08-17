@@ -1339,6 +1339,20 @@ function cleanPolygonPoints(pts, epsilon = 0.01) {
   if (cleaned.length < 3) return pts.slice();
   return cleaned;
 }
+// Trier les points par angle polaire pour former un polygone simple (convexe)
+function sortPolygonPoints(pts) {
+  if (pts.length < 3) return pts;
+  // Calcul du centre
+  let cx = 0, cz = 0;
+  for (const p of pts) { cx += p.x; cz += p.z; }
+  cx /= pts.length; cz /= pts.length;
+  // Trier par angle
+  return pts.slice().sort((a, b) => {
+    const angleA = Math.atan2(a.z - cz, a.x - cx);
+    const angleB = Math.atan2(b.z - cz, b.x - cx);
+    return angleA - angleB;
+  });
+}
 // Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
 // reste dans le polygone d'implantation, en échantillonnant chaque arête.
 function polygonFullyInsideZone(pts, zone){
@@ -1527,6 +1541,8 @@ function finishDraw(){
     finalPoints = snapPointsToZone(finalPoints, buildZone);
     finalPoints = repairClosedPolygonAgainstZone(finalPoints, buildZone);
   }
+  // Trier par angle pour former un polygone simple
+  finalPoints = sortPolygonPoints(finalPoints);
   createBuilding(finalPoints);
   cancelDraw();
 }
@@ -1908,6 +1924,8 @@ function createBuilding(pts, opts={}){
     flashStatus("Polygone invalide (moins de 3 sommets après nettoyage)");
     return null;
   }
+  // Trier par angle pour un polygone simple
+  cleanPts = sortPolygonPoints(cleanPts);
   const b = {
     id: idCounter++,
     name: opts.name || `Bâtiment ${idCounter-1}`,
@@ -2445,6 +2463,8 @@ fileLoad.addEventListener('change', (e)=>{
         // Nettoyer les points du projet chargé
         let cleanPts = cleanPolygonPoints(pts);
         if (!cleanPts || cleanPts.length<3) cleanPts = pts; // fallback
+        // Trier par angle
+        cleanPts = sortPolygonPoints(cleanPts);
         if(buildZone.length>=3 && !polygonFullyInsideZone(cleanPts, buildZone)){
           cleanPts = repairBuildingPoints(cleanPts, buildZone);
           repairedCount++;
