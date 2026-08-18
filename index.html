@@ -1540,7 +1540,15 @@ function hugBoundarySampled(a, b, zone){
     const t = s/steps;
     const raw = { x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t };
     const isLast = s===steps;
-    const near = distanceToPolygonBoundary(raw, zone) <= EDGE_SNAP_RADIUS*2 ? clampPointToPolygon(raw, zone) : raw;
+    // Ne corrige QUE les échantillons réellement HORS de la zone — pas
+    // seulement "proches" d'un bord (ancien critère : distance <= 3 m à
+    // N'IMPORTE QUEL bord). Un point valide à l'intérieur, même à deux mètres
+    // d'un bord, ne doit jamais être tiré de force dessus : le bord le plus
+    // proche à vol d'oiseau peut appartenir à une tout autre partie du
+    // contour (de l'autre côté d'un renfoncement), ce qui accrochait le
+    // sommet dessus et créait une excursion aberrante (aller-retour vers un
+    // point du contour sans rapport avec le tracé réel).
+    const near = pointInPolygon(raw, zone) ? raw : clampPointToPolygon(raw, zone);
     const pt = isLast ? {x:b.x, z:b.z} : near; // le tout dernier échantillon EST b, jamais une approximation
     if(Math.hypot(pt.x-prev.x, pt.z-prev.z) > 0.06){ out.push(pt); prev = pt; }
   }
