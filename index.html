@@ -1456,17 +1456,25 @@ function cleanPolygonPoints(pts, epsilon=0.06){
 function isOnZoneBoundary(p, zone){
   return zone.length>=3 && distanceToPolygonBoundary(p, zone) <= ON_BOUNDARY_EPS;
 }
-// ==== "Hug" du bord réel entre deux points posés sur le contour ====
-// L'ancienne version rééchantillonnait le segment [a,b] à intervalles fixes
-// (0,4 m) et reprojetait chaque échantillon sur le polygone — jusqu'à 80
-// points PAR ARÊTE. Sur un tracé qui longe un bord courbe (le rond-point, lui-
-// même modélisé comme un N-gone dense), chaque clic near-boundary déclenchait
-// un nouveau ré-échantillonnage complet : le nombre de sommets explosait
-// (plusieurs milliers pour un seul bâtiment). La bonne approche : ne jamais
-// inventer de points — se contenter de rejouer les VRAIS sommets du polygone
-// `zone` compris entre a et b, dans le sens le plus court. Le nombre de
-// points insérés est alors borné par zone.length (fixe), quel que soit le
-// nombre de clics le long du bord.
+// ==== "Hug" du bord réel entre deux points ====
+// Deux cas bien différents, traités par deux méthodes différentes :
+//
+// 1) Les DEUX extrémités sont posées sur le bord (cas du tracé qui longe le
+//    contour, clic après clic) -> on rejoue les VRAIS sommets du polygone
+//    `zone` compris entre les deux, dans le sens le plus court. Borné par
+//    zone.length, quel que soit le nombre de clics le long du bord — c'est
+//    ce qui corrige l'explosion à plusieurs milliers de sommets qu'on avait
+//    avec l'ancien ré-échantillonnage systématique tous les 0,4 m.
+//
+// 2) Un SEUL sommet rentrant du polygone coupe le segment (typiquement une
+//    arête dont les deux extrémités sont valides mais qui traverse un
+//    renfoncement concave par le milieu) -> ici le "sens le plus court le
+//    long du bord" n'a AUCUN rapport avec le point réellement traversé (les
+//    deux extrémités peuvent se projeter n'importe où sur le contour), et
+//    appliquer la méthode 1 dans ce cas produit un raccourci qui coupe le
+//    bâtiment de travers (triangle en diagonale au lieu de suivre l'angle
+//    réel). On revient donc ici au ré-échantillonnage local du segment
+//    lui-même, qui suit la trajectoire réellement dessinée.
 function buildZoneArcTable(zone){
   const arcs = [0];
   let acc = 0;
@@ -1505,7 +1513,8 @@ function zoneVerticesBetween(zone, arcs, perimeter, fromArc, toArc){
   items.sort((a,b)=>a.rel-b.rel);
   return items.map(it=>({x:it.p.x, z:it.p.z}));
 }
-function hugBoundarySegment(a, b, zone){
+// Cas 1 : les deux points sont déjà sur le bord -> on rejoue le contour réel.
+function hugBoundaryVertices(a, b, zone){
   const { arcs, perimeter } = buildZoneArcTable(zone);
   if(perimeter<1e-6) return [{x:b.x, z:b.z}];
   const arcA = zoneBoundaryArc(a, zone, arcs);
@@ -1518,11 +1527,31 @@ function hugBoundarySegment(a, b, zone){
   out.push({x:b.x, z:b.z});
   return out;
 }
+// Cas 2 : dip concave ponctuel -> ré-échantillonnage local du segment tracé,
+// borné à 80 points (un seul sommet rentrant à rattraper, jamais un tracé
+// entier le long d'un bord — donc pas de risque d'explosion ici).
+function hugBoundarySampled(a, b, zone){
+  const dist = Math.hypot(b.x-a.x, b.z-a.z);
+  if(dist < 1e-6) return [{x:b.x, z:b.z}];
+  const steps = Math.max(2, Math.min(80, Math.ceil(dist/0.4)));
+  const out = [];
+  let prev = a;
+  for(let s=1;s<=steps;s++){
+    const t = s/steps;
+    const raw = { x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t };
+    const isLast = s===steps;
+    const near = distanceToPolygonBoundary(raw, zone) <= EDGE_SNAP_RADIUS*2 ? clampPointToPolygon(raw, zone) : raw;
+    const pt = isLast ? {x:b.x, z:b.z} : near; // le tout dernier échantillon EST b, jamais une approximation
+    if(Math.hypot(pt.x-prev.x, pt.z-prev.z) > 0.06){ out.push(pt); prev = pt; }
+  }
+  if(!out.length) out.push({x:b.x, z:b.z});
+  return out;
+}
 function repairEdgeAgainstZone(a, b, zone){
   if(zone.length<3) return [{x:b.x, z:b.z}];
   const bothOnBoundary = isOnZoneBoundary(a, zone) && isOnZoneBoundary(b, zone);
   if(!bothOnBoundary && segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
-  return hugBoundarySegment(a, b, zone);
+  return bothOnBoundary ? hugBoundaryVertices(a, b, zone) : hugBoundarySampled(a, b, zone);
 }
 // Applique repairEdgeAgainstZone() à chaque arête d'un contour FERMÉ (chaque
 // point relié au suivant, et le dernier au premier).
