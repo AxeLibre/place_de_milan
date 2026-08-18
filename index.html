@@ -58,8 +58,7 @@
 
   #status-line{
     font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
-    margin-left:auto;text-align:right;max-width:380px;
-    white-space:nowrap;
+    margin-left:auto;text-align:right;max-width:280px;
   }
   #status-line b{color:var(--accent);}
 
@@ -222,9 +221,13 @@
   #compass{
     position:absolute;top:70px;right:16px;z-index:5;width:46px;height:46px;
     background:var(--ink-2);border:1px solid #2a3946;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;
-    font-size:11px;font-weight:700;color:var(--accent);pointer-events:none;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;
+    font-size:9px;font-weight:700;color:var(--accent);cursor:pointer;padding:0;
   }
+  #compass:hover{border-color:var(--accent);}
+  #compass svg{display:block;}
+  #compass-needle{transform-origin:22px 22px;transition:transform 0.08s linear;}
+  #compass-label{margin-top:-2px;letter-spacing:.05em;}
   #site-status-banner{
     position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:6;
     max-width:560px;display:none;gap:8px;align-items:flex-start;
@@ -239,6 +242,14 @@
     margin-left:8px;flex-shrink:0;
   }
   #site-status-banner button:hover{color:var(--paper);}
+  #label-layer{position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden;}
+  #label-lines{position:absolute;inset:0;pointer-events:none;z-index:3;width:100%;height:100%;}
+  .label-chip{
+    position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;
+    background:rgba(21,29,36,0.92);border:1px solid #2a3946;border-radius:3px;padding:4px 8px;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--paper);white-space:nowrap;
+  }
+  .label-chip:hover{border-color:var(--accent);}
 </style>
 </head>
 <body>
@@ -246,8 +257,13 @@
   <div id="viewport">
     <div id="ribbon">
       <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
-      <button class="tool-btn ghost admin-only" id="btn-load-glb">Charger maquette (.glb)</button>
+      <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-extension-gare"><i data-lucide="train-front"></i><span class="tool-btn-label">Ajouter Extension Gare</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-labels"><i data-lucide="tag"></i><span class="tool-btn-label">Masquer labels</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légende</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
+      <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
       <button class="tool-btn ghost" id="btn-night"><i data-lucide="moon"></i><span class="tool-btn-label">Nuit</span></button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
@@ -257,9 +273,7 @@
       <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
       <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
       <div class="tool-sep"></div>
-      <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
-      <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus quasi-orthographique (angle de champ très réduit) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
-      <button class="tool-btn ghost" id="btn-poly-debug" title="Affiche le numéro de chaque sommet réellement utilisé par le code pour la limite du polygone d'implantation — à comparer directement avec Blender."><i data-lucide="hash"></i><span class="tool-btn-label">Repères sommets</span></button>
+      <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
     </div>
     <button id="btn-help" title="À propos">?</button>
     <div id="about-overlay">
@@ -276,8 +290,18 @@
         <p style="color:var(--muted);font-size:11.5px;">Maquette 3D et voies importées depuis Blender.</p>
       </div>
     </div>
-    <div id="compass">N↑</div>
+    <button id="compass" title="Orienter la caméra vers le Nord (+Z)">
+      <svg viewBox="0 0 44 44" width="30" height="30">
+        <g id="compass-needle">
+          <path d="M22 4 L27 22 L22 20 L17 22 Z" fill="#e0663f"/>
+          <path d="M22 40 L27 22 L22 24 L17 22 Z" fill="#5a6b78"/>
+        </g>
+      </svg>
+      <span id="compass-label">N</span>
+    </button>
     <div id="site-status-banner"></div>
+    <svg id="label-lines"></svg>
+    <div id="label-layer"></div>
     <div id="draw-hint">
       <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
       <span><kbd>Entrée</kbd> valider</span>
@@ -303,10 +327,10 @@
 
       <div class="section-title">Arbres <span id="tree-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
       <div id="tree-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucun arbre. Cliquez sur <b style="color:var(--paper)">+ Arbre</b> puis dans le polygone d'implantation pour en planter un ; recliquez sur un arbre pour le retirer.</div>
-      <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;">🗑 Supprimer tous les arbres</button>
+      <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;align-items:center;gap:5px;justify-content:center;"><i data-lucide="trash-2" style="width:14px;height:14px;"></i> Supprimer tous les arbres</button>
 
       <div class="section-title">Gazon</div>
-      <div style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;margin-bottom:8px;">Cliquez <b style="color:var(--paper)">🖌 Gazon</b> puis glissez sur la place pour peindre ; clic droit pour effacer.</div>
+      <div style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;margin-bottom:8px;">Cliquez <b style="color:var(--paper)"><i data-lucide="paintbrush" style="width:12px;height:12px;vertical-align:-2px;"></i> Gazon</b> puis glissez sur la place pour peindre ; clic droit pour effacer.</div>
       <div style="display:flex;gap:6px;margin-bottom:16px;">
         <button class="small-action" id="brush-small">Petit</button>
         <button class="small-action" id="brush-medium">Moyen</button>
@@ -315,7 +339,7 @@
 
       <div class="section-title">Circulation</div>
       <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender (voir avec l'administrateur du site).</div>
-      <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;">📂 Charger routes.json</button>
+      <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;align-items:center;gap:5px;justify-content:center;"><i data-lucide="folder-open" style="width:14px;height:14px;"></i> Charger routes.json</button>
       <div class="admin-only" id="route-list" style="flex-direction:column;"></div>
 
       <div class="section-title admin-only">Admin · couleurs véhicules</div>
@@ -325,8 +349,8 @@
     <div id="footer-actions">
       <button class="primary-btn" id="btn-export-png">Exporter l'image (PNG)</button>
       <div class="secondary-row">
-        <button class="tool-btn" id="btn-save-json">💾 Sauver le projet</button>
-        <button class="tool-btn" id="btn-load-json">📂 Charger</button>
+        <button class="tool-btn" id="btn-save-json"><i data-lucide="save"></i><span class="tool-btn-label">Sauver le projet</span></button>
+        <button class="tool-btn" id="btn-load-json"><i data-lucide="folder-open"></i><span class="tool-btn-label">Charger</span></button>
       </div>
     </div>
   </div>
@@ -372,6 +396,17 @@ const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
 // pratique pour juger des volumes/masses sans être distrait par les couleurs.
 let legendEnabled = true;
 function glassMaterialFor(editing){
+  // Réutilise le VRAI matériau "glass" de la maquette (.glb) quand il est
+  // disponible, plutôt qu'un matériau générique recréé à la main — mêmes
+  // reflets/teinte que les vitrages déjà modélisés dans Blender. On clone
+  // pour pouvoir ajuster l'opacité en mode édition sans affecter les autres
+  // bâtiments (qui partagent sinon le même matériau de base).
+  if(glassMaterial){
+    const m = glassMaterial.clone();
+    m.transparent = true;
+    m.opacity = editing ? 0.2 : (m.opacity || 0.85);
+    return m;
+  }
   return new THREE.MeshPhysicalMaterial({
     color: 0xaecbe0,
     metalness: 0.1,
@@ -453,10 +488,36 @@ controls.maxDistance = 700;
 // un effet de parallaxe qui n'a RIEN à voir avec la logique du polygone
 // (vérifiée séparément), mais qui rend impossible tout jugement fiable
 // "à l'oeil" d'un alignement au sol. Plutôt que de gérer une seconde caméra
-// (OrthographicCamera) qu'il faudrait resynchroniser partout, on réduit
-// fortement le champ de vision et on recule d'autant la caméra : à FOV très
-// faible, la perspective devient visuellement négligeable — un "faux
-// orthographique" qui ne nécessite aucun changement ailleurs dans le code.
+// Vraie boussole : le Nord de la maquette est +Z (soit +Y côté Blender, avant
+// conversion Z-up→Y-up). L'aiguille tourne pour indiquer, à l'écran, où se
+// trouve le Nord réel compte tenu de l'orbite actuelle de la caméra — pas un
+// simple "N↑" statique. Un clic réoriente la caméra plein Nord (même distance
+// et même hauteur d'orbite, juste l'azimut qui change).
+const compassBtn = document.getElementById('compass');
+const compassNeedle = document.getElementById('compass-needle');
+function updateCompass(){
+  const dx = camera.position.x - controls.target.x;
+  const dz = camera.position.z - controls.target.z;
+  // Azimut de la caméra autour de la cible, mesuré depuis +Z (Nord) : 0 quand
+  // la caméra est plein Sud en train de regarder plein Nord.
+  const azimuth = Math.atan2(dx, dz);
+  compassNeedle.style.transform = `rotate(${azimuth}rad)`;
+}
+function orientCameraNorth(){
+  const offset = camera.position.clone().sub(controls.target);
+  const radiusXZ = Math.hypot(offset.x, offset.z);
+  offset.x = 0; offset.z = radiusXZ; // caméra plein Sud de la cible -> elle regarde plein Nord (+Z)
+  camera.position.set(controls.target.x+offset.x, camera.position.y, controls.target.z+offset.z);
+  controls.update();
+}
+compassBtn.addEventListener('click', orientCameraNorth);
+// Vraie caméra orthographique dédiée à "Vue plan" : plus un faux effet à FOV
+// très faible, mais une réelle projection orthographique (aucune perspective
+// possible, quel que soit l'angle ou la hauteur d'un bâtiment proche). Elle
+// suit la même position/cible que la caméra perspective habituelle (qui
+// continue de piloter les contrôles et le raycast, inchangés) — seul le
+// RENDU visuel bascule sur l'orthographique pendant la vue plan.
+const orthoCamera = new THREE.OrthographicCamera(-100,100,100,-100,0.1,3000);
 let planViewActive = false;
 let planViewSaved = null;
 function togglePlanView(){
@@ -464,49 +525,46 @@ function togglePlanView(){
   const btn = document.getElementById('btn-plan-view');
   if(planViewActive){
     planViewSaved = {
-      fov: camera.fov, far: camera.far,
       position: camera.position.clone(),
       target: controls.target.clone(),
       minPolar: controls.minPolarAngle, maxPolar: controls.maxPolarAngle,
       minDistance: controls.minDistance, maxDistance: controls.maxDistance,
     };
     const tx = controls.target.x, tz = controls.target.z;
-    const planFov = 3; // degrés — assez faible pour que la perspective soit visuellement négligeable
-    const halfFovRad = (planFov/2) * Math.PI/180;
-    const dist = 90 / Math.tan(halfFovRad); // cadrage confortable (≈90 m de demi-largeur visible)
-    camera.fov = planFov;
-    camera.far = Math.max(camera.far, dist + 500);
+    const dist = 160; // hauteur confortable de survol, ajustable au zoom ensuite
     camera.position.set(tx, dist, tz + 0.01); // léger décalage en z pour éviter un gimbal lock (visée pile verticale)
     controls.target.set(tx, 0, tz);
     controls.minPolarAngle = 0; controls.maxPolarAngle = 0; // verrouille la vue à la verticale : plus de bascule possible
-    controls.minDistance = dist*0.1; controls.maxDistance = dist*4; // le zoom molette reste utilisable, toujours en quasi-ortho
-    camera.updateProjectionMatrix();
+    controls.minDistance = 20; controls.maxDistance = 600; // le zoom molette reste utilisable
     controls.update();
     btn.classList.add('active');
   } else if(planViewSaved){
-    camera.fov = planViewSaved.fov; camera.far = planViewSaved.far;
     camera.position.copy(planViewSaved.position);
     controls.target.copy(planViewSaved.target);
     controls.minPolarAngle = planViewSaved.minPolar; controls.maxPolarAngle = planViewSaved.maxPolar;
     controls.minDistance = planViewSaved.minDistance; controls.maxDistance = planViewSaved.maxDistance;
-    camera.updateProjectionMatrix();
     controls.update();
     btn.classList.remove('active');
     planViewSaved = null;
   }
 }
+// Synchronise la caméra orthographique sur la caméra perspective à chaque
+// frame de la vue plan : même position/orientation, mais demi-largeur du
+// cadre dérivée de la distance actuelle (le zoom molette continue donc de
+// fonctionner, sans aucune distorsion de perspective dans le rendu final).
+function syncOrthoCameraForPlanView(){
+  const dist = camera.position.distanceTo(controls.target);
+  const aspect = window.innerWidth ? (renderer.domElement.clientWidth/renderer.domElement.clientHeight) : 1;
+  const halfH = dist * 0.42; // cadrage équivalent à l'ancien FOV ~3° à cette distance
+  const halfW = halfH * aspect;
+  orthoCamera.left = -halfW; orthoCamera.right = halfW;
+  orthoCamera.top = halfH; orthoCamera.bottom = -halfH;
+  orthoCamera.position.copy(camera.position);
+  orthoCamera.up.copy(camera.up);
+  orthoCamera.lookAt(controls.target);
+  orthoCamera.updateProjectionMatrix();
+}
 document.getElementById('btn-plan-view').addEventListener('click', togglePlanView);
-const btnPolyDebug = document.getElementById('btn-poly-debug');
-btnPolyDebug.addEventListener('click', ()=>{
-  polyDebugGroup.visible = !polyDebugGroup.visible;
-  btnPolyDebug.classList.toggle('active', polyDebugGroup.visible);
-  if(polyDebugGroup.visible){
-    // Donne aussi la liste complète en texte (copiable), utile pour comparer
-    // chiffre par chiffre avec les coordonnées lues dans Blender.
-    console.table(buildZone.map((p,i)=>({index:i, x:p.x.toFixed(3), z:p.z.toFixed(3)})));
-    flashStatus(`${buildZone.length} sommets affichés — détail dans la console (F12)`);
-  }
-});
 
 // Lighting — soft overcast "plan de présentation" look
 const hemiLight = new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.75);
@@ -556,61 +614,6 @@ const ilotOutline = new THREE.Line(
 ilotOutline.computeLineDistances();
 groundGroup.add(ilotOutline);
 
-// ==== Repères de debug sur les sommets de Polygone_Implantation ====
-// Affiche, DIRECTEMENT dans la scène, le numéro de chaque sommet que le code
-// utilise réellement pour buildZone — pour comparer avec Blender sans se fier
-// à une interprétation visuelle d'une capture d'écran (caméra, perspective,
-// etc.). Un sprite = un chiffre lisible même de loin, orienté face caméra.
-function makeIndexSprite(text){
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(15,20,15,0.85)';
-  ctx.beginPath(); ctx.arc(size/2,size/2,size/2-4,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle = '#7CFC98'; ctx.lineWidth = 6; ctx.stroke();
-  ctx.fillStyle = '#7CFC98';
-  ctx.font = 'bold 64px monospace';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, size/2, size/2+4);
-  const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.SpriteMaterial({ map:tex, depthTest:false, transparent:true });
-  const spr = new THREE.Sprite(mat);
-  spr.scale.set(3.4,3.4,1);
-  spr.renderOrder = 999;
-  return spr;
-}
-const polyDebugGroup = new THREE.Group();
-polyDebugGroup.visible = false;
-groundGroup.add(polyDebugGroup);
-function rebuildPolyDebugMarkers(){
-  polyDebugGroup.clear();
-  buildZone.forEach((p,i)=>{
-    // Gros point AU SOL (position exacte, y=0.3, même hauteur que les
-    // poignées de sommet des bâtiments) : c'est CE point qu'il faut comparer
-    // à un sommet de bâtiment, pas le numéro flottant ci-dessous, qui reste
-    // décalé en hauteur pour rester lisible et peut sembler "à côté" du bon
-    // endroit selon l'angle de caméra (même en vue plan, le champ de vision
-    // n'est jamais parfaitement à 0°).
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.6,12,12), new THREE.MeshBasicMaterial({color:0x7CFC98, depthTest:false}));
-    dot.position.set(p.x, 0.3, p.z);
-    dot.renderOrder = 998;
-    polyDebugGroup.add(dot);
-    // Trait vertical reliant le point au sol à son numéro : permet de
-    // vérifier d'un coup d'oeil, quel que soit l'angle de caméra, que le
-    // numéro affiché correspond bien à CE point au sol précis et à aucun autre.
-    const lineGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(p.x, 0.3, p.z), new THREE.Vector3(p.x, 3.0, p.z)
-    ]);
-    const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0x7CFC98, depthTest:false, transparent:true, opacity:0.85}));
-    line.renderOrder = 997;
-    polyDebugGroup.add(line);
-    const label = makeIndexSprite(String(i));
-    label.position.set(p.x, 3.6, p.z);
-    polyDebugGroup.add(label);
-  });
-}
-
 let gridVisible = true;
 
 /* ============================================================
@@ -646,11 +649,16 @@ let polygonMesh = null;   // THREE.Mesh du polygone d'implantation
 let siteUpCorrected = false; // true si une rotation Z-up→Y-up a été appliquée à la maquette chargée
 let hallMesh = null;      // THREE.Mesh du hall de gare
 let quartierGroup = null; // THREE.Object3D du contexte bâti
+let extensionGareMesh = null; // Object3D "Extension_Gare" — masqué par défaut, bouton dédié pour l'afficher
+let polygonParts = [];    // toutes les pièces "polygone_implantation" (pour le bouton "Voir PLU")
+let plzMaterialPLU = null, plzMaterialNormal = null, showingPLU = false;
+let glassMaterial = null; // matériau "glass" du .glb, réutilisé pour les nouveaux bâtiments
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
 
 function clearSite(){
   siteRoot.clear();
   polygonMesh = null; hallMesh = null; quartierGroup = null;
+  extensionGareMesh = null; polygonParts = []; plzMaterialPLU = null; plzMaterialNormal = null; glassMaterial = null;
   treeTemplate = null; // sera recapturé depuis la nouvelle maquette au prochain arbre planté
   siteUpCorrected = false;
 }
@@ -750,7 +758,7 @@ function updateBuildZoneVisual(){
   ilotOutline.geometry = geo;
   ilotOutline.computeLineDistances();
   groundGroup.add(ilotOutline);
-  rebuildPolyDebugMarkers();
+// (Repères sommets retiré — plus de dépendance à rebuildPolyDebugMarkers.)
   rebuildGrid();
 }
 
@@ -940,16 +948,27 @@ function computeBuildZoneFromParts(parts){
   return convexHullXZ(dedupe(rawPts));
 }
 function onSiteLoaded(){
-  const polygonParts = findAllByNameCI(siteRoot, 'polygone_implantation');
-  polygonMesh = polygonParts[0] || null; // pièce "principale", utilisée pour la normale de façade etc.
+  const polyParts = findAllByNameCI(siteRoot, 'polygone_implantation');
+  polygonParts = polyParts;
+  polygonMesh = polyParts[0] || null; // pièce "principale", utilisée pour la normale de façade etc.
   hallMesh    = findByNameCI(siteRoot, 'Hall_Gare');
   quartierGroup = findByNameCI(siteRoot, 'Quartier');
+  extensionGareMesh = findByNameCI(siteRoot, 'Extension_Gare');
+  if(extensionGareMesh) extensionGareMesh.visible = false; // masquée par défaut — bouton "Ajouter Extension Gare"
+  glassMaterial = findMaterialByName(siteRoot, 'glass');
   fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
-  if(polygonParts.length){
-    polygonParts.forEach(p=>{ p.visible = true; p.receiveShadow = true; });
-    buildZone = computeBuildZoneFromParts(polygonParts);
+  if(polyParts.length){
+    polyParts.forEach(p=>{ p.visible = true; p.receiveShadow = true; });
+    // Le matériau natif de "polygone_implantation" dans le .glb est "PLU" —
+    // on le garde de côté pour le bouton "Voir PLU", et on bascule par défaut
+    // sur "PLACE BERAUDIER" (retrouvé n'importe où ailleurs dans la maquette)
+    // pour l'affichage normal.
+    plzMaterialPLU = polyParts[0].material || null;
+    plzMaterialNormal = findMaterialByName(siteRoot, 'PLACE BERAUDIER') || plzMaterialPLU;
+    applyPLUView(showingPLU);
+    buildZone = computeBuildZoneFromParts(polyParts);
     updateBuildZoneVisual();
-    setupGrassPaintOverlay(polygonParts);
+    setupGrassPaintOverlay(polyParts);
   }
   collectSiteLights();
   if(hallMesh){
@@ -1035,6 +1054,27 @@ function buildDemoSite(){
   selectedId = null; rebuildAll(); renderList();
 }
 
+// Bascule le matériau visible du polygone d'implantation entre son rendu
+// normal ("PLACE BERAUDIER") et la coloration réglementaire ("PLU"), toutes
+// deux déjà natives dans le .glb — voir onSiteLoaded().
+function applyPLUView(on){
+  showingPLU = on;
+  const mat = on ? plzMaterialPLU : (plzMaterialNormal || plzMaterialPLU);
+  if(mat) polygonParts.forEach(p=>{ if(p.material!==undefined) p.material = mat; });
+}
+const btnTogglePLU = document.getElementById('btn-toggle-plu');
+btnTogglePLU.addEventListener('click', ()=>{
+  applyPLUView(!showingPLU);
+  btnTogglePLU.classList.toggle('active', showingPLU);
+});
+const btnExtensionGare = document.getElementById('btn-toggle-extension-gare');
+btnExtensionGare.addEventListener('click', ()=>{
+  if(!extensionGareMesh){ flashStatus("Extension Gare introuvable dans la maquette chargée"); return; }
+  extensionGareMesh.visible = !extensionGareMesh.visible;
+  btnExtensionGare.classList.toggle('active', extensionGareMesh.visible);
+  const label = btnExtensionGare.querySelector('.tool-btn-label');
+  if(label) label.textContent = extensionGareMesh.visible ? 'Retirer Extension Gare' : 'Ajouter Extension Gare';
+});
 function showSiteBanner(html, ok=false){
   const el = document.getElementById('site-status-banner');
   el.innerHTML = html + `<button aria-label="fermer">✕</button>`;
@@ -1067,10 +1107,10 @@ function loadSiteFromGLB(url, onFail){
       siteUpCorrected = true; // conservé pour référence/diagnostic (plus utilisé pour re-corriger quoi que ce soit ailleurs)
     }
     const report = onSiteLoaded();
-    showSiteBanner(
-      `<div><b>Maquette chargée</b> (${url})${corrected ? ' — rotation Z-up→Y-up appliquée automatiquement' : ''}.<br>${report}</div>`,
-      true
-    );
+    // La bannière de confirmation "Maquette chargée · N voie(s) importée(s)…"
+    // ne s'affiche plus au chargement de la page (gênante à chaque visite) ;
+    // le diagnostic reste disponible dans la console pour le débogage.
+    console.info(`[Place de Milan] Maquette chargée (${url})${corrected ? ' — rotation Z-up→Y-up appliquée automatiquement' : ''}. ${report}`);
     tryAutoLoadRoutes(); // toujours après la maquette : évite que son résultat soit écrasé par l'import auto (souvent infructueux) des Route_* du .glb
   }, undefined, (err)=>{
     console.warn("Chargement du .glb impossible :", url, err);
@@ -1126,12 +1166,7 @@ function buildDrawGuideMeshes(){
 }
 buildDrawGuideMeshes();
 function updateDrawGuide(pt){
-  if(!pt){ drawGuideGroup.visible = false; 
-    if (drawing) {
-      statusLine.innerHTML = `🟢 Mode dessin : déplacez la souris pour voir la position corrigée (cliquez pour poser)`;
-    }
-    return; 
-  }
+  if(!pt){ drawGuideGroup.visible = false; return; }
   const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
   drawGuideGroup.visible = true;
   drawGuideDot.position.set(target.x, 0.25, target.z);
@@ -1144,9 +1179,6 @@ function updateDrawGuide(pt){
     drawGuideSegment.visible = true;
   } else {
     drawGuideSegment.visible = false;
-  }
-  if (drawing) {
-    statusLine.innerHTML = `🟢 Position corrigée : x=${target.x.toFixed(2)}, z=${target.z.toFixed(2)}  (cliquez pour poser) · ${drawPoints.length} sommets posés`;
   }
 }
 function hideDrawGuide(){ drawGuideGroup.visible = false; }
@@ -1187,7 +1219,6 @@ function startDraw(){
   btnDraw.querySelector('.tool-btn-label').textContent = 'Dessin en cours…';
   drawHint.classList.add('show');
   controls.enabled = false; // left click reserved for placing points while drawing
-  statusLine.innerHTML = `🟢 Mode dessin : déplacez la souris pour voir la position corrigée (cliquez pour poser)`;
 }
 function cancelDraw(){
   drawing = false; drawPoints = [];
@@ -1196,7 +1227,6 @@ function cancelDraw(){
   btnDraw.querySelector('.tool-btn-label').textContent = 'Nouveau bâtiment';
   drawHint.classList.remove('show');
   controls.enabled = true;
-  statusLine.innerHTML = 'Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer';
 }
 function clearMarkers(){
   drawMarkers.clear();
@@ -1325,45 +1355,6 @@ function snapPointToZone(pt, zone){
   }
   return clampPointToPolygon(pt, zone);
 }
-// Applique snapPointToZone à tous les points d'un polygone
-function snapPointsToZone(pts, zone){
-  if(zone.length<3) return pts;
-  return pts.map(p => snapPointToZone(p, zone));
-}
-// Nettoie un polygone : supprime les doublons consécutifs, les points trop proches,
-// et assure une fermeture correcte.
-function cleanPolygonPoints(pts, epsilon = 0.01) {
-  if (pts.length < 3) return null;
-  const cleaned = [];
-  for (let i = 0; i < pts.length; i++) {
-    const cur = pts[i];
-    const next = pts[(i + 1) % pts.length];
-    if (Math.hypot(cur.x - next.x, cur.z - next.z) > epsilon) {
-      cleaned.push({x: cur.x, z: cur.z});
-    }
-  }
-  if (cleaned.length < 3) return pts.slice(); // fallback
-  // Vérifier la fermeture
-  if (cleaned.length > 2 && Math.hypot(cleaned[0].x - cleaned[cleaned.length-1].x, cleaned[0].z - cleaned[cleaned.length-1].z) < epsilon) {
-    cleaned.pop();
-  }
-  if (cleaned.length < 3) return pts.slice();
-  return cleaned;
-}
-// Trier les points par angle polaire pour former un polygone simple (convexe)
-function sortPolygonPoints(pts) {
-  if (pts.length < 3) return pts;
-  // Calcul du centre
-  let cx = 0, cz = 0;
-  for (const p of pts) { cx += p.x; cz += p.z; }
-  cx /= pts.length; cz /= pts.length;
-  // Trier par angle
-  return pts.slice().sort((a, b) => {
-    const angleA = Math.atan2(a.z - cz, a.x - cx);
-    const angleB = Math.atan2(b.z - cz, b.x - cx);
-    return angleA - angleB;
-  });
-}
 // Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
 // reste dans le polygone d'implantation, en échantillonnant chaque arête.
 function polygonFullyInsideZone(pts, zone){
@@ -1422,77 +1413,67 @@ function slideToValid(from, to, validAtT){
 // chaque extrémité, puis insérer les sommets du polygone entre les deux, en
 // suivant le contour réel dans le sens le plus court (comparaison de
 // longueur totale) plutôt que de deviner.
-function nearestZoneEdgeIndex(pt, zone){
-  let best = -1, bestDist = Infinity;
-  for(let i=0;i<zone.length;i++){
-    const a = zone[i], b = zone[(i+1)%zone.length];
-    const proj = closestPointOnSegment(pt, a, b);
-    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
-    if(d < bestDist){ bestDist = d; best = i; }
-  }
-  return best;
-}
-// Sommets du polygone en allant de l'arête i1 vers l'arête i2, dans le sens
-// croissant (forward) ou décroissant (backward) des indices.
-function walkZoneForward(zone, i1, i2){
-  const n = zone.length;
-  const steps = ((i2 - i1) % n + n) % n;
-  const pts = [];
-  for(let k=1;k<=steps;k++) pts.push(zone[(i1+k)%n]);
-  return pts;
-}
-function walkZoneBackward(zone, i1, i2){
-  const n = zone.length;
-  const steps = ((i1 - i2) % n + n) % n;
-  const pts = [];
-  for(let k=0;k<steps;k++) pts.push(zone[(i1-k+n)%n]);
-  return pts;
-}
-function pathLength(a, path, b){
-  let total = 0, prev = a;
-  for(const v of path){ total += Math.hypot(v.x-prev.x, v.z-prev.z); prev = v; }
-  total += Math.hypot(b.x-prev.x, b.z-prev.z);
-  return total;
-}
-// Répare l'arête [a,b] : si elle reste dans la zone, ne change rien. Sinon,
-// retrouve l'arête du polygone la plus proche de chaque extrémité et relie
-// les deux par le chemin le long du contour réel (sens le plus court des
-// deux). Retourne la liste des points de a (exclu) à b (inclus), à insérer à
-// la place de l'arête d'origine.
-// Distance sous laquelle un point est considéré comme "posé sur le bord"
-// du polygone (donc concerné par le hug ci-dessous), pas juste "à l'intérieur".
+// (fonctions désormais inutiles retirées : l'ancien "hug" par chaînage
+// d'indices de sommets pouvait mal tourner sur un contour dense/irrégulier
+// issu d'un mesh Blender, remplacé par l'échantillonnage ci-dessous, robuste
+// par construction — aucune notion de sens/indice de départ à deviner.)
+// Répare l'arête [a,b] : si elle reste dans la zone ET qu'aucune extrémité
+// n'est posée sur le bord, ne change rien (arête intérieure normale). Sinon,
+// hugue le bord réel par ÉCHANTILLONNAGE + projection individuelle de chaque
+// échantillon sur le point le plus proche du polygone (clampPointToPolygon) —
+// méthode volontairement simple et robuste : aucune notion d'indice de départ/
+// sens à deviner (un chaînage par indices peut mal tourner sur un contour
+// dense/irrégulier issu d'un mesh Blender et produire un contour en dents de
+// scie). Fonctionne aussi bien pour rattraper une arête qui sort de la zone
+// (polygone concave) que pour coller au plus près un léger renflement convexe
+// du bord entre deux points pourtant valides chacun de leur côté (la "marge
+// fantôme"). Retourne les points de a (exclu) à b (inclus).
 const ON_BOUNDARY_EPS = 0.05;
+// Nettoie un polygone : supprime les points consécutifs quasi confondus
+// (qu'un hug répété peut laisser). NE RÉORDONNE JAMAIS les points : l'ordre
+// de tracé fait foi, un tri (ex. par angle polaire) casserait toute forme
+// non convexe en repliant le contour sur lui-même.
+function cleanPolygonPoints(pts, epsilon=0.06){
+  if(!pts || pts.length<3) return null;
+  const cleaned = [];
+  for(let i=0;i<pts.length;i++){
+    const cur = pts[i];
+    const prev = cleaned.length ? cleaned[cleaned.length-1] : null;
+    if(!prev || Math.hypot(cur.x-prev.x, cur.z-prev.z) > epsilon){
+      cleaned.push({x:cur.x, z:cur.z});
+    }
+  }
+  // referme proprement : si le dernier point est quasi confondu avec le premier, on le retire
+  if(cleaned.length>3 && Math.hypot(cleaned[0].x-cleaned[cleaned.length-1].x, cleaned[0].z-cleaned[cleaned.length-1].z) <= epsilon){
+    cleaned.pop();
+  }
+  return cleaned.length>=3 ? cleaned : null;
+}
 function isOnZoneBoundary(p, zone){
   return zone.length>=3 && distanceToPolygonBoundary(p, zone) <= ON_BOUNDARY_EPS;
 }
+function hugBoundarySegment(a, b, zone){
+  const dist = Math.hypot(b.x-a.x, b.z-a.z);
+  if(dist < 1e-6) return [{x:b.x, z:b.z}];
+  const steps = Math.max(2, Math.min(80, Math.ceil(dist/0.4)));
+  const out = [];
+  let prev = a;
+  for(let s=1;s<=steps;s++){
+    const t = s/steps;
+    const raw = { x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t };
+    const isLast = s===steps;
+    const near = distanceToPolygonBoundary(raw, zone) <= EDGE_SNAP_RADIUS*2 ? clampPointToPolygon(raw, zone) : raw;
+    const pt = isLast ? {x:b.x, z:b.z} : near; // le tout dernier échantillon EST b, jamais une approximation
+    if(Math.hypot(pt.x-prev.x, pt.z-prev.z) > 0.06){ out.push(pt); prev = pt; }
+  }
+  if(!out.length) out.push({x:b.x, z:b.z});
+  return out;
+}
 function repairEdgeAgainstZone(a, b, zone){
   if(zone.length<3) return [{x:b.x, z:b.z}];
-  // Si les DEUX extrémités sont posées sur le bord du polygone, l'arête doit
-  // SUIVRE le contour réel entre elles, même si le segment tout droit reste
-  // techniquement "à l'intérieur" (segmentFullyInsideZone ne détecte que les
-  // sorties, pas les bombements convexes du bord qu'un raccourci tout droit
-  // laisse de côté). Sans ce cas, une arête reliant deux points du bord peut
-  // couper un renflement du polygone en ligne droite : chaque point posé est
-  // bien pile sur la limite, mais toute l'arête ENTRE eux reste en retrait —
-  // exactement la marge fantôme observée sur un bord qui n'est pas rigoureusement
-  // rectiligne entre ces deux points.
   const bothOnBoundary = isOnZoneBoundary(a, zone) && isOnZoneBoundary(b, zone);
   if(!bothOnBoundary && segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
-  const ia = nearestZoneEdgeIndex(a, zone);
-  const ib = nearestZoneEdgeIndex(b, zone);
-  if(ia === ib){
-    // Même arête du polygone des deux côtés : la ligne droite EST déjà le
-    // bord réel sur ce tronçon (rien à insérer), sauf si elle sort quand
-    // même de la zone (cas dégénéré/numérique) — on retombe alors sur
-    // l'ancien lissage.
-    if(segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
-    const validAtT = (t)=> segmentFullyInsideZone(a, {x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t}, zone);
-    return [ slideToValid(a, b, validAtT) ];
-  }
-  const fwd = walkZoneForward(zone, ia, ib);
-  const bwd = walkZoneBackward(zone, ia, ib);
-  const chosen = pathLength(a, fwd, b) <= pathLength(a, bwd, b) ? fwd : bwd;
-  return [ ...chosen.map(v=>({x:v.x, z:v.z})), {x:b.x, z:b.z} ];
+  return hugBoundarySegment(a, b, zone);
 }
 // Applique repairEdgeAgainstZone() à chaque arête d'un contour FERMÉ (chaque
 // point relié au suivant, et le dernier au premier).
@@ -1520,44 +1501,40 @@ function addDrawPoint(pt){
   // proximité — même mécanisme fiable que "Emprise pleine" (copie/projection
   // exacte des coordonnées, jamais un point "presque" dessus).
   const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
-  // Étape 2 : le SEGMENT reliant le point précédent à celui-ci peut couper un
-  // renfoncement concave du polygone même si les deux extrémités sont valides
-  // chacune de leur côté (même bug que pour le drag d'un sommet existant). On
-  // fait donc glisser depuis le dernier point posé jusqu'au point le plus
-  // loin encore valide sur ce segment, plutôt que d'accepter un tracé qui
-  // déborderait entre deux clics.
-  let next = target;
+  // Étape 2 : hugue IMMÉDIATEMENT le segment reliant le point précédent à
+  // celui-ci contre le bord réel du polygone — pas seulement à la fermeture
+  // du tracé (finishDraw). Ainsi le contour est correct dès la pose, sans
+  // avoir à "valider" pour voir la marge fantôme disparaître.
+  let toInsert;
   if(buildZone.length>=3 && drawPoints.length>0){
     const from = drawPoints[drawPoints.length-1];
-    const validAtT = (t)=>{
-      const mid = { x: from.x+(target.x-from.x)*t, z: from.z+(target.z-from.z)*t };
-      return segmentFullyInsideZone(from, mid, buildZone);
-    };
-    next = slideToValid(from, target, validAtT);
+    toInsert = repairEdgeAgainstZone(from, target, buildZone);
+  } else {
+    toInsert = [{x:target.x, z:target.z}];
   }
-  drawPoints.push({x:next.x, z:next.z});
-  const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
-  m.position.set(next.x,0.2,next.z);
-  drawMarkers.add(m);
+  toInsert.forEach(p=>{
+    drawPoints.push({x:p.x, z:p.z});
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
+    m.position.set(p.x,0.2,p.z);
+    drawMarkers.add(m);
+  });
   refreshPreview();
-  // Mettre à jour le statut pour montrer le nombre de points posés
-  if (drawing) {
-    statusLine.innerHTML = `🟢 Position corrigée : x=${next.x.toFixed(2)}, z=${next.z.toFixed(2)}  (cliquez pour poser) · ${drawPoints.length} sommets posés`;
-  }
 }
 function finishDraw(){
   if(drawPoints.length<3){ cancelDraw(); return; }
+  // Répare la dernière arête (celle qui referme le contour, du dernier point
+  // posé vers le premier) puis nettoie les doublons/points quasi confondus
+  // qu'un hug répété peut laisser — mais ne réordonne JAMAIS les points : le
+  // contour doit rester exactement dans l'ordre où il a été tracé.
   let finalPoints = drawPoints.slice();
-  // Nettoyer les doublons
-  finalPoints = cleanPolygonPoints(finalPoints);
-  if (!finalPoints || finalPoints.length<3) { flashStatus("Polygone invalide"); cancelDraw(); return; }
-  if(buildZone.length>=3){
-    // Snap et réparation
-    finalPoints = snapPointsToZone(finalPoints, buildZone);
-    finalPoints = repairClosedPolygonAgainstZone(finalPoints, buildZone);
+  if(buildZone.length>=3 && finalPoints.length>=2){
+    const first = finalPoints[0], last = finalPoints[finalPoints.length-1];
+    const closing = repairEdgeAgainstZone(last, first, buildZone);
+    // le dernier point de "closing" == first ; on ne le rajoute pas (il ferme déjà la boucle)
+    finalPoints = finalPoints.concat(closing.slice(0, -1));
   }
-  // Trier par angle pour former un polygone simple
-  finalPoints = sortPolygonPoints(finalPoints);
+  finalPoints = cleanPolygonPoints(finalPoints) || finalPoints;
+  if(finalPoints.length<3){ cancelDraw(); return; }
   createBuilding(finalPoints);
   cancelDraw();
 }
@@ -1933,18 +1910,11 @@ function normalizeBands(b){
 }
 
 function createBuilding(pts, opts={}){
-  // Nettoyer les points avant de créer le bâtiment
-  let cleanPts = cleanPolygonPoints(pts);
-  if (!cleanPts || cleanPts.length<3) {
-    flashStatus("Polygone invalide (moins de 3 sommets après nettoyage)");
-    return null;
-  }
-  // Trier par angle pour un polygone simple
-  cleanPts = sortPolygonPoints(cleanPts);
+  const cleaned = cleanPolygonPoints(pts) || pts;
   const b = {
     id: idCounter++,
     name: opts.name || `Bâtiment ${idCounter-1}`,
-    points: cleanPts,
+    points: cleaned,
     floors: opts.floors || 6,
     bands: opts.bands || defaultBands(opts.floors || 6),
     group: new THREE.Group(),
@@ -1956,7 +1926,6 @@ function createBuilding(pts, opts={}){
   selectedId = b.id;
   rebuildMesh(b);
   renderList();
-  return b;
 }
 
 function usageAtFloor(b, floor){
@@ -2123,17 +2092,15 @@ window.addEventListener('pointermove', (ev)=>{
 window.addEventListener('pointerup', ()=>{
   if(!bldgVertexDrag) return;
   const b = buildings.find(x=>x.id===editingBuildingId);
-  if(b && buildZone.length>=3){
-    // Applique le snap final et la réparation sur tout le polygone
-    let pts = b.points.slice();
-    pts = snapPointsToZone(pts, buildZone);
-    pts = repairClosedPolygonAgainstZone(pts, buildZone);
-    b.points = pts;
-    rebuildMesh(b);
-    rebuildBldgVertexHandles(b);
-  }
   bldgVertexDrag = null;
   controls.enabled = true;
+  if(b){
+    // Nettoyage final une fois le glissement terminé : le hug répété pendant
+    // le drag peut avoir laissé des points quasi confondus le long du bord ;
+    // on les fusionne sans jamais réordonner le contour.
+    const cleaned = cleanPolygonPoints(b.points);
+    if(cleaned){ b.points = cleaned; rebuildMesh(b); rebuildBldgVertexHandles(b); }
+  }
 });
 window.addEventListener('keydown', (ev)=>{
   if(editingBuildingId && ev.key==='Escape') stopEditBuildingShape();
@@ -2422,14 +2389,176 @@ function setNightMode(night){
 btnNight.addEventListener('click', ()=> setNightMode(!isNight));
 
 /* ============================================================
+   LABELS — point au sol + étiquette décalée + ligne de rappel
+   ============================================================
+   Le point 3D (petite sphère) fait partie de la scène WebGL, donc il
+   apparaît automatiquement dans le rendu ET dans l'export PNG. L'étiquette
+   texte et la ligne de rappel, elles, vivent en HTML/SVG par-dessus le
+   canvas — nécessaire pour un anti-chevauchement dynamique fluide (mesure
+   réelle de la largeur du texte, recalcul à chaque frame selon la caméra).
+   Comme ces calques HTML n'apparaissent PAS automatiquement dans un export
+   canvas.toDataURL(), l'export PNG les redessine à la main sur un canvas
+   hors-écran à partir des mêmes coordonnées déjà calculées (voir plus bas).
+   ============================================================ */
+let labels = [];
+let labelIdCounter = 1;
+let labelsVisible = true;
+let labelPlacing = false;
+const labelGroup = new THREE.Group(); worldRoot.add(labelGroup);
+const labelLayer = document.getElementById('label-layer');
+const labelLinesSvg = document.getElementById('label-lines');
+const btnLabel = document.getElementById('btn-label');
+const btnToggleLabels = document.getElementById('btn-toggle-labels');
+
+function addLabel(x, z, text){
+  const id = labelIdCounter++;
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5,12,12),
+    new THREE.MeshBasicMaterial({color:0xe0663f})
+  );
+  marker.position.set(x, 0.3, z);
+  labelGroup.add(marker);
+
+  const chip = document.createElement('div');
+  chip.className = 'label-chip';
+  chip.textContent = text;
+  chip.title = 'Clic droit : supprimer ce label';
+  labelLayer.appendChild(chip);
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+  line.setAttribute('stroke', '#e0663f');
+  line.setAttribute('stroke-width', '1.2');
+  line.setAttribute('stroke-dasharray', '3,2');
+  labelLinesSvg.appendChild(line);
+
+  const rec = { id, x, z, text, marker, chip, line, anchorX:0, anchorY:0, screenX:0, screenY:0, behind:false };
+  chip.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); removeLabel(id); });
+  labels.push(rec);
+  updateLabelPositions();
+}
+function removeLabel(id){
+  const idx = labels.findIndex(l=>l.id===id);
+  if(idx<0) return;
+  const l = labels[idx];
+  labelGroup.remove(l.marker); l.marker.geometry.dispose(); l.marker.material.dispose();
+  l.chip.remove(); l.line.remove();
+  labels.splice(idx,1);
+}
+const _labelProjVec = new THREE.Vector3();
+function updateLabelPositions(){
+  if(!labels.length) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+  const activeCam = planViewActive ? orthoCamera : camera;
+  const placedRects = [];
+  labels.forEach(l=>{
+    _labelProjVec.set(l.x, 0.3, l.z).project(activeCam);
+    const behind = _labelProjVec.z > 1;
+    const sx = (_labelProjVec.x*0.5+0.5) * rect.width;
+    const sy = (1-(_labelProjVec.y*0.5+0.5)) * rect.height;
+    l.anchorX = sx; l.anchorY = sy; l.behind = behind;
+    if(behind || !labelsVisible){
+      l.chip.style.display = 'none'; l.line.style.display = 'none';
+      return;
+    }
+    l.chip.style.display = ''; l.line.style.display = '';
+    // Position de base : décalée en haut-à-droite du point, puis repoussée
+    // vers le bas si elle chevauche une étiquette déjà placée cette frame —
+    // évite la superposition sans jamais cacher un label sous un autre.
+    const w = l.chip.offsetWidth || 60, h = l.chip.offsetHeight || 22;
+    let cx = sx + 22, cy = sy - 18;
+    let tries = 0;
+    while(tries < 40){
+      const r = { left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy };
+      const overlap = placedRects.some(o => !(r.right<o.left || r.left>o.right || r.bottom<o.top || r.top>o.bottom));
+      if(!overlap) break;
+      cy += h+4; tries++;
+    }
+    placedRects.push({ left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy });
+    l.chip.style.left = cx+'px'; l.chip.style.top = cy+'px';
+    l.screenX = cx; l.screenY = cy - h/2;
+    l.line.setAttribute('x1', sx); l.line.setAttribute('y1', sy);
+    l.line.setAttribute('x2', cx); l.line.setAttribute('y2', cy - h*0.3);
+  });
+}
+btnLabel.addEventListener('click', ()=>{
+  labelPlacing = !labelPlacing;
+  btnLabel.classList.toggle('active', labelPlacing);
+  flashStatus(labelPlacing ? 'Cliquez sur la maquette pour poser un label (Échap pour annuler)' : 'Pose de label annulée');
+});
+window.addEventListener('keydown', (ev)=>{
+  if(ev.key==='Escape' && labelPlacing){ labelPlacing=false; btnLabel.classList.remove('active'); }
+});
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(!labelPlacing) return;
+  const pt = groundPointFromEvent(ev);
+  labelPlacing = false; btnLabel.classList.remove('active');
+  if(!pt) return;
+  const text = prompt('Texte du label :', '');
+  if(!text) return;
+  addLabel(pt.x, pt.z, text.trim());
+});
+btnToggleLabels.addEventListener('click', ()=>{
+  labelsVisible = !labelsVisible;
+  labelGroup.visible = labelsVisible;
+  const lbl = btnToggleLabels.querySelector('.tool-btn-label');
+  if(lbl) lbl.textContent = labelsVisible ? 'Masquer labels' : 'Afficher labels';
+  updateLabelPositions();
+});
+
+/* ============================================================
    EXPORT PNG
    ============================================================ */
 document.getElementById('btn-export-png').addEventListener('click', ()=>{
-  renderer.render(scene, camera);
-  const link = document.createElement('a');
-  link.download = `place-de-milan_proposition_${Date.now()}.png`;
-  link.href = renderer.domElement.toDataURL('image/png');
-  link.click();
+  if(planViewActive) syncOrthoCameraForPlanView();
+  renderer.render(scene, planViewActive ? orthoCamera : camera);
+  const glDataUrl = renderer.domElement.toDataURL('image/png');
+  const download = (dataUrl)=>{
+    const link = document.createElement('a');
+    link.download = `place-de-milan_proposition_${Date.now()}.png`;
+    link.href = dataUrl;
+    link.click();
+  };
+  // Les labels (texte + ligne de rappel) vivent en HTML/SVG par-dessus le
+  // canvas WebGL, donc canvas.toDataURL() seul ne les capture pas — on les
+  // redessine à la main sur un canvas hors-écran, aux mêmes coordonnées déjà
+  // calculées par updateLabelPositions(), avant d'exporter.
+  if(!labelsVisible || !labels.length){ download(glDataUrl); return; }
+  const img = new Image();
+  img.onload = ()=>{
+    const off = document.createElement('canvas');
+    off.width = img.width; off.height = img.height;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const rect = renderer.domElement.getBoundingClientRect();
+    const scaleX = img.width / (rect.width||img.width);
+    const scaleY = img.height / (rect.height||img.height);
+    ctx.font = `${11*scaleY}px 'IBM Plex Mono', monospace`;
+    ctx.textBaseline = 'middle';
+    labels.forEach(l=>{
+      if(l.behind) return;
+      ctx.strokeStyle = 'rgba(224,102,63,0.9)';
+      ctx.setLineDash([4*scaleX,3*scaleX]);
+      ctx.lineWidth = 1.2*scaleX;
+      ctx.beginPath();
+      ctx.moveTo(l.anchorX*scaleX, l.anchorY*scaleY);
+      ctx.lineTo(l.screenX*scaleX, l.screenY*scaleY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const padX = 8*scaleX, chipH = 22*scaleY;
+      const textW = ctx.measureText(l.text).width;
+      const chipW = textW + padX*2;
+      const chipX = l.screenX*scaleX - chipW/2, chipY = l.screenY*scaleY - chipH/2;
+      ctx.fillStyle = 'rgba(21,29,36,0.92)';
+      ctx.strokeStyle = '#2a3946'; ctx.lineWidth = 1*scaleX;
+      ctx.fillRect(chipX, chipY, chipW, chipH);
+      ctx.strokeRect(chipX, chipY, chipW, chipH);
+      ctx.fillStyle = '#f4ede4';
+      ctx.fillText(l.text, chipX+padX, l.screenY*scaleY);
+    });
+    download(off.toDataURL('image/png'));
+  };
+  img.src = glDataUrl;
 });
 
 /* ============================================================
@@ -2475,16 +2604,11 @@ fileLoad.addEventListener('change', (e)=>{
       let repairedCount = 0;
       (data.buildings||[]).forEach(b=>{
         let pts = b.points;
-        // Nettoyer les points du projet chargé
-        let cleanPts = cleanPolygonPoints(pts);
-        if (!cleanPts || cleanPts.length<3) cleanPts = pts; // fallback
-        // Trier par angle
-        cleanPts = sortPolygonPoints(cleanPts);
-        if(buildZone.length>=3 && !polygonFullyInsideZone(cleanPts, buildZone)){
-          cleanPts = repairBuildingPoints(cleanPts, buildZone);
+        if(buildZone.length>=3 && !polygonFullyInsideZone(pts, buildZone)){
+          pts = repairBuildingPoints(pts, buildZone);
           repairedCount++;
         }
-        createBuilding(cleanPts, {name:b.name, floors:b.floors, bands:b.bands});
+        createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands});
       });
       selectedId = null;
       rebuildAll(); renderList();
@@ -2509,8 +2633,8 @@ fileLoad.addEventListener('change', (e)=>{
    allumés/éteints globalement avec le mode nuit (voir applyVehicleLightState).
    ============================================================ */
 const ROUTE_TYPES = {
-  tram:   { label:'Tram',    color:0xe9e9e9, speed:10,  count:1,  wagons:3, parts:['tramAvant','tramMilieu','tramArriere'], length:12,   fallbackScale:[2.2,2.6,9] },
-  bus:    { label:'Bus',     color:0x7a0000, speed:10,  count:3,  wagons:1, part:'bus',                                    length:8.9,  fallbackScale:[2,2.4,6]  },
+  tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  wagons:3, parts:['tramAvant','tramMilieu','tramArriere'], length:14,   fallbackScale:[2.2,2.6,9] },
+  bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  wagons:1, part:'bus',                                    length:8.9,  fallbackScale:[2,2.4,6]  },
   voiture:{ label:'Voiture', color:0x2c0a71, speed:10, count:7,  wagons:1, part:'voiture',                                length:5.1,  fallbackScale:[1.7,1.3,3.4] },
   pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, wagons:1, part:null,                                     length:0.5,  fallbackScale:[0.4,1.4,0.5] }
 };
@@ -2820,7 +2944,10 @@ function animate(){
   const dt = Math.min(clock.getDelta(), 0.1);
   controls.update();
   tickAgents(dt);
-  renderer.render(scene, camera);
+  updateCompass();
+  updateLabelPositions();
+  if(planViewActive){ syncOrthoCameraForPlanView(); renderer.render(scene, orthoCamera); }
+  else renderer.render(scene, camera);
 }
 animate();
 
