@@ -959,12 +959,16 @@ function onSiteLoaded(){
   fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
   if(polyParts.length){
     polyParts.forEach(p=>{ p.visible = true; p.receiveShadow = true; });
-    // Le matériau natif de "polygone_implantation" dans le .glb est "PLU" —
-    // on le garde de côté pour le bouton "Voir PLU", et on bascule par défaut
-    // sur "PLACE BERAUDIER" (retrouvé n'importe où ailleurs dans la maquette)
-    // pour l'affichage normal.
-    plzMaterialPLU = polyParts[0].material || null;
-    plzMaterialNormal = findMaterialByName(siteRoot, 'PLACE BERAUDIER') || plzMaterialPLU;
+    // Le matériau natif de "polygone_implantation" dans le .glb est en réalité
+    // "PLACE BERAUDIER" (vérifié dans le glTF exporté) — c'est donc lui l'affichage
+    // normal. Le vrai matériau "PLU" (coloration réglementaire) n'est PAS posé sur
+    // ce mesh mais ailleurs dans la maquette (sur "quartier") ; il faut donc aller
+    // le chercher par son nom plutôt que de supposer qu'il est déjà en place —
+    // l'ancien code prenait par erreur le même matériau des deux côtés (recherche
+    // de "PLACE BERAUDIER" retombant sur le mesh lui-même), ce qui rendait le
+    // bouton "Voir PLU" inopérant (aucun changement visuel au clic).
+    plzMaterialNormal = polyParts[0].material || null;
+    plzMaterialPLU = findMaterialByName(siteRoot, 'PLU') || plzMaterialNormal;
     applyPLUView(showingPLU);
     buildZone = computeBuildZoneFromParts(polyParts);
     updateBuildZoneVisual();
@@ -2017,16 +2021,19 @@ function stopEditBuildingShape(){
   editingBuildingId = null;
   bldgVertexGroup.clear();
   bldgVertexHandles = [];
+  bldgVertexHover = null;
+  renderer.domElement.style.cursor = '';
   const b = buildings.find(x=>x.id===id);
   if(b) rebuildMesh(b);
   renderList();
 }
+const BLDG_HANDLE_COLOR = 0xe0663f, BLDG_HANDLE_HOVER = 0xffab7a, BLDG_HANDLE_DRAG = 0xffffff;
 function rebuildBldgVertexHandles(b){
   bldgVertexGroup.clear();
   bldgVertexHandles = b.points.map((p,i)=>{
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.8,14,14),
-      new THREE.MeshStandardMaterial({ color:0xe0663f, emissive:0xe0663f, emissiveIntensity:0.25 })
+      new THREE.MeshStandardMaterial({ color:BLDG_HANDLE_COLOR, emissive:BLDG_HANDLE_COLOR, emissiveIntensity:0.25 })
     );
     mesh.position.set(p.x, 0.3, p.z);
     bldgVertexGroup.add(mesh);
@@ -2034,72 +2041,90 @@ function rebuildBldgVertexHandles(b){
   });
 }
 
-let bldgVertexDrag = null; // {index, x, y, moved, lastValid:{x,z}}
-renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if(!editingBuildingId || ev.button!==0) return;
+// Glissement d'un sommet — repensé pour être stable et "user friendly" façon
+// SimCity : pendant le glissement on se contente d'un simple clamp dans
+// l'emprise (clampPointToPolygon, pas de ré-insertion de sommets ni de
+// recréation des poignées à chaque frame), donc le point suit la souris de
+// façon fluide et prévisible. La réparation complète du contour (hug des
+// bords concaves via repairClosedPolygonAgainstZone, qui PEUT insérer de
+// nouveaux sommets) n'intervient qu'une seule fois, au relâchement — c'est ce
+// qui rendait le geste instable avant : recréer toutes les sphères à chaque
+// pixel de mouvement pendant que le nombre de sommets changeait sous la souris.
+let bldgVertexDrag = null; // {index, x, y, moved}
+let bldgVertexHover = null; // index survolé (hors glissement), pour le retour visuel
+function bldgHandleAt(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(bldgVertexHandles.map(h=>h.mesh));
-  if(!hits.length) return;
-  const idx = bldgVertexHandles.findIndex(h=>h.mesh===hits[0].object);
-  const b = buildings.find(x=>x.id===editingBuildingId);
-  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false, lastValid: b ? {x:b.points[idx].x, z:b.points[idx].z} : null };
+  return hits.length ? bldgVertexHandles.findIndex(h=>h.mesh===hits[0].object) : -1;
+}
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!editingBuildingId || ev.button!==0) return;
+  const idx = bldgHandleAt(ev);
+  if(idx<0) return;
+  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
+  bldgVertexHandles[idx].mesh.material.color.setHex(BLDG_HANDLE_DRAG);
+  bldgVertexHandles[idx].mesh.material.emissive.setHex(BLDG_HANDLE_DRAG);
   controls.enabled = false;
+  renderer.domElement.style.cursor = 'grabbing';
 });
 window.addEventListener('pointermove', (ev)=>{
-  if(!bldgVertexDrag) return;
-  const dx = ev.clientX-bldgVertexDrag.x, dy = ev.clientY-bldgVertexDrag.y;
-  if(Math.hypot(dx,dy) > 3) bldgVertexDrag.moved = true;
-  if(!bldgVertexDrag.moved) return;
-  const pt = groundPointFromEvent(ev);
-  if(!pt) return;
-  const b = buildings.find(x=>x.id===editingBuildingId);
-  if(!b) return;
-  const idx = bldgVertexDrag.index;
-  // Même mécanisme d'aimantation exacte que le tracé d'un nouveau bâtiment et
-  // que "Emprise pleine" (voir snapPointToZone) : plus de marge fantôme.
-  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
-  if(buildZone.length>=3){
-    // Répare le contour EN TEMPS RÉEL, pas seulement au relâchement : on
-    // avait laissé l'ancien slideToValid (recherche dichotomique) actif
-    // pendant le glissement, qui suppose à tort qu'une arête ne bascule
-    // qu'une fois valide/invalide — sur un renfoncement concave elle rebascule
-    // en valide en approchant le point visé, et la dichotomie s'arrête bien
-    // avant d'y arriver. Le sommet restait alors "coincé" à mi-chemin même
-    // une fois la souris relâchée, puisque la réparation finale ne fait que
-    // légaliser une position déjà figée, sans jamais réessayer d'aller plus
-    // loin. D'où la "marge fantôme" : on répare donc ici, à chaque
-    // mouvement, avec la même insertion de sommets qu'au relâchement.
-    const candidate = b.points.slice();
-    candidate[idx] = { x: target.x, z: target.z };
-    const repaired = repairClosedPolygonAgainstZone(candidate, buildZone);
-    // Retrouve le nouvel index du sommet tiré (repairClosedPolygonAgainstZone
-    // conserve chaque point d'origine tel quel, en insérant seulement entre —
-    // le point qu'on vient de fixer à `target` reste donc présent tel quel).
-    let newIdx = repaired.findIndex(p => p.x===target.x && p.z===target.z);
-    if(newIdx<0) newIdx = idx; // filet de sécurité, ne devrait pas arriver
-    b.points = repaired;
-    bldgVertexDrag.index = newIdx;
-    rebuildBldgVertexHandles(b);
-  } else {
+  if(bldgVertexDrag){
+    const dx = ev.clientX-bldgVertexDrag.x, dy = ev.clientY-bldgVertexDrag.y;
+    if(Math.hypot(dx,dy) > 3) bldgVertexDrag.moved = true;
+    if(!bldgVertexDrag.moved) return;
+    const pt = groundPointFromEvent(ev);
+    if(!pt) return;
+    const b = buildings.find(x=>x.id===editingBuildingId);
+    if(!b) return;
+    const idx = bldgVertexDrag.index;
+    // Aimantation légère sur un sommet du polygone si on approche, sinon simple
+    // clamp dans l'emprise — même logique que snapPointToZone mais SANS
+    // insertion de sommets intermédiaires : le contour garde le même nombre de
+    // points pendant tout le glissement, d'où la stabilité.
+    const vertex = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
+    const target = vertex ? vertex : (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
     b.points[idx] = { x: target.x, z: target.z };
     bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
+    rebuildMesh(b);
+    return;
   }
-  rebuildMesh(b);
+  // Pas de glissement en cours : simple survol des poignées, pour un retour
+  // visuel immédiat (curseur + halo), sans toucher au bâtiment.
+  if(!editingBuildingId || !bldgVertexHandles.length) return;
+  const idx = bldgHandleAt(ev);
+  if(idx !== bldgVertexHover){
+    if(bldgVertexHover!=null && bldgVertexHandles[bldgVertexHover]){
+      bldgVertexHandles[bldgVertexHover].mesh.material.color.setHex(BLDG_HANDLE_COLOR);
+      bldgVertexHandles[bldgVertexHover].mesh.material.emissive.setHex(BLDG_HANDLE_COLOR);
+    }
+    bldgVertexHover = idx>=0 ? idx : null;
+    if(bldgVertexHover!=null){
+      bldgVertexHandles[bldgVertexHover].mesh.material.color.setHex(BLDG_HANDLE_HOVER);
+      bldgVertexHandles[bldgVertexHover].mesh.material.emissive.setHex(BLDG_HANDLE_HOVER);
+    }
+  }
+  renderer.domElement.style.cursor = idx>=0 ? 'grab' : '';
 });
 window.addEventListener('pointerup', ()=>{
   if(!bldgVertexDrag) return;
   const b = buildings.find(x=>x.id===editingBuildingId);
   bldgVertexDrag = null;
   controls.enabled = true;
+  renderer.domElement.style.cursor = '';
   if(b){
-    // Nettoyage final une fois le glissement terminé : le hug répété pendant
-    // le drag peut avoir laissé des points quasi confondus le long du bord ;
-    // on les fusionne sans jamais réordonner le contour.
-    const cleaned = cleanPolygonPoints(b.points);
-    if(cleaned){ b.points = cleaned; rebuildMesh(b); rebuildBldgVertexHandles(b); }
+    // Réparation complète et unique au relâchement : hug des bords concaves
+    // (insertion de sommets si besoin) puis fusion des points quasi confondus
+    // que ce hug peut laisser le long du bord — sans jamais réordonner le
+    // contour. C'est cette étape, et elle seule, qui peut changer le nombre
+    // de sommets ; les poignées ne sont donc recréées qu'ici, pas à chaque frame.
+    const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
+    const cleaned = cleanPolygonPoints(repaired) || repaired;
+    b.points = cleaned;
+    rebuildMesh(b);
+    rebuildBldgVertexHandles(b);
   }
 });
 window.addEventListener('keydown', (ev)=>{
@@ -2890,7 +2915,10 @@ renderVehicleColorControls();
 // que routes.json et la maquette partagent le même worldRoot (voir plus haut),
 // il n'y a plus de raison structurelle qu'un décalage apparaisse entre les deux.
 // Le préfixe du nom (avant le premier "_") détermine le type si reconnu, sinon "voiture" par défaut.
-function importRoutesFromJSON(data, sourceLabel){
+// `silent=true` (utilisé pour l'auto-chargement au démarrage de la page) : le
+// résultat part uniquement dans la console, pas de bannière — elle n'a de sens
+// que pour un import déclenché volontairement (bouton "Charger routes.json").
+function importRoutesFromJSON(data, sourceLabel, silent=false){
   clearRoutes(); // routes.json remplace l'ensemble des voies existantes (évite les doublons avec l'import auto depuis le .glb)
   const empty = [], created = [];
   Object.entries(data).forEach(([name, pts])=>{
@@ -2902,7 +2930,12 @@ function importRoutesFromJSON(data, sourceLabel){
     createRoute(points, type, name);
     created.push(name);
   });
-  showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
+  const summary = `${sourceLabel} : ${created.length} voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?` ${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}`:''}`;
+  if(silent){
+    console.info(`[Place de Milan] ${summary}`);
+  } else {
+    showSiteBanner(`<div>${sourceLabel} : <b>${created.length}</b> voie(s) importée(s)${created.length?` (${created.join(', ')})`:''}.${empty.length?`<br><span style="color:var(--com)">${empty.length} voie(s) vide(s) ignorée(s) : ${empty.join(', ')}</span>`:''}</div>`, created.length>0);
+  }
   return created.length;
 }
 
@@ -2928,7 +2961,7 @@ function tryAutoLoadRoutes(){
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }).then(data=>{
-    importRoutesFromJSON(data, `${ROUTES_JSON_URL} (auto)`);
+    importRoutesFromJSON(data, `${ROUTES_JSON_URL} (auto)`, true);
   }).catch(()=>{
     // silencieux : routes.json est optionnel, l'utilisateur peut toujours le charger à la main
   });
