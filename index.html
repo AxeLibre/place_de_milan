@@ -1848,6 +1848,8 @@ function stopTreeTool(){
   drawHint.classList.remove('show');
   controls.enabled = true;
   if(treeDeleteHalo) treeDeleteHalo.visible = false;
+  if(treePlantHalo) treePlantHalo.visible = false;
+  if(treePreviewObj) treePreviewObj.visible = false;
   treeHoverId = null;
   renderer.domElement.style.cursor = '';
 }
@@ -1906,18 +1908,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
     if(hitTree){ removeTree(hitTree.id); return; }
   }
 
-  // sinon, on tente de planter un nouvel arbre au point cliqué. Le polygone
-  // d'implantation représente la vraie surface de la place (plaza vide sans
-  // maillage de "quartier" dessus) : il DOIT faire partie des cibles de raycast,
-  // sinon un clic dans une zone ouverte ne touche rien et retombe sur le plan
-  // de secours à Y=0, qui peut être à des dizaines de mètres du vrai niveau du
-  // sol une fois la maquette mise à l'échelle/translatée.
-  const groundTargets = [];
-  groundTargets.push(...grassParts.map(g=>g.mesh));
-  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
-  if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
-  groundTargets.push(ground);
-  const hit = raycaster.intersectObjects(groundTargets, true)[0];
+  const hit = treeGroundHit(raycaster);
   if(!hit){ flashStatus("Cliquez dans le polygone d'implantation"); return; }
   if(buildZone.length>=3 && !pointInPolygon({x:hit.point.x, z:hit.point.z}, buildZone)){
     flashStatus("Les arbres ne peuvent être plantés que dans le polygone d'implantation");
@@ -1926,13 +1917,31 @@ renderer.domElement.addEventListener('click', (ev)=>{
   addTree(hit.point);
 });
 
-// Survol d'un arbre existant en mode "Arbre" : le clic va le SUPPRIMER, donc
-// on le teinte en rouge pour prévenir avant le clic. Les arbres clonés
-// partagent leurs matériaux (clone(true) ne clone pas les matériaux), donc on
-// ne les modifie jamais directement : on pose un halo rouge translucide
-// au-dessus de l'arbre survolé à la place.
+// Le polygone d'implantation représente la vraie surface de la place (plaza
+// vide sans maillage de "quartier" dessus) : il DOIT faire partie des cibles
+// de raycast, sinon un clic/survol dans une zone ouverte ne touche rien et
+// retombe sur le plan de secours à Y=0, qui peut être à des dizaines de
+// mètres du vrai niveau du sol une fois la maquette mise à l'échelle/translatée.
+function treeGroundHit(rc){
+  const groundTargets = [];
+  groundTargets.push(...grassParts.map(g=>g.mesh));
+  if(quartierGroup) quartierGroup.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
+  if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
+  groundTargets.push(ground);
+  return rc.intersectObjects(groundTargets, true)[0] || null;
+}
+
+// Survol en mode "Arbre" :
+// - au-dessus d'un arbre existant, le clic va le SUPPRIMER → halo rouge dessus.
+// - au-dessus d'un emplacement plantable, le clic va CRÉER un arbre → halo
+//   bleu au sol + un aperçu semi-transparent du modèle d'arbre qui suit la
+//   souris, pour visualiser l'emplacement/l'échelle avant de valider.
+// Les arbres clonés partagent leurs matériaux (clone(true) ne clone pas les
+// matériaux) : on ne modifie donc jamais les matériaux existants, on pose des
+// halos/aperçus à part.
 const TREE_DELETE_COLOR = '255,64,64';
-let treeDeleteHalo = null;
+const TREE_PLANT_COLOR = NEON_BLUE_CSS;
+let treeDeleteHalo = null, treePlantHalo = null, treePreviewObj = null;
 let treeHoverId = null;
 function ensureTreeDeleteHalo(){
   if(treeDeleteHalo) return treeDeleteHalo;
@@ -1948,9 +1957,36 @@ function ensureTreeDeleteHalo(){
   worldRoot.add(treeDeleteHalo);
   return treeDeleteHalo;
 }
+function ensureTreePlantHalo(){
+  if(treePlantHalo) return treePlantHalo;
+  treePlantHalo = makeCircleDecal(1.8, TREE_PLANT_COLOR, 'fill');
+  treePlantHalo.position.y = 0.05;
+  treePlantHalo.visible = false;
+  worldRoot.add(treePlantHalo);
+  return treePlantHalo;
+}
+function ensureTreePreviewObj(){
+  if(treePreviewObj) return treePreviewObj;
+  if(!treeTemplate) findIcosphereTemplate();
+  treePreviewObj = treeTemplate.object.clone(true);
+  treePreviewObj.scale.copy(treeTemplate.baseScale);
+  treePreviewObj.traverse(o=>{
+    if(o.isMesh && o.material){
+      // Chaque aperçu a son propre matériau (clone) pour ne jamais teinter
+      // les vrais arbres déjà plantés, qui partagent les matériaux du gabarit.
+      o.material = o.material.clone();
+      o.material.transparent = true;
+      o.material.opacity = 0.55;
+      o.material.depthWrite = false;
+    }
+  });
+  treePreviewObj.visible = false;
+  worldRoot.add(treePreviewObj);
+  return treePreviewObj;
+}
 renderer.domElement.addEventListener('pointermove', (ev)=>{
   if(!treePlacing) return;
-  ensureTreeDeleteHalo();
+  ensureTreeDeleteHalo(); ensureTreePlantHalo(); ensureTreePreviewObj();
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
@@ -1964,13 +2000,28 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
       treeHoverId = t.id;
       treeDeleteHalo.visible = true;
       treeDeleteHalo.position.set(t.x, 0, t.z);
+      treePlantHalo.visible = false;
+      treePreviewObj.visible = false;
       renderer.domElement.style.cursor = 'pointer';
       return;
     }
   }
   treeHoverId = null;
   treeDeleteHalo.visible = false;
-  renderer.domElement.style.cursor = '';
+  // Emplacement plantable : halo bleu + aperçu du modèle d'arbre en 3D.
+  const groundHit = treeGroundHit(raycaster);
+  const valid = groundHit && (buildZone.length<3 || pointInPolygon({x:groundHit.point.x, z:groundHit.point.z}, buildZone));
+  if(valid){
+    treePlantHalo.visible = true;
+    treePlantHalo.position.set(groundHit.point.x, (groundHit.point.y||0)+0.05, groundHit.point.z);
+    treePreviewObj.visible = true;
+    treePreviewObj.position.set(groundHit.point.x, groundHit.point.y||0, groundHit.point.z);
+    renderer.domElement.style.cursor = 'copy';
+  } else {
+    treePlantHalo.visible = false;
+    treePreviewObj.visible = false;
+    renderer.domElement.style.cursor = '';
+  }
 });
 
 /* ============================================================
@@ -2268,7 +2319,10 @@ function stopEditBuildingShape(){
   bldgVertexHover = null;
   bldgSelected.clear();
   bldgSelectionRingGroup.clear();
+  bldgVertexDrag = null;
+  gizmoDrag = null;
   gizmoGroup.visible = false;
+  controls.enabled = true;
   renderer.domElement.style.cursor = '';
   const b = buildings.find(x=>x.id===id);
   if(b) rebuildMesh(b);
@@ -2341,6 +2395,18 @@ let gizmoMove, gizmoScale;
   gizmoGroup.userData.moveCore = moveCore;
 })();
 const GIZMO_SCALE_OFFSET = 6;
+function remapSelectionByProximity(coords, points, epsilon=0.75){
+  const result = new Set();
+  coords.forEach(c=>{
+    let bestI = -1, bestD = epsilon;
+    points.forEach((p,i)=>{
+      const d = Math.hypot(p.x-c.x, p.z-c.z);
+      if(d < bestD){ bestD = d; bestI = i; }
+    });
+    if(bestI>=0) result.add(bestI);
+  });
+  return result;
+}
 function gizmoCentroid(){
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b || !bldgSelected.size) return null;
@@ -2413,8 +2479,8 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   // 2) sinon, un sommet
   const idx = bldgHandleAt(ev);
   if(idx<0){
-    // clic dans le vide pendant l'édition : vide la sélection
-    if(bldgSelected.size){ bldgSelected.clear(); rebuildBldgSelectionVisuals(); }
+    // Clic dans le vide : ne touche plus à la sélection — on quitte le mode
+    // édition (bouton "Modifier" / Échap) pour la vider explicitement.
     return;
   }
   bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
@@ -2492,10 +2558,15 @@ window.addEventListener('pointerup', (ev)=>{
     controls.enabled = true;
     renderer.domElement.style.cursor = '';
     if(b){
+      const selectedCoords = Array.from(bldgSelected).map(i=>b.points[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
       const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
       const cleaned = cleanPolygonPoints(repaired) || repaired;
       b.points = cleaned;
-      bldgSelected.clear(); // la réparation peut réindexer les sommets : on repart d'une sélection propre
+      // La réparation peut insérer/fusionner des sommets : on retrouve les
+      // sommets sélectionnés par proximité de coordonnées pour ne PAS perdre
+      // la sélection — l'utilisateur peut ainsi enchaîner plusieurs
+      // transformations (déplacer puis échelle, etc.) sans re-sélectionner.
+      bldgSelected = remapSelectionByProximity(selectedCoords, cleaned);
       rebuildMesh(b);
       rebuildBldgVertexHandles(b);
       rebuildBldgSelectionVisuals();
@@ -2523,10 +2594,14 @@ window.addEventListener('pointerup', (ev)=>{
     // que ce hug peut laisser le long du bord — sans jamais réordonner le
     // contour. C'est cette étape, et elle seule, qui peut changer le nombre
     // de sommets ; les poignées ne sont donc recréées qu'ici, pas à chaque frame.
+    const selectedCoords = Array.from(bldgSelected).map(i=>b.points[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
+    if(!selectedCoords.some(c=> c.x===b.points[clickedIndex]?.x && c.z===b.points[clickedIndex]?.z)){
+      const p = b.points[clickedIndex]; if(p) selectedCoords.push({x:p.x,z:p.z});
+    }
     const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
     const cleaned = cleanPolygonPoints(repaired) || repaired;
     b.points = cleaned;
-    bldgSelected = new Set([clickedIndex < cleaned.length ? clickedIndex : 0]);
+    bldgSelected = remapSelectionByProximity(selectedCoords, cleaned);
     rebuildMesh(b);
     rebuildBldgVertexHandles(b);
     rebuildBldgSelectionVisuals();
