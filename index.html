@@ -1514,16 +1514,31 @@ function zoneVerticesBetween(zone, arcs, perimeter, fromArc, toArc){
   return items.map(it=>({x:it.p.x, z:it.p.z}));
 }
 // Cas 1 : les deux points sont déjà sur le bord -> on rejoue le contour réel.
-function hugBoundaryVertices(a, b, zone){
+// Bug corrigé ici : choisir systématiquement "le sens le plus court" pour
+// CETTE arête, isolément, ignore tout le reste du bâtiment déjà tracé — si le
+// bâtiment longe le bord sur une bonne partie de son pourtour, la fermeture
+// finale (dernier point -> premier point) peut alors repartir dans le
+// MAUVAIS sens et retraverser des sommets déjà posés plus tôt (d'où les
+// points dupliqués observés : le contour repassait sur lui-même). On préfère
+// donc le sens qui ne réutilise AUCUN point déjà présent dans le bâtiment ;
+// on ne retombe sur "le plus court" que si les deux sens sont sans conflit
+// (ou les deux en conflit, auquel cas aucune règle simple ne fait mieux).
+function hugBoundaryVertices(a, b, zone, avoidPoints){
   const { arcs, perimeter } = buildZoneArcTable(zone);
   if(perimeter<1e-6) return [{x:b.x, z:b.z}];
   const arcA = zoneBoundaryArc(a, zone, arcs);
   const arcB = zoneBoundaryArc(b, zone, arcs);
   const fwd = (arcB - arcA + perimeter) % perimeter;
   const bwd = (arcA - arcB + perimeter) % perimeter;
-  const out = fwd <= bwd
-    ? zoneVerticesBetween(zone, arcs, perimeter, arcA, arcB)
-    : zoneVerticesBetween(zone, arcs, perimeter, arcB, arcA).reverse();
+  const fwdPts = zoneVerticesBetween(zone, arcs, perimeter, arcA, arcB);
+  const bwdPts = zoneVerticesBetween(zone, arcs, perimeter, arcB, arcA).reverse();
+  const hasConflict = (pts) => avoidPoints && avoidPoints.length && pts.some(p =>
+    avoidPoints.some(q => Math.hypot(p.x-q.x, p.z-q.z) < 0.1));
+  const fwdBad = hasConflict(fwdPts), bwdBad = hasConflict(bwdPts);
+  let out;
+  if(fwdBad && !bwdBad) out = bwdPts;
+  else if(bwdBad && !fwdBad) out = fwdPts;
+  else out = fwd <= bwd ? fwdPts : bwdPts;
   out.push({x:b.x, z:b.z});
   return out;
 }
@@ -1555,20 +1570,30 @@ function hugBoundarySampled(a, b, zone){
   if(!out.length) out.push({x:b.x, z:b.z});
   return out;
 }
-function repairEdgeAgainstZone(a, b, zone){
+// Ordre des vérifications important : on ne hugue QUE si la ligne droite
+// entre a et b sort réellement de la zone. Bug corrigé ici : la version
+// précédente forçait un hug (Cas 1, suivi des vrais sommets) dès que les DEUX
+// extrémités touchaient le bord, même quand le segment direct entre elles
+// était un chord parfaitement valide à l'intérieur — le contour partait alors
+// faire tout le tour du polygone au lieu de rester droit, d'où les grandes
+// excursions/aller-retours observés (le bâtiment se retrouvait "creux").
+function repairEdgeAgainstZone(a, b, zone, avoidPoints){
   if(zone.length<3) return [{x:b.x, z:b.z}];
+  if(segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}]; // chord valide : rien à corriger
   const bothOnBoundary = isOnZoneBoundary(a, zone) && isOnZoneBoundary(b, zone);
-  if(!bothOnBoundary && segmentFullyInsideZone(a, b, zone)) return [{x:b.x, z:b.z}];
-  return bothOnBoundary ? hugBoundaryVertices(a, b, zone) : hugBoundarySampled(a, b, zone);
+  return bothOnBoundary ? hugBoundaryVertices(a, b, zone, avoidPoints) : hugBoundarySampled(a, b, zone);
 }
 // Applique repairEdgeAgainstZone() à chaque arête d'un contour FERMÉ (chaque
-// point relié au suivant, et le dernier au premier).
+// point relié au suivant, et le dernier au premier). Pour chaque arête, les
+// points déjà accumulés dans `result` sont transmis comme `avoidPoints` afin
+// que le hug ne reparte jamais dans le sens qui les recouperait (voir
+// hugBoundaryVertices).
 function repairClosedPolygonAgainstZone(points, zone){
   if(zone.length<3) return points.map(p=>({x:p.x,z:p.z}));
   const result = [{x:points[0].x, z:points[0].z}];
   for(let i=0;i<points.length;i++){
     const a = points[i], b = points[(i+1)%points.length];
-    const extra = repairEdgeAgainstZone(a, b, zone);
+    const extra = repairEdgeAgainstZone(a, b, zone, result);
     // le dernier point ajouté par repairEdgeAgainstZone == b ; on ne le
     // rajoute pas une seconde fois quand on boucle sur le premier point.
     if(i < points.length-1) result.push(...extra);
@@ -1594,7 +1619,7 @@ function addDrawPoint(pt){
   let toInsert;
   if(buildZone.length>=3 && drawPoints.length>0){
     const from = drawPoints[drawPoints.length-1];
-    toInsert = repairEdgeAgainstZone(from, target, buildZone);
+    toInsert = repairEdgeAgainstZone(from, target, buildZone, drawPoints);
   } else {
     toInsert = [{x:target.x, z:target.z}];
   }
@@ -1615,7 +1640,7 @@ function finishDraw(){
   let finalPoints = drawPoints.slice();
   if(buildZone.length>=3 && finalPoints.length>=2){
     const first = finalPoints[0], last = finalPoints[finalPoints.length-1];
-    const closing = repairEdgeAgainstZone(last, first, buildZone);
+    const closing = repairEdgeAgainstZone(last, first, buildZone, finalPoints);
     // le dernier point de "closing" == first ; on ne le rajoute pas (il ferme déjà la boucle)
     finalPoints = finalPoints.concat(closing.slice(0, -1));
   }
