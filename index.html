@@ -1456,21 +1456,66 @@ function cleanPolygonPoints(pts, epsilon=0.06){
 function isOnZoneBoundary(p, zone){
   return zone.length>=3 && distanceToPolygonBoundary(p, zone) <= ON_BOUNDARY_EPS;
 }
-function hugBoundarySegment(a, b, zone){
-  const dist = Math.hypot(b.x-a.x, b.z-a.z);
-  if(dist < 1e-6) return [{x:b.x, z:b.z}];
-  const steps = Math.max(2, Math.min(80, Math.ceil(dist/0.4)));
-  const out = [];
-  let prev = a;
-  for(let s=1;s<=steps;s++){
-    const t = s/steps;
-    const raw = { x:a.x+(b.x-a.x)*t, z:a.z+(b.z-a.z)*t };
-    const isLast = s===steps;
-    const near = distanceToPolygonBoundary(raw, zone) <= EDGE_SNAP_RADIUS*2 ? clampPointToPolygon(raw, zone) : raw;
-    const pt = isLast ? {x:b.x, z:b.z} : near; // le tout dernier échantillon EST b, jamais une approximation
-    if(Math.hypot(pt.x-prev.x, pt.z-prev.z) > 0.06){ out.push(pt); prev = pt; }
+// ==== "Hug" du bord réel entre deux points posés sur le contour ====
+// L'ancienne version rééchantillonnait le segment [a,b] à intervalles fixes
+// (0,4 m) et reprojetait chaque échantillon sur le polygone — jusqu'à 80
+// points PAR ARÊTE. Sur un tracé qui longe un bord courbe (le rond-point, lui-
+// même modélisé comme un N-gone dense), chaque clic near-boundary déclenchait
+// un nouveau ré-échantillonnage complet : le nombre de sommets explosait
+// (plusieurs milliers pour un seul bâtiment). La bonne approche : ne jamais
+// inventer de points — se contenter de rejouer les VRAIS sommets du polygone
+// `zone` compris entre a et b, dans le sens le plus court. Le nombre de
+// points insérés est alors borné par zone.length (fixe), quel que soit le
+// nombre de clics le long du bord.
+function buildZoneArcTable(zone){
+  const arcs = [0];
+  let acc = 0;
+  for(let i=0;i<zone.length;i++){
+    const a = zone[i], b = zone[(i+1)%zone.length];
+    acc += Math.hypot(b.x-a.x, b.z-a.z);
+    if(i < zone.length-1) arcs.push(acc);
   }
-  if(!out.length) out.push({x:b.x, z:b.z});
+  return { arcs, perimeter: acc }; // arcs[i] = distance le long du contour de zone[0] à zone[i]
+}
+function zoneBoundaryArc(pt, zone, arcs){
+  let bestDist = Infinity, bestArc = 0;
+  for(let i=0;i<zone.length;i++){
+    const a = zone[i], b = zone[(i+1)%zone.length];
+    const segLen = Math.hypot(b.x-a.x, b.z-a.z);
+    const proj = closestPointOnSegment(pt, a, b);
+    const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
+    if(d < bestDist){
+      bestDist = d;
+      const t = segLen>1e-9 ? Math.hypot(proj.x-a.x, proj.z-a.z)/segLen : 0;
+      bestArc = arcs[i] + t*segLen;
+    }
+  }
+  return bestArc;
+}
+// Sommets de `zone` strictement entre les positions d'arc `fromArc` et
+// `toArc` (sens croissant, avec retour à zéro après le périmètre), triés
+// dans cet ordre de parcours.
+function zoneVerticesBetween(zone, arcs, perimeter, fromArc, toArc){
+  const span = (toArc - fromArc + perimeter) % perimeter;
+  const items = [];
+  for(let i=0;i<zone.length;i++){
+    const rel = (arcs[i] - fromArc + perimeter) % perimeter;
+    if(rel > 1e-6 && rel < span - 1e-6) items.push({ p: zone[i], rel });
+  }
+  items.sort((a,b)=>a.rel-b.rel);
+  return items.map(it=>({x:it.p.x, z:it.p.z}));
+}
+function hugBoundarySegment(a, b, zone){
+  const { arcs, perimeter } = buildZoneArcTable(zone);
+  if(perimeter<1e-6) return [{x:b.x, z:b.z}];
+  const arcA = zoneBoundaryArc(a, zone, arcs);
+  const arcB = zoneBoundaryArc(b, zone, arcs);
+  const fwd = (arcB - arcA + perimeter) % perimeter;
+  const bwd = (arcA - arcB + perimeter) % perimeter;
+  const out = fwd <= bwd
+    ? zoneVerticesBetween(zone, arcs, perimeter, arcA, arcB)
+    : zoneVerticesBetween(zone, arcs, perimeter, arcB, arcA).reverse();
+  out.push({x:b.x, z:b.z});
   return out;
 }
 function repairEdgeAgainstZone(a, b, zone){
