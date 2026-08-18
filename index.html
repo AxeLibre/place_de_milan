@@ -1141,31 +1141,74 @@ let drawPoints = [];
 let drawMarkers = new THREE.Group();
 let previewLine = null;
 worldRoot.add(drawMarkers);
+
+/* ============================================================
+   REPÈRES CIRCULAIRES (textures radiales) — utilisés pour le guide de
+   tracé, le pinceau de gazon et les anneaux de sélection de sommets.
+   ============================================================ */
+const NEON_BLUE = 0x2ee8ff;
+const NEON_BLUE_CSS = '46,232,255';
+// mode "fill" : plein au centre, transparent vers l'extérieur (dégradé standard)
+// mode "ring" : plein sur le bord intérieur, transparent en allant vers le centre (anneau)
+function makeRadialCircleTexture(rgb, mode){
+  const size = 256, c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const cx = size/2, cy = size/2, r = size/2;
+  const grad = ctx.createRadialGradient(cx,cy,0, cx,cy,r);
+  if(mode==='fill'){
+    grad.addColorStop(0, `rgba(${rgb},0.95)`);
+    grad.addColorStop(0.55, `rgba(${rgb},0.55)`);
+    grad.addColorStop(1, `rgba(${rgb},0)`);
+  } else if(mode==='ring'){
+    grad.addColorStop(0, `rgba(${rgb},0)`);
+    grad.addColorStop(0.62, `rgba(${rgb},0)`);
+    grad.addColorStop(0.82, `rgba(${rgb},0.85)`);
+    grad.addColorStop(1, `rgba(${rgb},0)`);
+  } else if(mode==='outline'){
+    grad.addColorStop(0, `rgba(${rgb},0)`);
+    grad.addColorStop(0.8, `rgba(${rgb},0)`);
+    grad.addColorStop(0.92, `rgba(${rgb},0.95)`);
+    grad.addColorStop(1, `rgba(${rgb},0)`);
+  }
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+function makeCircleDecal(radius, rgb, mode, opacity=1){
+  const tex = makeRadialCircleTexture(rgb, mode);
+  const mesh = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 40),
+    new THREE.MeshBasicMaterial({ map:tex, transparent:true, depthWrite:false, depthTest:false, opacity, side:THREE.DoubleSide })
+  );
+  mesh.rotation.x = -Math.PI/2;
+  return mesh;
+}
+
 // Guide de pose façon "jeu de construction" (SimCity) : montre, avant même
 // de cliquer, où le prochain sommet va exactement se poser (aimanté sur la
-// grille du polygone d'implantation) — un point fantôme + une croix + le
+// grille du polygone d'implantation) — une zone circulaire colorée et
+// lumineuse avec un dégradé radial (plein au centre, transparent vers
+// l'extérieur), entourée d'un second cercle qui "bat" (pulse), + le
 // segment fantôme depuis le dernier sommet posé.
 let drawGuideGroup = new THREE.Group(); worldRoot.add(drawGuideGroup);
-let drawGuideDot = null, drawGuideCross = null, drawGuideSegment = null;
+let drawGuideDot = null, drawGuideRing = null, drawGuideSegment = null;
 function buildDrawGuideMeshes(){
   drawGuideGroup.clear();
-  drawGuideDot = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55,14,14),
-    new THREE.MeshBasicMaterial({color:0x7CFC98, transparent:true, opacity:0.9, depthTest:false})
-  );
+  drawGuideDot = makeCircleDecal(1.3, NEON_BLUE_CSS, 'fill');
+  drawGuideDot.position.y = 0.22;
   drawGuideDot.renderOrder = 998;
-  const crossGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-1.1,0.25,0), new THREE.Vector3(1.1,0.25,0),
-    new THREE.Vector3(0,0.25,-1.1), new THREE.Vector3(0,0.25,1.1)
-  ]);
-  drawGuideCross = new THREE.LineSegments(crossGeo, new THREE.LineBasicMaterial({color:0x7CFC98, depthTest:false, transparent:true, opacity:0.9}));
-  drawGuideCross.renderOrder = 998;
+  drawGuideRing = makeCircleDecal(2.6, NEON_BLUE_CSS, 'outline');
+  drawGuideRing.position.y = 0.2;
+  drawGuideRing.renderOrder = 997;
   drawGuideSegment = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-    new THREE.LineDashedMaterial({color:0x7CFC98, dashSize:0.6, gapSize:0.4, transparent:true, opacity:0.7, depthTest:false})
+    new THREE.LineDashedMaterial({color:NEON_BLUE, dashSize:0.6, gapSize:0.4, transparent:true, opacity:0.8, depthTest:false})
   );
   drawGuideSegment.renderOrder = 997;
-  drawGuideGroup.add(drawGuideDot, drawGuideCross, drawGuideSegment);
+  drawGuideGroup.add(drawGuideDot, drawGuideRing, drawGuideSegment);
   drawGuideGroup.visible = false;
 }
 buildDrawGuideMeshes();
@@ -1173,8 +1216,11 @@ function updateDrawGuide(pt){
   if(!pt){ drawGuideGroup.visible = false; return; }
   const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
   drawGuideGroup.visible = true;
-  drawGuideDot.position.set(target.x, 0.25, target.z);
-  drawGuideCross.position.set(target.x, 0, target.z);
+  drawGuideDot.position.set(target.x, 0.22, target.z);
+  drawGuideRing.position.set(target.x, 0.2, target.z);
+  const t = performance.now()/1000;
+  const pulse = 2.6 + Math.sin(t*3.2)*0.35;
+  drawGuideRing.scale.setScalar(pulse/2.6);
   if(drawPoints.length>0){
     const from = drawPoints[drawPoints.length-1];
     const pts = [new THREE.Vector3(from.x,0.25,from.z), new THREE.Vector3(target.x,0.25,target.z)];
@@ -1801,6 +1847,9 @@ function stopTreeTool(){
   btnTree.classList.remove('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Arbre';
   drawHint.classList.remove('show');
   controls.enabled = true;
+  if(treeDeleteHalo) treeDeleteHalo.visible = false;
+  treeHoverId = null;
+  renderer.domElement.style.cursor = '';
 }
 btnTree.addEventListener('click', ()=> treePlacing ? stopTreeTool() : startTreeTool());
 window.addEventListener('keydown', (ev)=>{
@@ -1877,6 +1926,53 @@ renderer.domElement.addEventListener('click', (ev)=>{
   addTree(hit.point);
 });
 
+// Survol d'un arbre existant en mode "Arbre" : le clic va le SUPPRIMER, donc
+// on le teinte en rouge pour prévenir avant le clic. Les arbres clonés
+// partagent leurs matériaux (clone(true) ne clone pas les matériaux), donc on
+// ne les modifie jamais directement : on pose un halo rouge translucide
+// au-dessus de l'arbre survolé à la place.
+const TREE_DELETE_COLOR = '255,64,64';
+let treeDeleteHalo = null;
+let treeHoverId = null;
+function ensureTreeDeleteHalo(){
+  if(treeDeleteHalo) return treeDeleteHalo;
+  treeDeleteHalo = new THREE.Group();
+  const disc = makeCircleDecal(1.8, TREE_DELETE_COLOR, 'fill');
+  disc.position.y = 0.05;
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(1.6, 16, 16),
+    new THREE.MeshBasicMaterial({ color:0xff4040, transparent:true, opacity:0.28, depthWrite:false })
+  );
+  treeDeleteHalo.add(disc, sphere);
+  treeDeleteHalo.visible = false;
+  worldRoot.add(treeDeleteHalo);
+  return treeDeleteHalo;
+}
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!treePlacing) return;
+  ensureTreeDeleteHalo();
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(trees.map(t=>t.mesh), true)[0];
+  if(hit){
+    let obj = hit.object;
+    while(obj && !trees.some(t=>t.mesh===obj)) obj = obj.parent;
+    const t = trees.find(x=>x.mesh===obj);
+    if(t){
+      treeHoverId = t.id;
+      treeDeleteHalo.visible = true;
+      treeDeleteHalo.position.set(t.x, 0, t.z);
+      renderer.domElement.style.cursor = 'pointer';
+      return;
+    }
+  }
+  treeHoverId = null;
+  treeDeleteHalo.visible = false;
+  renderer.domElement.style.cursor = '';
+});
+
 /* ============================================================
    GAZON — peinture au sol sur le polygone d'implantation
    ============================================================
@@ -1917,6 +2013,41 @@ let grassPainting = false;
 let grassPointerActive = false;
 const btnGrass = document.getElementById('btn-paint-grass');
 
+// Repère circulaire au sol pour le pinceau de gazon : à l'inverse du guide de
+// tracé, il est plein sur le bord intérieur (le contour du pinceau) et
+// transparent en allant vers le centre.
+const GRASS_CURSOR_COLOR = '124,220,110';
+let grassCursorDecal = null;
+function ensureGrassCursorDecal(){
+  if(grassCursorDecal) return grassCursorDecal;
+  grassCursorDecal = makeCircleDecal(1, GRASS_CURSOR_COLOR, 'ring', 0.85);
+  grassCursorDecal.position.y = 0.22;
+  grassCursorDecal.visible = false;
+  worldRoot.add(grassCursorDecal);
+  return grassCursorDecal;
+}
+// Conversion approximative rayon pinceau (px sur canvas 1024) -> unités monde,
+// à partir de l'étendue réelle du polygone d'implantation peint.
+function grassBrushWorldRadius(){
+  const zoneSpan = buildZone.length>=3
+    ? Math.max(...buildZone.map(p=>p.x)) - Math.min(...buildZone.map(p=>p.x))
+    : 60;
+  return grassBrushRadius/1024 * zoneSpan;
+}
+function updateGrassCursor(ev){
+  ensureGrassCursorDecal();
+  const pt = groundPointFromEvent(ev);
+  if(!pt){ grassCursorDecal.visible = false; return; }
+  grassCursorDecal.visible = true;
+  grassCursorDecal.position.set(pt.x, 0.22, pt.z);
+  const r = Math.max(0.6, grassBrushWorldRadius());
+  grassCursorDecal.scale.setScalar(r);
+}
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!grassPainting) return;
+  updateGrassCursor(ev);
+});
+
 function startGrassTool(){
   if(drawing) cancelDraw();
   if(treePlacing) stopTreeTool();
@@ -1924,11 +2055,13 @@ function startGrassTool(){
   btnGrass.classList.add('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Glissez pour peindre…';
   drawHint.classList.add('show');
   drawHintText.textContent = "Glissez sur la place pour peindre du gazon · clic droit pour effacer (Échap pour arrêter)";
+  ensureGrassCursorDecal();
 }
 function stopGrassTool(){
   grassPainting = false;
   btnGrass.classList.remove('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Gazon';
   drawHint.classList.remove('show');
+  if(grassCursorDecal) grassCursorDecal.visible = false;
 }
 btnGrass.addEventListener('click', ()=> grassPainting ? stopGrassTool() : startGrassTool());
 window.addEventListener('keydown', (ev)=>{ if(grassPainting && ev.key==='Escape') stopGrassTool(); });
@@ -2114,14 +2247,18 @@ function selectBuilding(id){
 let editingBuildingId = null;
 let bldgVertexGroup = new THREE.Group(); worldRoot.add(bldgVertexGroup);
 let bldgVertexHandles = []; // [{mesh, index}]
+let bldgSelectionRingGroup = new THREE.Group(); worldRoot.add(bldgSelectionRingGroup);
+let bldgSelected = new Set(); // indices des sommets sélectionnés
 
 function startEditBuildingShape(b){
   if(editingBuildingId && editingBuildingId!==b.id) stopEditBuildingShape();
   editingBuildingId = b.id;
+  bldgSelected.clear();
   rebuildBldgVertexHandles(b);
+  rebuildBldgSelectionVisuals();
   rebuildMesh(b);
   renderList();
-  flashStatus("Glissez les points pour modifier la forme · reclic sur Modifier pour terminer");
+  flashStatus("Cliquez les sommets pour les sélectionner (plusieurs possibles) · glissez pour déplacer · reclic sur Modifier pour terminer");
 }
 function stopEditBuildingShape(){
   const id = editingBuildingId;
@@ -2129,12 +2266,15 @@ function stopEditBuildingShape(){
   bldgVertexGroup.clear();
   bldgVertexHandles = [];
   bldgVertexHover = null;
+  bldgSelected.clear();
+  bldgSelectionRingGroup.clear();
+  gizmoGroup.visible = false;
   renderer.domElement.style.cursor = '';
   const b = buildings.find(x=>x.id===id);
   if(b) rebuildMesh(b);
   renderList();
 }
-const BLDG_HANDLE_COLOR = 0xe0663f, BLDG_HANDLE_HOVER = 0xffab7a, BLDG_HANDLE_DRAG = 0xffffff;
+const BLDG_HANDLE_COLOR = 0xe0663f, BLDG_HANDLE_HOVER = 0xffab7a, BLDG_HANDLE_DRAG = 0xffffff, BLDG_HANDLE_SELECTED = NEON_BLUE;
 function rebuildBldgVertexHandles(b){
   bldgVertexGroup.clear();
   bldgVertexHandles = b.points.map((p,i)=>{
@@ -2146,6 +2286,87 @@ function rebuildBldgVertexHandles(b){
     bldgVertexGroup.add(mesh);
     return { mesh, index:i };
   });
+  refreshBldgHandleColors();
+}
+function refreshBldgHandleColors(){
+  bldgVertexHandles.forEach((h,i)=>{
+    if(bldgVertexDrag && bldgVertexDrag.index===i) return; // couleur "drag" gérée à part
+    const col = bldgSelected.has(i) ? BLDG_HANDLE_SELECTED : (i===bldgVertexHover ? BLDG_HANDLE_HOVER : BLDG_HANDLE_COLOR);
+    h.mesh.material.color.setHex(col);
+    h.mesh.material.emissive.setHex(col);
+  });
+}
+// Cercles au sol indiquant les sommets sélectionnés.
+function rebuildBldgSelectionVisuals(){
+  bldgSelectionRingGroup.clear();
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  if(!b) return;
+  bldgSelected.forEach(idx=>{
+    const p = b.points[idx];
+    if(!p) return;
+    const ring = makeCircleDecal(1.5, NEON_BLUE_CSS, 'ring', 0.9);
+    ring.position.set(p.x, 0.1, p.z);
+    bldgSelectionRingGroup.add(ring);
+  });
+  refreshBldgHandleColors();
+  updateGizmoForSelection();
+}
+
+/* ---------------- GIZMO déplacement / échelle ---------------- */
+let gizmoGroup = new THREE.Group(); worldRoot.add(gizmoGroup);
+let gizmoMove, gizmoScale;
+(function buildGizmo(){
+  gizmoMove = makeCircleDecal(1.1, NEON_BLUE_CSS, 'fill');
+  gizmoMove.position.y = 0.6;
+  gizmoMove.userData.gizmoType = 'move';
+  const moveCore = new THREE.Mesh(
+    new THREE.SphereGeometry(0.9,16,16),
+    new THREE.MeshStandardMaterial({ color:NEON_BLUE, emissive:NEON_BLUE, emissiveIntensity:0.5 })
+  );
+  moveCore.position.y = 1.4;
+  moveCore.userData.gizmoType = 'move';
+  gizmoScale = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.9,0),
+    new THREE.MeshStandardMaterial({ color:0xffffff, emissive:NEON_BLUE, emissiveIntensity:0.6 })
+  );
+  gizmoScale.userData.gizmoType = 'scale';
+  const link = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(1,0,0)]),
+    new THREE.LineBasicMaterial({ color:NEON_BLUE, transparent:true, opacity:0.6 })
+  );
+  link.userData.isGizmoLink = true;
+  gizmoGroup.add(gizmoMove, moveCore, gizmoScale, link);
+  gizmoGroup.visible = false;
+  gizmoGroup.userData.link = link;
+  gizmoGroup.userData.moveCore = moveCore;
+})();
+const GIZMO_SCALE_OFFSET = 6;
+function gizmoCentroid(){
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  if(!b || !bldgSelected.size) return null;
+  let x=0,z=0,n=0;
+  bldgSelected.forEach(idx=>{ const p=b.points[idx]; if(p){ x+=p.x; z+=p.z; n++; } });
+  return n ? {x:x/n, z:z/n} : null;
+}
+function updateGizmoForSelection(){
+  const c = gizmoCentroid();
+  if(!c || bldgVertexDrag){ gizmoGroup.visible = false; return; }
+  gizmoGroup.visible = true;
+  gizmoGroup.position.set(c.x, 0, c.z);
+  gizmoMove.position.set(0,0.35,0);
+  gizmoGroup.userData.moveCore.position.set(0,1.4,0);
+  gizmoScale.position.set(GIZMO_SCALE_OFFSET,0.9,0);
+  gizmoGroup.userData.link.geometry.setFromPoints([new THREE.Vector3(0,0.4,0), new THREE.Vector3(GIZMO_SCALE_OFFSET,0.9,0)]);
+}
+function gizmoHitTest(ev){
+  if(!gizmoGroup.visible) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const targets = [gizmoMove, gizmoGroup.userData.moveCore, gizmoScale];
+  const hits = raycaster.intersectObjects(targets);
+  return hits.length ? hits[0].object.userData.gizmoType : null;
 }
 
 // Glissement d'un sommet — repensé pour être stable et "user friendly" façon
@@ -2159,6 +2380,7 @@ function rebuildBldgVertexHandles(b){
 // pixel de mouvement pendant que le nombre de sommets changeait sous la souris.
 let bldgVertexDrag = null; // {index, x, y, moved}
 let bldgVertexHover = null; // index survolé (hors glissement), pour le retour visuel
+let gizmoDrag = null; // {type:'move'|'scale', startGround, startPoints:Map(idx->{x,z}), centroid, startDist}
 function bldgHandleAt(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
@@ -2169,8 +2391,32 @@ function bldgHandleAt(ev){
 }
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!editingBuildingId || ev.button!==0) return;
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  if(!b) return;
+
+  // 1) le gizmo (déplacement / échelle) est prioritaire s'il est visible
+  const gizmoHit = gizmoHitTest(ev);
+  if(gizmoHit){
+    const startGround = groundPointFromEvent(ev);
+    const centroid = gizmoCentroid();
+    const startPoints = new Map();
+    bldgSelected.forEach(idx=>{ if(b.points[idx]) startPoints.set(idx, {x:b.points[idx].x, z:b.points[idx].z}); });
+    gizmoDrag = {
+      type: gizmoHit, startGround, centroid, startPoints,
+      startDist: startGround && centroid ? Math.hypot(startGround.x-centroid.x, startGround.z-centroid.z) : 1
+    };
+    controls.enabled = false;
+    renderer.domElement.style.cursor = gizmoHit==='move' ? 'grabbing' : 'nesw-resize';
+    return;
+  }
+
+  // 2) sinon, un sommet
   const idx = bldgHandleAt(ev);
-  if(idx<0) return;
+  if(idx<0){
+    // clic dans le vide pendant l'édition : vide la sélection
+    if(bldgSelected.size){ bldgSelected.clear(); rebuildBldgSelectionVisuals(); }
+    return;
+  }
   bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
   bldgVertexHandles[idx].mesh.material.color.setHex(BLDG_HANDLE_DRAG);
   bldgVertexHandles[idx].mesh.material.emissive.setHex(BLDG_HANDLE_DRAG);
@@ -2178,6 +2424,36 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   renderer.domElement.style.cursor = 'grabbing';
 });
 window.addEventListener('pointermove', (ev)=>{
+  // --- glissement du gizmo (sélection multiple) ---
+  if(gizmoDrag){
+    const b = buildings.find(x=>x.id===editingBuildingId);
+    const pt = groundPointFromEvent(ev);
+    if(b && pt){
+      if(gizmoDrag.type==='move'){
+        const dx = pt.x-gizmoDrag.startGround.x, dz = pt.z-gizmoDrag.startGround.z;
+        gizmoDrag.startPoints.forEach((startP, idx)=>{
+          let target = { x:startP.x+dx, z:startP.z+dz };
+          if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
+          b.points[idx] = target;
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
+        });
+      } else if(gizmoDrag.type==='scale'){
+        const c = gizmoDrag.centroid;
+        const dist = Math.hypot(pt.x-c.x, pt.z-c.z);
+        let factor = gizmoDrag.startDist>0.01 ? dist/gizmoDrag.startDist : 1;
+        factor = Math.max(0.15, Math.min(6, factor));
+        gizmoDrag.startPoints.forEach((startP, idx)=>{
+          let target = { x: c.x + (startP.x-c.x)*factor, z: c.z + (startP.z-c.z)*factor };
+          if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
+          b.points[idx] = target;
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
+        });
+      }
+      rebuildMesh(b);
+      rebuildBldgSelectionVisuals();
+    }
+    return;
+  }
   if(bldgVertexDrag){
     const dx = ev.clientX-bldgVertexDrag.x, dy = ev.clientY-bldgVertexDrag.y;
     if(Math.hypot(dx,dy) > 3) bldgVertexDrag.moved = true;
@@ -2203,24 +2479,44 @@ window.addEventListener('pointermove', (ev)=>{
   if(!editingBuildingId || !bldgVertexHandles.length) return;
   const idx = bldgHandleAt(ev);
   if(idx !== bldgVertexHover){
-    if(bldgVertexHover!=null && bldgVertexHandles[bldgVertexHover]){
-      bldgVertexHandles[bldgVertexHover].mesh.material.color.setHex(BLDG_HANDLE_COLOR);
-      bldgVertexHandles[bldgVertexHover].mesh.material.emissive.setHex(BLDG_HANDLE_COLOR);
-    }
     bldgVertexHover = idx>=0 ? idx : null;
-    if(bldgVertexHover!=null){
-      bldgVertexHandles[bldgVertexHover].mesh.material.color.setHex(BLDG_HANDLE_HOVER);
-      bldgVertexHandles[bldgVertexHover].mesh.material.emissive.setHex(BLDG_HANDLE_HOVER);
-    }
+    refreshBldgHandleColors();
   }
-  renderer.domElement.style.cursor = idx>=0 ? 'grab' : '';
+  const overGizmo = gizmoHitTest(ev);
+  renderer.domElement.style.cursor = overGizmo ? (overGizmo==='move' ? 'grab' : 'nesw-resize') : (idx>=0 ? 'grab' : '');
 });
-window.addEventListener('pointerup', ()=>{
+window.addEventListener('pointerup', (ev)=>{
+  if(gizmoDrag){
+    const b = buildings.find(x=>x.id===editingBuildingId);
+    gizmoDrag = null;
+    controls.enabled = true;
+    renderer.domElement.style.cursor = '';
+    if(b){
+      const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
+      const cleaned = cleanPolygonPoints(repaired) || repaired;
+      b.points = cleaned;
+      bldgSelected.clear(); // la réparation peut réindexer les sommets : on repart d'une sélection propre
+      rebuildMesh(b);
+      rebuildBldgVertexHandles(b);
+      rebuildBldgSelectionVisuals();
+    }
+    return;
+  }
   if(!bldgVertexDrag) return;
   const b = buildings.find(x=>x.id===editingBuildingId);
+  const wasClick = !bldgVertexDrag.moved;
+  const clickedIndex = bldgVertexDrag.index;
   bldgVertexDrag = null;
   controls.enabled = true;
   renderer.domElement.style.cursor = '';
+  if(wasClick){
+    // Simple clic (pas de glissement) sur un sommet : bascule sa sélection
+    // pour permettre d'en choisir plusieurs et leur appliquer le gizmo.
+    if(bldgSelected.has(clickedIndex)) bldgSelected.delete(clickedIndex);
+    else bldgSelected.add(clickedIndex);
+    rebuildBldgSelectionVisuals();
+    return;
+  }
   if(b){
     // Réparation complète et unique au relâchement : hug des bords concaves
     // (insertion de sommets si besoin) puis fusion des points quasi confondus
@@ -2230,12 +2526,15 @@ window.addEventListener('pointerup', ()=>{
     const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
     const cleaned = cleanPolygonPoints(repaired) || repaired;
     b.points = cleaned;
+    bldgSelected = new Set([clickedIndex < cleaned.length ? clickedIndex : 0]);
     rebuildMesh(b);
     rebuildBldgVertexHandles(b);
+    rebuildBldgSelectionVisuals();
   }
 });
 window.addEventListener('keydown', (ev)=>{
-  if(editingBuildingId && ev.key==='Escape') stopEditBuildingShape();
+  if(!editingBuildingId) return;
+  if(ev.key==='Escape') stopEditBuildingShape();
 });
 
 /* ============================================================
@@ -3086,6 +3385,14 @@ function animate(){
   tickAgents(dt);
   updateCompass();
   updateLabelPositions();
+  if(drawGuideGroup.visible){
+    const t = performance.now()/1000;
+    drawGuideRing.scale.setScalar((2.6 + Math.sin(t*3.2)*0.35)/2.6);
+  }
+  if(grassCursorDecal && grassCursorDecal.visible){
+    const t = performance.now()/1000;
+    grassCursorDecal.material.opacity = 0.75 + Math.sin(t*4)*0.15;
+  }
   if(planViewActive){ syncOrthoCameraForPlanView(); renderer.render(scene, orthoCamera); }
   else renderer.render(scene, camera);
 }
