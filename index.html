@@ -1573,6 +1573,48 @@ function cleanPolygonPoints(pts, epsilon=0.06){
   }
   return cleaned.length>=3 ? cleaned : null;
 }
+// Distance perpendiculaire d'un point à une droite (a,b).
+function perpDistance(p, a, b){
+  const dx=b.x-a.x, dz=b.z-a.z;
+  const len = Math.hypot(dx,dz);
+  if(len<1e-9) return Math.hypot(p.x-a.x, p.z-a.z);
+  return Math.abs((p.x-a.x)*dz - (p.z-a.z)*dx) / len;
+}
+// Simplification de Ramer-Douglas-Peucker appliquée à un contour FERMÉ.
+// Corrige le problème "impossible à sélectionner" : quand un bâtiment est
+// déplacé/redimensionné par-dessus un angle rentrant du polygone
+// d'implantation, hugBoundarySampled() ré-échantillonne chaque arête
+// concernée tous les 0,4 m (jusqu'à 80 points), ce qui peut faire exploser un
+// bâtiment de 6 sommets à plusieurs centaines. La quasi-totalité de ces
+// points sont quasiment alignés (ils suivent un segment de bord globalement
+// droit) : on les fusionne agressivement ici, sans jamais perdre un VRAI
+// angle (un coin réel du polygone a toujours une distance perpendiculaire
+// bien supérieure à epsilon, donc RDP le conserve).
+function simplifyClosedPolygon(points, epsilon=0.2){
+  if(!points || points.length<=4) return points;
+  function rdp(pts, eps){
+    if(pts.length<3) return pts;
+    let maxD=0, idx=0;
+    const start=pts[0], end=pts[pts.length-1];
+    for(let i=1;i<pts.length-1;i++){
+      const d = perpDistance(pts[i], start, end);
+      if(d>maxD){ maxD=d; idx=i; }
+    }
+    if(maxD>eps){
+      const left = rdp(pts.slice(0,idx+1), eps);
+      const right = rdp(pts.slice(idx), eps);
+      return left.slice(0,-1).concat(right);
+    }
+    return [start, end];
+  }
+  // Traité comme un chemin ouvert refermé sur lui-même (p0 → … → p0), pour
+  // que la simplification s'applique aussi à l'arête de fermeture — sinon un
+  // angle rentrant tout près du premier sommet pourrait être ignoré.
+  const loop = points.concat([points[0]]);
+  const simplified = rdp(loop, epsilon);
+  simplified.pop(); // retire le point de fermeture dupliqué
+  return simplified.length>=3 ? simplified : points;
+}
 function isOnZoneBoundary(p, zone){
   return zone.length>=3 && distanceToPolygonBoundary(p, zone) <= ON_BOUNDARY_EPS;
 }
@@ -1765,6 +1807,7 @@ function finishDraw(){
     finalPoints = finalPoints.concat(closing.slice(0, -1));
   }
   finalPoints = cleanPolygonPoints(finalPoints) || finalPoints;
+  finalPoints = simplifyClosedPolygon(finalPoints) || finalPoints;
   if(finalPoints.length<3){ cancelDraw(); return; }
   createBuilding(finalPoints);
   cancelDraw();
@@ -2769,13 +2812,13 @@ window.addEventListener('pointerup', (ev)=>{
     if(b){
       const selectedCoords = Array.from(bldgSelected).map(i=>b.points[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
       const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
-      const cleaned = cleanPolygonPoints(repaired) || repaired;
-      b.points = cleaned;
+      const cleaned = (cleanPolygonPoints(repaired) || repaired);
+      b.points = simplifyClosedPolygon(cleaned) || cleaned;
       // La réparation peut insérer/fusionner des sommets : on retrouve les
       // sommets sélectionnés par proximité de coordonnées pour ne PAS perdre
       // la sélection — l'utilisateur peut ainsi enchaîner plusieurs
       // transformations (déplacer puis échelle, etc.) sans re-sélectionner.
-      bldgSelected = remapSelectionByProximity(selectedCoords, cleaned);
+      bldgSelected = remapSelectionByProximity(selectedCoords, b.points);
       rebuildMesh(b);
       rebuildBldgVertexHandles(b);
       rebuildBldgSelectionVisuals();
@@ -2808,9 +2851,9 @@ window.addEventListener('pointerup', (ev)=>{
       const p = b.points[clickedIndex]; if(p) selectedCoords.push({x:p.x,z:p.z});
     }
     const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
-    const cleaned = cleanPolygonPoints(repaired) || repaired;
-    b.points = cleaned;
-    bldgSelected = remapSelectionByProximity(selectedCoords, cleaned);
+    const cleaned = (cleanPolygonPoints(repaired) || repaired);
+    b.points = simplifyClosedPolygon(cleaned) || cleaned;
+    bldgSelected = remapSelectionByProximity(selectedCoords, b.points);
     rebuildMesh(b);
     rebuildBldgVertexHandles(b);
     rebuildBldgSelectionVisuals();
