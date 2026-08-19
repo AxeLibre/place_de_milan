@@ -15,7 +15,9 @@
     --paper:#eef1ee;
     --line:#3f5568;
     --blue:#5b8ab0;
-    --accent:#e0663f;
+    --accent:#2ee8ff;         /* bleu électrique néon — remplace l'orange comme couleur de sélection */
+    --accent-text:#04262c;
+    --accent-glow:0 0 6px rgba(46,232,255,.85), 0 0 16px rgba(46,232,255,.5), 0 0 28px rgba(46,232,255,.3);
     --muted:#7f93a3;
 
     --res:#e0a24a;    /* résidentiel — ambre */
@@ -29,13 +31,13 @@
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;background:var(--ink);color:var(--paper);font-family:'Inter',sans-serif;overflow:hidden;}
   #app{position:fixed;inset:0;display:flex;}
-  #viewport{flex:1;position:relative;}
+  #viewport{flex:1;position:relative;min-width:0;}
   canvas{display:block;}
 
   /* ---------- Header ribbon ---------- */
   #ribbon{
     position:absolute;top:0;left:0;right:0;z-index:5;
-    display:flex;align-items:center;gap:14px;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
     padding:12px 18px;
     background:linear-gradient(180deg, rgba(16,24,32,.92), rgba(16,24,32,0));
     pointer-events:none;
@@ -51,8 +53,11 @@
     padding:8px 14px;border-radius:3px;cursor:pointer;
     display:flex;align-items:center;gap:8px;transition:all .12s ease;
   }
-  .tool-btn:hover{border-color:var(--blue);color:#fff;}
-  .tool-btn.active{background:var(--accent);border-color:var(--accent);color:#1a0e08;font-weight:600;}
+  .tool-btn:hover{border-color:var(--accent);color:#fff;}
+  .tool-btn.active{
+    background:rgba(46,232,255,.12);border-color:var(--accent);color:#eafeff;font-weight:600;
+    text-shadow:var(--accent-glow);box-shadow:inset 0 0 0 1px rgba(46,232,255,.35), 0 0 14px rgba(46,232,255,.25);
+  }
   .tool-btn:disabled{opacity:.35;cursor:not-allowed;}
   .tool-btn.ghost{background:transparent;}
 
@@ -60,7 +65,7 @@
     font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
     margin-left:auto;text-align:right;max-width:280px;
   }
-  #status-line b{color:var(--accent);}
+  #status-line b{color:var(--accent);text-shadow:var(--accent-glow);}
 
   /* ---------- Vertical toolbar (left edge, SimCity-style) ---------- */
   #toolbar-left{
@@ -69,6 +74,7 @@
     background:rgba(24,36,48,.9);border:1px solid #2a3946;border-radius:8px;
     padding:8px;backdrop-filter:blur(6px);
     box-shadow:0 8px 24px rgba(0,0,0,.35);
+    max-height:calc(100vh - 140px);overflow-y:auto;
   }
   #toolbar-left .tool-btn{
     justify-content:flex-start;width:180px;
@@ -76,6 +82,21 @@
   #toolbar-left .tool-sep{height:1px;background:#2a3946;margin:4px 2px;}
   .tool-btn svg{width:16px;height:16px;flex-shrink:0;stroke-width:2;}
   .tool-btn .tool-btn-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* ---------- Brush size row (under "Gazon") ---------- */
+  #brush-row{display:flex;gap:4px;padding:2px 2px 4px;}
+  .brush-btn{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    background:#101820;border:1px solid #23303b;color:#45525c;
+    border-radius:3px;padding:6px 0;cursor:pointer;transition:all .12s ease;
+  }
+  .brush-btn svg{width:15px;height:15px;stroke-width:2;}
+  .brush-btn:hover{color:var(--paper);border-color:#3a4a58;}
+  .brush-btn.active{
+    color:var(--accent);border-color:var(--accent);background:rgba(46,232,255,.1);
+    box-shadow:0 0 10px rgba(46,232,255,.35);
+  }
+  .brush-btn.disabled{opacity:.4;pointer-events:none;}
 
   /* ---------- Help ("?") button, bottom-left ---------- */
   #btn-help{
@@ -124,12 +145,26 @@
   #draw-hint.show{display:flex;}
   #draw-hint kbd{background:#0b1116;border:1px solid #2a3946;border-radius:2px;padding:1px 6px;font-size:11px;}
 
-  /* ---------- Side panel ---------- */
+  /* ---------- Side panel (fenêtre coulissante, masquée par défaut : gestion
+     avancée — bâtiments/arbres/circulation/sauvegarde — plutôt qu'une colonne
+     fixe permanente) ---------- */
   #panel{
     width:var(--panel-w);flex-shrink:0;background:var(--ink-2);
     border-left:1px solid #23303b;display:flex;flex-direction:column;
     overflow:hidden;
+    position:fixed;top:0;right:0;bottom:0;z-index:20;
+    box-shadow:-12px 0 30px rgba(0,0,0,.4);
+    transform:translateX(100%);transition:transform .18s ease;
   }
+  #panel.open{transform:translateX(0);}
+  #panel-toggle{
+    position:absolute;top:70px;right:16px;z-index:6;
+    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
+    border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;
+    font-family:'Space Grotesk',sans-serif;font-size:12.5px;transition:all .12s ease;
+  }
+  #panel-toggle:hover{border-color:var(--accent);color:#fff;}
+  #panel-toggle svg{width:15px;height:15px;stroke-width:2;}
   #panel-scroll{overflow-y:auto;flex:1;padding:16px;}
   #panel-scroll::-webkit-scrollbar{width:8px;}
   #panel-scroll::-webkit-scrollbar-thumb{background:#2a3946;border-radius:4px;}
@@ -160,7 +195,7 @@
     background:#0b1116;border:1px solid #23303b;border-radius:4px;
     margin-bottom:10px;overflow:hidden;
   }
-  .bldg-card.selected{border-color:var(--accent);}
+  .bldg-card.selected{border-color:var(--accent);box-shadow:0 0 10px rgba(46,232,255,.25);}
   .bldg-head{
     display:flex;align-items:center;gap:8px;padding:9px 10px;cursor:pointer;
   }
@@ -250,6 +285,37 @@
     font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--paper);white-space:nowrap;
   }
   .label-chip:hover{border-color:var(--accent);}
+
+  /* ---------- Fenêtre de légende flottante (visible seulement si activée) ---------- */
+  #legend-window{
+    position:absolute;top:70px;right:16px;z-index:6;width:198px;
+    background:rgba(24,36,48,.92);border:1px solid #2a3946;border-radius:8px;
+    padding:12px 14px;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.35);
+    display:none;
+  }
+  #legend-window.show{display:block;}
+  #legend-window .section-title{margin:0 0 8px;}
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 980px){
+    #toolbar-left{top:auto;bottom:74px;left:8px;max-width:calc(100vw - 16px);}
+    #toolbar-left .tool-btn{width:150px;}
+    #legend-window{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
+    #ribbon{padding:8px 10px;gap:8px;}
+    #status-line{display:none;}
+    #compass{top:8px;right:8px;}
+    #panel-toggle{top:64px;right:8px;}
+  }
+  @media (max-width: 620px){
+    #toolbar-left{flex-direction:row;flex-wrap:wrap;bottom:auto;top:8px;left:8px;right:8px;width:auto;}
+    #toolbar-left .tool-btn{width:auto;padding:8px 10px;}
+    #toolbar-left .tool-btn .tool-btn-label{display:none;}
+    #toolbar-left .tool-sep{display:none;}
+    #brush-row{width:100%;}
+    #brand span{display:none;}
+    #panel{width:100vw;}
+    #draw-hint{max-width:calc(100vw - 20px);flex-wrap:wrap;justify-content:center;}
+  }
 </style>
 </head>
 <body>
@@ -261,7 +327,7 @@
       <button class="tool-btn ghost" id="btn-toggle-extension-gare"><i data-lucide="train-front"></i><span class="tool-btn-label">Ajouter Extension Gare</span></button>
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
       <button class="tool-btn ghost" id="btn-toggle-labels"><i data-lucide="tag"></i><span class="tool-btn-label">Masquer labels</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légende</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
       <button class="tool-btn ghost" id="btn-night"><i data-lucide="moon"></i><span class="tool-btn-label">Nuit</span></button>
@@ -269,11 +335,24 @@
     </div>
     <div id="toolbar-left">
       <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
-      <button class="tool-btn ghost" id="btn-fill-polygon" title="Crée un bâtiment dont l'emprise reprend exactement le polygone d'implantation — aucun tracé manuel, donc aucun écart possible avec la limite réelle."><i data-lucide="maximize"></i><span class="tool-btn-label">Emprise pleine</span></button>
       <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
       <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
+      <div id="brush-row">
+        <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
+        <button class="brush-btn active" id="brush-medium" title="Pinceau moyen"><i data-lucide="circle" style="width:11px;height:11px;"></i></button>
+        <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
+      </div>
       <div class="tool-sep"></div>
       <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
+    </div>
+    <button id="panel-toggle" title="Bâtiments, arbres, circulation, sauvegarde"><i data-lucide="layout-panel-left"></i><span>Panneau</span></button>
+    <div id="legend-window">
+      <div class="section-title">Légende des usages</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--res)"></div>Résidentiel</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--bur)"></div>Bureaux</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--com)"></div>Commerces</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div>Hôtel</div>
+      <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div>Services / équipements</div>
     </div>
     <button id="btn-help" title="À propos">?</button>
     <div id="about-overlay">
@@ -314,15 +393,8 @@
 
   <div id="panel">
     <div id="panel-scroll">
-      <div class="section-title">Légende des usages</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--res)"></div>Résidentiel</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--bur)"></div>Bureaux</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--com)"></div>Commerces</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div>Hôtel</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div>Services / équipements</div>
-
       <div class="section-title">Bâtiments <span id="bldg-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette. Le tracé est contraint au polygone d'implantation.</div>
+      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette. Le tracé est contraint au polygone d'implantation. Vous pouvez aussi cliquer directement sur un bâtiment de la maquette pour l'éditer.</div>
       <div id="bldg-list"></div>
 
       <div class="section-title">Arbres <span id="tree-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
@@ -330,12 +402,7 @@
       <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;align-items:center;gap:5px;justify-content:center;"><i data-lucide="trash-2" style="width:14px;height:14px;"></i> Supprimer tous les arbres</button>
 
       <div class="section-title">Gazon</div>
-      <div style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;margin-bottom:8px;">Cliquez <b style="color:var(--paper)"><i data-lucide="paintbrush" style="width:12px;height:12px;vertical-align:-2px;"></i> Gazon</b> puis glissez sur la place pour peindre ; clic droit pour effacer.</div>
-      <div style="display:flex;gap:6px;margin-bottom:16px;">
-        <button class="small-action" id="brush-small">Petit</button>
-        <button class="small-action" id="brush-medium">Moyen</button>
-        <button class="small-action" id="brush-large">Grand</button>
-      </div>
+      <div style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;margin-bottom:16px;">Cliquez <b style="color:var(--paper)"><i data-lucide="paintbrush" style="width:12px;height:12px;vertical-align:-2px;"></i> Gazon</b> puis glissez sur la place pour peindre ; clic droit pour effacer. Taille du pinceau réglable sous le bouton Gazon.</div>
 
       <div class="section-title">Circulation</div>
       <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender (voir avec l'administrateur du site).</div>
@@ -435,7 +502,7 @@ const viewport = document.getElementById('viewport');
 const statusLine = document.getElementById('status-line');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101820);
-scene.fog = new THREE.Fog(0x101820, 260, 620);
+scene.fog = new THREE.Fog(0x101820, 420, 950); // brouillard allégé : commence plus loin pour rester lisible dézoomé, tout en restant présent en fond
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 3000);
 camera.position.set(140, 130, 170);
@@ -1281,18 +1348,25 @@ function cancelDraw(){
 function clearMarkers(){
   drawMarkers.clear();
   if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
+  if(previewHazard){ worldRoot.remove(previewHazard); previewHazard=null; }
   hideDrawGuide();
 }
+let previewHazard = null;
 function refreshPreview(){
   if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
+  if(previewHazard){ worldRoot.remove(previewHazard); previewHazard=null; }
   if(drawPoints.length<2) return;
   const pts = drawPoints.map(p=>new THREE.Vector3(p.x,0.15,p.z));
   pts.push(pts[0].clone());
   previewLine = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color:0xe0663f })
+    new THREE.LineBasicMaterial({ color:NEON_BLUE })
   );
   worldRoot.add(previewLine);
+  // Bande zébrée noir/jaune type chantier le long du contour en cours de
+  // tracé — visible même grille désactivée, pour bien signaler "en travaux".
+  previewHazard = makeHazardStripeOutline(drawPoints, 0.5);
+  worldRoot.add(previewHazard);
 }
 // Point le plus proche de `pt` sur le segment [a,b].
 function closestPointOnSegment(pt, a, b){
@@ -1700,23 +1774,6 @@ btnDraw.addEventListener('click', ()=>{
   drawing ? cancelDraw() : startDraw();
 });
 
-// "Emprise pleine" : crée un bâtiment dont l'emprise est EXACTEMENT buildZone
-// (les points déjà utilisés pour contraindre les tracés manuels), donc sans
-// passer par un clic-par-clic à la main qui laisse toujours un léger retrait
-// par rapport à la vraie limite du polygone d'implantation.
-const btnFillPolygon = document.getElementById('btn-fill-polygon');
-btnFillPolygon.addEventListener('click', ()=>{
-  if(drawing) cancelDraw();
-  if(treePlacing) stopTreeTool();
-  if(grassPainting) stopGrassTool();
-  if(buildZone.length<3){
-    flashStatus("Polygone d'implantation introuvable — impossible de créer une emprise pleine");
-    return;
-  }
-  createBuilding(buildZone.map(p=>({x:p.x, z:p.z})));
-  flashStatus("Bâtiment créé sur l'emprise complète du polygone");
-});
-
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!drawing) return;
   const pt = groundPointFromEvent(ev);
@@ -2107,12 +2164,14 @@ function startGrassTool(){
   drawHint.classList.add('show');
   drawHintText.textContent = "Glissez sur la place pour peindre du gazon · clic droit pour effacer (Échap pour arrêter)";
   ensureGrassCursorDecal();
+  updateBrushRowState();
 }
 function stopGrassTool(){
   grassPainting = false;
   btnGrass.classList.remove('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Gazon';
   drawHint.classList.remove('show');
   if(grassCursorDecal) grassCursorDecal.visible = false;
+  updateBrushRowState();
 }
 btnGrass.addEventListener('click', ()=> grassPainting ? stopGrassTool() : startGrassTool());
 window.addEventListener('keydown', (ev)=>{ if(grassPainting && ev.key==='Escape') stopGrassTool(); });
@@ -2155,9 +2214,26 @@ window.addEventListener('pointermove', (ev)=>{
 window.addEventListener('pointerup', ()=>{ grassPointerActive = false; });
 renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting) ev.preventDefault(); });
 
-document.getElementById('brush-small').addEventListener('click', ()=> grassBrushRadius = 20);
-document.getElementById('brush-medium').addEventListener('click', ()=> grassBrushRadius = 45);
-document.getElementById('brush-large').addEventListener('click', ()=> grassBrushRadius = 85);
+const brushBtns = {
+  small: document.getElementById('brush-small'),
+  medium: document.getElementById('brush-medium'),
+  large: document.getElementById('brush-large'),
+};
+const BRUSH_SIZES = { small:20, medium:45, large:85 };
+function setBrushSize(key){
+  grassBrushRadius = BRUSH_SIZES[key];
+  Object.entries(brushBtns).forEach(([k,btn])=> btn.classList.toggle('active', k===key));
+}
+function updateBrushRowState(){
+  // Grisé si le pinceau gazon n'est pas l'outil actif, bleu électrique sur
+  // la taille en cours d'utilisation sinon.
+  Object.values(brushBtns).forEach(btn=> btn.classList.toggle('disabled', !grassPainting));
+}
+brushBtns.small.addEventListener('click', ()=> setBrushSize('small'));
+brushBtns.medium.addEventListener('click', ()=> setBrushSize('medium'));
+brushBtns.large.addEventListener('click', ()=> setBrushSize('large'));
+setBrushSize('medium');
+updateBrushRowState();
 
 /* ============================================================
    BUILDING MODEL
@@ -2236,26 +2312,43 @@ function rebuildMesh(b){
   const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,-p.z)));
   const editing = editingBuildingId === b.id;
 
-  for(let f=1; f<=b.floors; f++){
-    const usage = usageAtFloor(b, f);
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_HEIGHT, bevelEnabled:false, curveSegments:1 });
+  if(legendEnabled){
+    for(let f=1; f<=b.floors; f++){
+      const usage = usageAtFloor(b, f);
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_HEIGHT, bevelEnabled:false, curveSegments:1 });
+      geo.rotateX(-Math.PI/2);
+      const mat = new THREE.MeshStandardMaterial({
+        color: USAGE_COLORS[usage],
+        roughness: 0.75, metalness: 0.05,
+        transparent: editing, opacity: editing ? 0.25 : 1.0
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = (f-1)*FLOOR_HEIGHT;
+      mesh.castShadow = !editing; mesh.receiveShadow = true;
+      b.group.add(mesh);
+
+      // slab edge line for a clean architectural-model look
+      const edges = new THREE.EdgesGeometry(geo, 25);
+      const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.35 }));
+      line.position.y = mesh.position.y;
+      b.group.add(line);
+    }
+  } else {
+    // Légende désactivée + matériau "glass" : un seul volume plein hauteur,
+    // sans les lignes de division par étage — seul le contour extérieur
+    // (silhouette) reste visible, pour juger des masses sans distraction.
+    const totalHeight = b.floors*FLOOR_HEIGHT;
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: totalHeight, bevelEnabled:false, curveSegments:1 });
     geo.rotateX(-Math.PI/2);
-    const mat = legendEnabled
-      ? new THREE.MeshStandardMaterial({
-          color: USAGE_COLORS[usage],
-          roughness: 0.75, metalness: 0.05,
-          transparent: editing, opacity: editing ? 0.25 : 1.0
-        })
-      : glassMaterialFor(editing);
+    const mat = glassMaterialFor(editing);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.y = (f-1)*FLOOR_HEIGHT;
     mesh.castShadow = !editing; mesh.receiveShadow = true;
     b.group.add(mesh);
 
-    // slab edge line for a clean architectural-model look
+    // Uniquement le contour extérieur (arêtes verticales des angles + haut/bas),
+    // pas les seams internes d'étage puisque la géométrie est d'un seul bloc.
     const edges = new THREE.EdgesGeometry(geo, 25);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.35 }));
-    line.position.y = mesh.position.y;
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.4 }));
     b.group.add(line);
   }
 
@@ -2263,9 +2356,58 @@ function rebuildMesh(b){
   if(b.id === selectedId){
     const outlinePts = b.points.map(p=>new THREE.Vector3(p.x,0.06,p.z));
     outlinePts.push(outlinePts[0].clone());
-    const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:0xe0663f}));
+    const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:NEON_BLUE}));
     b.group.add(halo);
   }
+
+  // Bâtiment en cours de tracé/édition : petite bande zébrée noir/jaune type
+  // "barrières de chantier" le long du contour du polygone d'implantation,
+  // affichée même si la grille est désactivée.
+  if(editing){
+    b.group.add(makeHazardStripeOutline(b.points, 0.5));
+  }
+}
+
+// Bande zébrée noir/jaune façon barrière de chantier, le long d'un contour
+// fermé, légèrement surélevée du sol pour rester visible par-dessus la grille.
+function makeHazardStripeTexture(){
+  const w=64,h=16,c=document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle = '#111'; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle = '#f5c518';
+  const stripeW = 16;
+  for(let x=-h; x<w+h; x+=stripeW*2){
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x,h); ctx.lineTo(x+stripeW,h); ctx.lineTo(x+stripeW+h,0); ctx.lineTo(x+h,0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+let _hazardTexture = null;
+function makeHazardStripeOutline(points, height=0.5){
+  if(!_hazardTexture) _hazardTexture = makeHazardStripeTexture();
+  const group = new THREE.Group();
+  const n = points.length;
+  for(let i=0;i<n;i++){
+    const a = points[i], b = points[(i+1)%n];
+    const dx=b.x-a.x, dz=b.z-a.z, len=Math.hypot(dx,dz);
+    if(len<0.01) continue;
+    const geo = new THREE.PlaneGeometry(len, height);
+    const tex = _hazardTexture.clone(); tex.needsUpdate = true;
+    tex.repeat.set(Math.max(1, Math.round(len/1.2)), 1);
+    const mat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.DoubleSide, depthWrite:false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((a.x+b.x)/2, height/2+0.05, (a.z+b.z)/2);
+    const angle = Math.atan2(dz,dx);
+    mesh.rotation.y = -angle;
+    mesh.renderOrder = 5;
+    group.add(mesh);
+  }
+  return group;
 }
 
 function rebuildAll(){ buildings.forEach(rebuildMesh); }
@@ -2285,6 +2427,73 @@ function selectBuilding(id){
   rebuildAll();
   renderList();
 }
+
+/* ============================================================
+   SÉLECTION / SURVOL D'UN BÂTIMENT DIRECTEMENT SUR LA MAQUETTE
+   ============================================================
+   Le menu d'édition (panneau latéral) ne s'ouvre plus par défaut : il
+   apparaît quand on clique un bâtiment dans la scène 3D — ce qui suppose de
+   pouvoir repérer au préalable, par un survol coloré du contour, qu'un
+   bâtiment est bien cliquable.
+   ============================================================ */
+let bldgHoverId = null;
+let bldgHoverOutline = null;
+function ensureBldgHoverOutline(){
+  if(bldgHoverOutline) return bldgHoverOutline;
+  bldgHoverOutline = new THREE.Line(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({ color:NEON_BLUE, transparent:true, opacity:0.95 })
+  );
+  bldgHoverOutline.renderOrder = 40;
+  worldRoot.add(bldgHoverOutline);
+  return bldgHoverOutline;
+}
+function toolIsActive(){
+  return drawing || treePlacing || grassPainting || !!editingBuildingId;
+}
+function buildingHitAt(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(buildings.map(b=>b.group), true);
+  if(!hits.length) return null;
+  let obj = hits[0].object;
+  while(obj && !buildings.some(b=>b.group===obj)) obj = obj.parent;
+  return buildings.find(b=>b.group===obj) || null;
+}
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(toolIsActive()) return;
+  const hit = buildingHitAt(ev);
+  if(hit){
+    if(bldgHoverId !== hit.id){
+      bldgHoverId = hit.id;
+      ensureBldgHoverOutline();
+      const pts = hit.points.map(p=>new THREE.Vector3(p.x,0.08,p.z));
+      pts.push(pts[0].clone());
+      bldgHoverOutline.geometry.dispose();
+      bldgHoverOutline.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+      bldgHoverOutline.visible = true;
+    }
+    renderer.domElement.style.cursor = 'pointer';
+  } else if(bldgHoverId !== null){
+    bldgHoverId = null;
+    if(bldgHoverOutline) bldgHoverOutline.visible = false;
+    renderer.domElement.style.cursor = '';
+  }
+});
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(toolIsActive()) return;
+  const hit = buildingHitAt(ev);
+  if(!hit) return;
+  hit.open = true;
+  selectBuilding(hit.id);
+  openPanel();
+  requestAnimationFrame(()=>{
+    const card = bldgList.querySelector(`[data-id="${hit.id}"]`);
+    if(card) card.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  });
+});
 
 /* ============================================================
    ÉDITION DE LA FORME D'UN BÂTIMENT — sommets déplaçables
@@ -2626,6 +2835,7 @@ function renderList(){
   buildings.forEach(b=>{
     const card = document.createElement('div');
     card.className = 'bldg-card' + (b.id===selectedId ? ' selected':'');
+    card.dataset.id = b.id;
 
     const head = document.createElement('div');
     head.className = 'bldg-head';
@@ -2789,14 +2999,27 @@ function focusOn(b){
    LÉGENDE / MATÉRIAU VERRE
    ============================================================ */
 const btnToggleLegend = document.getElementById('btn-toggle-legend');
+const legendWindow = document.getElementById('legend-window');
 btnToggleLegend.classList.add('active');
+legendWindow.classList.add('show');
 btnToggleLegend.addEventListener('click', ()=>{
   legendEnabled = !legendEnabled;
   btnToggleLegend.classList.toggle('active', legendEnabled);
-  btnToggleLegend.querySelector('.tool-btn-label').textContent = legendEnabled ? 'Légende' : 'Verre';
+  legendWindow.classList.toggle('show', legendEnabled);
   document.querySelectorAll('.legend-item').forEach(el=> el.style.opacity = legendEnabled ? '1' : '.35');
   rebuildAll();
 });
+
+/* ============================================================
+   PANNEAU LATÉRAL (bâtiments / arbres / circulation / sauvegarde) —
+   masqué par défaut, ouvert via le bouton "Panneau" ou automatiquement
+   quand on sélectionne un bâtiment sur la maquette.
+   ============================================================ */
+const sidePanel = document.getElementById('panel');
+const panelToggle = document.getElementById('panel-toggle');
+function openPanel(){ sidePanel.classList.add('open'); }
+function closePanel(){ sidePanel.classList.remove('open'); }
+panelToggle.addEventListener('click', ()=> sidePanel.classList.toggle('open'));
 
 /* ============================================================
    MODALE À PROPOS
