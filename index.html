@@ -501,7 +501,7 @@
         <p style="color:var(--muted);font-size:11.5px;">Maquette 3D et voies importées depuis Blender.</p>
       </div>
     </div>
-    <button id="compass" title="Orienter la caméra vers le Nord (+Z)">
+    <button id="compass" title="Orienter la caméra vers le Nord (-Z, Blender +Y)">
       <svg viewBox="0 0 44 44" width="34" height="34">
         <g id="compass-needle">
           <path d="M22 4 L27 22 L22 20 L17 22 Z" fill="#e0663f"/>
@@ -685,8 +685,8 @@ controls.maxDistance = 700;
 // un effet de parallaxe qui n'a RIEN à voir avec la logique du polygone
 // (vérifiée séparément), mais qui rend impossible tout jugement fiable
 // "à l'oeil" d'un alignement au sol. Plutôt que de gérer une seconde caméra
-// Vraie boussole : le Nord de la maquette est +Z (soit +Y côté Blender, avant
-// conversion Z-up→Y-up). L'aiguille tourne pour indiquer, à l'écran, où se
+// Vraie boussole : le Nord de la maquette est -Z (le +Y côté Blender devient
+// -Z côté Three.js après la conversion Z-up→Y-up). L'aiguille tourne pour indiquer, à l'écran, où se
 // trouve le Nord réel compte tenu de l'orbite actuelle de la caméra — pas un
 // simple "N↑" statique. Un clic réoriente la caméra plein Nord (même distance
 // et même hauteur d'orbite, juste l'azimut qui change).
@@ -703,13 +703,13 @@ function updateCompass(){
   // on obtient l'angle de rotation azimuth = atan2(dx, -dz) — formule
   // vérifiée sur les cas caméra plein Sud (regarde plein Nord -> aiguille à
   // 0°/vers le haut) et caméra plein Est (Nord doit apparaître à gauche).
-  const azimuth = Math.atan2(dx, -dz);
+  const azimuth = Math.atan2(-dx, dz);
   compassNeedle.style.transform = `rotate(${azimuth}rad)`;
 }
 function orientCameraNorth(){
   const offset = camera.position.clone().sub(controls.target);
   const radiusXZ = Math.hypot(offset.x, offset.z);
-  offset.x = 0; offset.z = -radiusXZ; // caméra plein Sud de la cible (-Z) -> elle regarde plein Nord (+Z)
+  offset.x = 0; offset.z = radiusXZ; // caméra plein Nord+Z de la cible -> elle regarde plein Nord (-Z, vrai Nord = Blender +Y)
   camera.position.set(controls.target.x+offset.x, camera.position.y, controls.target.z+offset.z);
   controls.update();
 }
@@ -3329,8 +3329,9 @@ function collectSiteLights(){
    heures de la journée (équinoxe, déclinaison ≈ 0 → lever/coucher symétriques
    à 6h/18h solaires, ce qui évite tout souci de fuseau horaire/équation du
    temps pour une démonstration) + un mode Nuit. Convention d'azimut : 0° =
-   Nord (+Z), 90° = Est (+X), 180° = Sud, 270° = Ouest — la même que
-   updateCompass() ci-dessus, donc le soleil tourne bien Est→Sud→Ouest.
+   Nord (-Z, car Blender +Y → Three -Z après la conversion Z-up→Y-up), 90° =
+   Est (+X), 180° = Sud (+Z), 270° = Ouest (-X) — la même que updateCompass()
+   ci-dessus, donc le soleil tourne bien Est→Sud→Ouest.
    ============================================================ */
 const LYON_LAT_RAD = 45.75 * Math.PI/180;
 function sunAltAz(hourDecimal){
@@ -3358,7 +3359,7 @@ let isNight = false;
 function positionSunForHour(hourDecimal){
   const { alt, az } = sunAltAz(hourDecimal);
   const x = SUN_DISTANCE * Math.cos(alt) * Math.sin(az);
-  const z = SUN_DISTANCE * Math.cos(alt) * Math.cos(az);
+  const z = -SUN_DISTANCE * Math.cos(alt) * Math.cos(az); // Nord réel = -Z (Blender +Y), d'où le signe négatif
   const y = Math.max(8, SUN_DISTANCE * Math.sin(alt)); // jamais totalement à plat, même lever/coucher
   sun.position.set(x, y, z);
   // L'intensité et la teinte suivent la hauteur réelle du soleil : rasant et
