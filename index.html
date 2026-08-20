@@ -68,13 +68,18 @@
   #status-line b{color:var(--accent);text-shadow:var(--accent-glow);}
 
   /* ---------- Vertical toolbar (left edge, SimCity-style) ---------- */
-  #toolbar-left{
+  #left-stack{
     position:absolute;top:84px;left:16px;z-index:6;
+    display:flex;flex-direction:column;gap:10px;
+    max-height:calc(100vh - 110px);
+  }
+  #toolbar-left{
+    flex-shrink:0;
     display:flex;flex-direction:column;gap:6px;
     background:rgba(24,36,48,.9);border:1px solid #2a3946;border-radius:8px;
     padding:8px;backdrop-filter:blur(6px);
     box-shadow:0 8px 24px rgba(0,0,0,.35);
-    max-height:calc(100vh - 140px);overflow-y:auto;
+    overflow-y:auto;
   }
   #toolbar-left .tool-btn{
     justify-content:flex-start;width:180px;
@@ -82,6 +87,42 @@
   #toolbar-left .tool-sep{height:1px;background:#2a3946;margin:4px 2px;}
   .tool-btn svg{width:16px;height:16px;flex-shrink:0;stroke-width:2;}
   .tool-btn .tool-btn-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* ---------- Fenêtre de modification d'un bâtiment sélectionné (gauche, sous les outils) ---------- */
+  #bldg-edit-window{
+    width:262px;flex-shrink:1;overflow-y:auto;min-height:0;
+    background:rgba(15,22,29,.96);border:1px solid #2a3946;border-radius:8px;
+    padding:12px 13px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
+    display:none;
+  }
+  #bldg-edit-window.show{display:block;}
+  #bldg-edit-window .bew-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+  #bldg-edit-window .bew-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  #bldg-edit-window .bew-name{
+    flex:1;background:none;border:none;color:var(--paper);font-family:'Space Grotesk',sans-serif;
+    font-size:14px;font-weight:600;padding:2px 0;
+  }
+  #bldg-edit-window .bew-close{background:none;border:none;color:var(--muted);cursor:pointer;
+    width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:4px;flex-shrink:0;}
+  #bldg-edit-window .bew-close:hover{color:var(--paper);background:#0b1116;}
+  #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);margin:2px 0 10px;}
+  #bldg-edit-window .field label{display:flex;align-items:center;gap:6px;}
+  #bldg-edit-window .field label svg{width:13px;height:13px;color:var(--muted);}
+  .stepper{display:flex;align-items:stretch;gap:0;margin-top:4px;}
+  .stepper button{
+    background:#101820;border:1px solid #23303b;color:var(--paper);width:30px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+  }
+  .stepper button:first-child{border-radius:4px 0 0 4px;}
+  .stepper button:last-child{border-radius:0 4px 4px 0;}
+  .stepper button:hover{border-color:var(--accent);color:var(--accent);}
+  .stepper button svg{width:13px;height:13px;}
+  .stepper input{
+    width:44px;text-align:center;border-radius:0;border-left:none;border-right:none;
+  }
+  .band-row select{ font-weight:600; }
+  .btn-row button svg{width:13px;height:13px;margin-right:5px;}
+  .btn-row button{display:flex;align-items:center;justify-content:center;}
 
   /* ---------- Brush size row (under "Gazon") ---------- */
   #brush-row{display:flex;gap:4px;padding:2px 2px 4px;}
@@ -296,22 +337,80 @@
   #legend-window.show{display:block;}
   #legend-window .section-title{margin:0 0 8px;}
 
+  /* ---------- Panneau circulaire "Éclairage" (jour/nuit) ---------- */
+  #sun-panel{
+    position:absolute;top:70px;right:210px;z-index:8;width:260px;height:190px;
+    background:rgba(24,36,48,.95);border:1px solid #2a3946;border-radius:10px;
+    padding:14px 10px 12px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.45);
+    display:none;
+  }
+  #sun-panel.show{display:block;}
+  #sun-arc{position:relative;width:100%;height:96px;}
+  .sun-btn{
+    position:absolute;transform:translate(-50%,-50%);
+    width:34px;height:34px;border-radius:50%;
+    background:#101820;border:1px solid #2a3946;color:var(--muted);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s ease;
+  }
+  .sun-btn svg{width:17px;height:17px;stroke-width:2;}
+  .sun-btn:hover{border-color:var(--accent);color:var(--paper);}
+  .sun-btn.active{
+    background:rgba(46,232,255,.15);border-color:var(--accent);color:var(--accent);
+    box-shadow:0 0 12px rgba(46,232,255,.4);
+  }
+  #sun-jour-label{
+    text-align:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;
+    letter-spacing:.08em;color:var(--paper);margin-top:2px;
+  }
+  #sun-sep{height:1px;background:#2a3946;margin:10px 4px;}
+  .sun-btn-night{
+    position:static;transform:none;width:100%;height:34px;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:12.5px;letter-spacing:.06em;
+  }
+  .sun-btn-night svg{width:16px;height:16px;}
+  .sun-btn-night.active{
+    background:rgba(46,232,255,.15);border-color:var(--accent);color:var(--accent);
+    box-shadow:0 0 12px rgba(46,232,255,.4);
+  }
+
+  /* ---------- Spinner de chargement (bascule jour/nuit) : anneau épais,
+     incomplet, en dégradé circulaire CONIQUE (pas radial) — style ouroboros. */
+  #loading-spinner{
+    position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+    background:rgba(16,24,32,.4);backdrop-filter:blur(2px);
+  }
+  #loading-spinner.show{display:flex;}
+  #loading-spinner .ring{
+    width:64px;height:64px;border-radius:50%;
+    background:conic-gradient(from 0deg, transparent 0deg, var(--accent) 300deg, transparent 355deg);
+    -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 9px));
+            mask:radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 9px));
+    animation:spin-ring .85s linear infinite;
+    filter:drop-shadow(0 0 8px rgba(46,232,255,.5));
+  }
+  @keyframes spin-ring{ to{ transform:rotate(360deg); } }
+
   /* ---------- Responsive ---------- */
   @media (max-width: 980px){
-    #toolbar-left{top:auto;bottom:74px;left:8px;max-width:calc(100vw - 16px);}
+    #left-stack{top:auto;bottom:74px;left:8px;max-width:calc(100vw - 16px);}
     #toolbar-left .tool-btn{width:150px;}
+    #bldg-edit-window{width:min(240px, calc(100vw - 16px));}
     #legend-window{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
+    #sun-panel{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
     #ribbon{padding:8px 10px;gap:8px;}
     #status-line{display:none;}
     #compass{top:8px;right:8px;}
     #panel-toggle{top:64px;right:8px;}
   }
   @media (max-width: 620px){
-    #toolbar-left{flex-direction:row;flex-wrap:wrap;bottom:auto;top:8px;left:8px;right:8px;width:auto;}
+    #left-stack{bottom:auto;top:8px;left:8px;right:8px;width:auto;max-height:60vh;}
+    #toolbar-left{flex-direction:row;flex-wrap:wrap;width:auto;}
     #toolbar-left .tool-btn{width:auto;padding:8px 10px;}
     #toolbar-left .tool-btn .tool-btn-label{display:none;}
     #toolbar-left .tool-sep{display:none;}
     #brush-row{width:100%;}
+    #bldg-edit-window{width:100%;}
     #brand span{display:none;}
     #panel{width:100vw;}
     #draw-hint{max-width:calc(100vw - 20px);flex-wrap:wrap;justify-content:center;}
@@ -330,9 +429,10 @@
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
-      <button class="tool-btn ghost" id="btn-night"><i data-lucide="moon"></i><span class="tool-btn-label">Nuit</span></button>
+      <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
+    <div id="left-stack">
     <div id="toolbar-left">
       <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
       <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
@@ -345,6 +445,29 @@
       <div class="tool-sep"></div>
       <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
     </div>
+    <div id="bldg-edit-window">
+      <div class="bew-head">
+        <div class="bew-dot" id="bew-dot"></div>
+        <input class="bew-name" id="bew-name" />
+        <button class="bew-close" id="bew-close" title="Fermer"><i data-lucide="x"></i></button>
+      </div>
+      <div class="bew-meta" id="bew-meta"></div>
+      <div id="bew-content"></div>
+    </div>
+    </div>
+    <div id="sun-panel">
+      <div id="sun-arc">
+        <button class="sun-btn" data-time="lever" style="left:2%;top:62%;" title="Lever du soleil"><i data-lucide="sunrise"></i></button>
+        <button class="sun-btn" data-time="matin" style="left:20%;top:20%;" title="Milieu de matinée"><i data-lucide="sun"></i></button>
+        <button class="sun-btn active" data-time="midi" style="left:50%;top:4%;" title="Midi"><i data-lucide="sun"></i></button>
+        <button class="sun-btn" data-time="apresmidi" style="left:80%;top:20%;" title="Milieu d'après-midi"><i data-lucide="sun"></i></button>
+        <button class="sun-btn" data-time="coucher" style="left:98%;top:62%;" title="Coucher du soleil"><i data-lucide="sunset"></i></button>
+      </div>
+      <div id="sun-jour-label">JOUR</div>
+      <div id="sun-sep"></div>
+      <button class="sun-btn sun-btn-night" id="sun-btn-night" title="Mode nuit"><i data-lucide="moon"></i><span>NUIT</span></button>
+    </div>
+    <div id="loading-spinner"><div class="ring"></div></div>
     <button id="panel-toggle" title="Bâtiments, arbres, circulation, sauvegarde"><i data-lucide="layout-panel-left"></i><span>Panneau</span></button>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
@@ -636,7 +759,7 @@ document.getElementById('btn-plan-view').addEventListener('click', togglePlanVie
 // Lighting — soft overcast "plan de présentation" look
 const hemiLight = new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.75);
 scene.add(hemiLight);
-const sun = new THREE.DirectionalLight(0xfff2df, 0.7);
+const sun = new THREE.DirectionalLight(0xfff2df, 1.35);
 sun.position.set(120, 200, 60);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048,2048);
@@ -644,6 +767,7 @@ sun.shadow.camera.left = -180; sun.shadow.camera.right = 180;
 sun.shadow.camera.top = 180; sun.shadow.camera.bottom = -180;
 sun.shadow.camera.far = 500;
 sun.shadow.bias = -0.0005;
+sun.shadow.radius = 1.4; // léger flou doux sur le bord des ombres (PCFSoftShadowMap)
 scene.add(sun);
 
 // Ground
@@ -1330,6 +1454,7 @@ const drawHintText = document.getElementById('draw-hint-text');
 function startDraw(){
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
   drawing = true; drawPoints = [];
   clearMarkers();
   btnDraw.classList.add('active');
@@ -1936,6 +2061,7 @@ const btnTree = document.getElementById('btn-tree');
 function startTreeTool(){
   if(drawing) cancelDraw();
   if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
   treePlacing = true;
   btnTree.classList.add('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Cliquez le polygone…';
   drawHint.classList.add('show');
@@ -2135,7 +2261,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
    limitée par la résolution de la texture, pas par le nombre de faces.
    ============================================================ */
 let grassParts = []; // [{mesh, overlayMesh, canvas, ctx, texture}]
-let grassBrushRadius = 45; // px, sur un canvas de 1024 — "moyen" par défaut
+let grassBrushRadius = 22; // px, sur un canvas de 1024 — "moyen" par défaut (réduit : l'ancien pinceau peignait un disque bien plus large que ce que le cercle-guide laissait penser)
 
 function setupGrassPaintOverlay(parts){
   grassParts = [];
@@ -2156,7 +2282,17 @@ function setupGrassPaintOverlay(parts){
     overlayMesh.position.y = 0.02;
     overlayMesh.renderOrder = 1;
     mesh.add(overlayMesh);
-    grassParts.push({ mesh, overlayMesh, canvas, ctx, texture });
+    // Étendue RÉELLE (en unités monde) couverte par ce fragment de sol — le
+    // canvas 1024×1024 de peinture est mappé en UV sur CETTE géométrie
+    // précise, pas sur le polygone d'implantation entier : utiliser l'emprise
+    // du polygone entier pour convertir px→mètres (ancien calcul) donnait un
+    // facteur d'échelle totalement faux dès que ce fragment était plus petit
+    // que le polygone complet — d'où l'écart énorme observé entre le cercle
+    // guide et la tache réellement peinte.
+    if(!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    const bb = mesh.geometry.boundingBox;
+    const worldSpan = (Math.abs(bb.max.x-bb.min.x) + Math.abs(bb.max.z-bb.min.z)) / 2;
+    grassParts.push({ mesh, overlayMesh, canvas, ctx, texture, worldSpan: worldSpan || 60 });
   });
 }
 
@@ -2177,13 +2313,21 @@ function ensureGrassCursorDecal(){
   worldRoot.add(grassCursorDecal);
   return grassCursorDecal;
 }
-// Conversion approximative rayon pinceau (px sur canvas 1024) -> unités monde,
-// à partir de l'étendue réelle du polygone d'implantation peint.
-function grassBrushWorldRadius(){
-  const zoneSpan = buildZone.length>=3
-    ? Math.max(...buildZone.map(p=>p.x)) - Math.min(...buildZone.map(p=>p.x))
-    : 60;
-  return grassBrushRadius/1024 * zoneSpan;
+// Conversion rayon pinceau (px sur canvas 1024) -> unités monde, à partir de
+// l'étendue RÉELLE du fragment de sol effectivement survolé (voir
+// setupGrassPaintOverlay) — et non plus du polygone d'implantation entier.
+function grassBrushWorldRadius(part){
+  const span = part ? part.worldSpan : 60;
+  return grassBrushRadius/1024 * span;
+}
+function grassPartUnderCursor(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(grassParts.map(g=>g.mesh), true)[0];
+  if(!hit) return null;
+  return grassParts.find(g=>g.mesh===hit.object) || null;
 }
 function updateGrassCursor(ev){
   ensureGrassCursorDecal();
@@ -2191,7 +2335,8 @@ function updateGrassCursor(ev){
   if(!pt){ grassCursorDecal.visible = false; return; }
   grassCursorDecal.visible = true;
   grassCursorDecal.position.set(pt.x, 0.22, pt.z);
-  const r = Math.max(0.6, grassBrushWorldRadius());
+  const part = grassPartUnderCursor(ev);
+  const r = Math.max(0.4, grassBrushWorldRadius(part));
   grassCursorDecal.scale.setScalar(r);
 }
 renderer.domElement.addEventListener('pointermove', (ev)=>{
@@ -2202,6 +2347,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
 function startGrassTool(){
   if(drawing) cancelDraw();
   if(treePlacing) stopTreeTool();
+  if(labelPlacing) stopLabelTool();
   grassPainting = true;
   btnGrass.classList.add('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Glissez pour peindre…';
   drawHint.classList.add('show');
@@ -2262,7 +2408,7 @@ const brushBtns = {
   medium: document.getElementById('brush-medium'),
   large: document.getElementById('brush-large'),
 };
-const BRUSH_SIZES = { small:20, medium:45, large:85 };
+const BRUSH_SIZES = { small:10, medium:22, large:38 };
 function setBrushSize(key){
   grassBrushRadius = BRUSH_SIZES[key];
   Object.entries(brushBtns).forEach(([k,btn])=> btn.classList.toggle('active', k===key));
@@ -2340,6 +2486,7 @@ function createBuilding(pts, opts={}){
   selectedId = b.id;
   rebuildMesh(b);
   renderList();
+  openBldgEditWindow(b.id);
 }
 
 function usageAtFloor(b, floor){
@@ -2529,13 +2676,8 @@ renderer.domElement.addEventListener('click', (ev)=>{
   if(toolIsActive()) return;
   const hit = buildingHitAt(ev);
   if(!hit) return;
-  hit.open = true;
   selectBuilding(hit.id);
-  openPanel();
-  requestAnimationFrame(()=>{
-    const card = bldgList.querySelector(`[data-id="${hit.id}"]`);
-    if(card) card.scrollIntoView({ behavior:'smooth', block:'nearest' });
-  });
+  openBldgEditWindow(hit.id);
 });
 
 /* ============================================================
@@ -2876,6 +3018,10 @@ function renderList(){
   emptyNote.style.display = buildings.length ? 'none' : 'block';
   bldgList.innerHTML = '';
   buildings.forEach(b=>{
+    // Liste compacte (panneau de droite) : juste l'identification et un accès
+    // rapide — l'édition complète vit désormais dans sa propre petite fenêtre,
+    // à gauche sous les outils (voir renderBldgEditWindow), qui ne s'affiche
+    // que pour le bâtiment sélectionné.
     const card = document.createElement('div');
     card.className = 'bldg-card' + (b.id===selectedId ? ' selected':'');
     card.dataset.id = b.id;
@@ -2885,146 +3031,167 @@ function renderList(){
     const dot = document.createElement('div');
     dot.className='bldg-dot';
     dot.style.background = '#'+USAGE_COLORS[usageAtFloor(b, b.floors)].toString(16).padStart(6,'0');
-    const nameInput = document.createElement('input');
-    nameInput.value = b.name;
-    nameInput.addEventListener('click', e=>e.stopPropagation());
-    nameInput.addEventListener('input', ()=>{ b.name = nameInput.value; });
-    const caret = document.createElement('span');
-    caret.textContent = b.open ? '▾' : '▸';
-    caret.style.color = 'var(--muted)';
-    head.append(dot, nameInput, caret);
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = b.name;
+    nameSpan.style.flex = '1';
+    const meta = document.createElement('span');
+    meta.style.cssText = 'color:var(--muted);font-size:11px;font-family:IBM Plex Mono,monospace;';
+    meta.textContent = `${b.floors} niv.`;
+    head.append(dot, nameSpan, meta);
     head.addEventListener('click', ()=>{
       selectBuilding(b.id);
-      b.open = !b.open;
-      renderList();
+      openBldgEditWindow(b.id);
     });
-
-    const meta = document.createElement('div');
-    meta.className = 'bldg-meta';
-    meta.textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${(b.floors*FLOOR_HEIGHT).toFixed(0)} m`;
-
-    const body = document.createElement('div');
-    body.className = 'bldg-body' + (b.open ? ' open':'');
-
-    // floors field
-    const floorsField = document.createElement('div');
-    floorsField.className='field';
-    floorsField.innerHTML = `<label>Nombre d'étages (R+${Math.max(b.floors-1,0)})</label>`;
-    const floorsInput = document.createElement('input');
-    floorsInput.type='number'; floorsInput.min=1; floorsInput.max=60; floorsInput.value=b.floors;
-    floorsInput.addEventListener('change', ()=>{
-      let v = parseInt(floorsInput.value)||1;
-      v = Math.max(1, Math.min(60, v));
-      b.floors = v;
-      // Le nombre d'étages change : normalizeBands recale tout seul la
-      // tranche du haut sur le nouveau total, sans jamais créer une tranche
-      // par étage ajouté ni casser l'équilibre des tranches existantes.
-      normalizeBands(b);
-      rebuildMesh(b); renderList();
-    });
-    floorsField.appendChild(floorsInput);
-
-    // usage bands editor — modèle "blocs empilés" : on n'édite plus que la
-    // limite haute de chaque bloc (jusqu'à quel étage) ; la limite basse
-    // s'affiche en lecture seule, recalculée automatiquement d'après le bloc
-    // du dessous — impossible de créer un trou ou un recouvrement.
-    const bandsTitle = document.createElement('div');
-    bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;';
-    bandsTitle.textContent = 'Répartition des usages par étage';
-    body.append(floorsField, bandsTitle);
-
-    b.bands.forEach((band, idx)=>{
-      const row = document.createElement('div');
-      row.className='band-row';
-      const fromLabel = document.createElement('span');
-      fromLabel.className='band-from-readonly';
-      fromLabel.style.cssText='font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--muted);min-width:22px;text-align:center;';
-      fromLabel.textContent = String(band.from);
-      const x = document.createElement('span'); x.className='x'; x.textContent='→';
-      const toInp = document.createElement('input');
-      toInp.type='number'; toInp.min=band.from; toInp.max=b.floors; toInp.value=band.to;
-      toInp.title = "Jusqu'à quel étage va ce bloc — les blocs au-dessus se recalent automatiquement";
-      // Le tout dernier bloc va toujours jusqu'en haut du bâtiment : sa
-      // limite n'est pas éditable, elle suit le nombre d'étages.
-      const isLast = idx === b.bands.length-1;
-      if(isLast) toInp.disabled = true;
-      const sel = document.createElement('select');
-      Object.entries(USAGE_LABELS).forEach(([k,label])=>{
-        const opt = document.createElement('option');
-        opt.value=k; opt.textContent=label; if(k===band.usage) opt.selected=true;
-        sel.appendChild(opt);
-      });
-      const del = document.createElement('button');
-      del.className='mini-btn danger'; del.textContent='✕';
-      del.title = 'Fusionner ce bloc avec celui du dessus';
-      del.disabled = b.bands.length<=1;
-      del.addEventListener('click', ()=>{
-        b.bands.splice(idx,1);
-        normalizeBands(b);
-        rebuildMesh(b); renderList();
-      });
-      function commit(){
-        band.to = Math.max(band.from, Math.min(parseInt(toInp.value)||band.from, b.floors));
-        band.usage = sel.value;
-        normalizeBands(b);
-        rebuildMesh(b); renderList();
-      }
-      toInp.addEventListener('change', commit);
-      sel.addEventListener('change', commit);
-      row.append(fromLabel, x, toInp, sel, del);
-      body.appendChild(row);
-    });
-
-    const addBandBtn = document.createElement('button');
-    addBandBtn.className='small-action';
-    addBandBtn.textContent='+ Ajouter une tranche d\'usage';
-    addBandBtn.style.marginTop='6px';
-    addBandBtn.title = 'Scinde le bloc du haut en deux, moitié-moitié';
-    addBandBtn.disabled = b.bands[b.bands.length-1].from >= b.floors;
-    addBandBtn.addEventListener('click', ()=>{
-      // Scinde automatiquement le dernier bloc en deux plutôt que de laisser
-      // l'utilisateur définir une plage manuellement (source de trous/
-      // recouvrements) : la moitié basse garde l'usage existant, la moitié
-      // haute devient un nouveau bloc — équilibré, jamais "bordélique".
-      const last = b.bands[b.bands.length-1];
-      if(last.from >= b.floors) return;
-      const mid = Math.floor((last.from + b.floors) / 2);
-      const splitAt = Math.max(last.from, Math.min(mid, b.floors-1));
-      last.to = splitAt;
-      b.bands.push({from:splitAt+1, to:b.floors, usage:'residentiel'});
-      normalizeBands(b);
-      rebuildMesh(b); renderList();
-    });
-    body.appendChild(addBandBtn);
-
-    const actions = document.createElement('div');
-    actions.className='btn-row';
-    const editBtn = document.createElement('button');
-    editBtn.className='small-action'; editBtn.textContent = editingBuildingId===b.id ? 'Terminer' : 'Modifier la forme';
-    editBtn.addEventListener('click', ()=> editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b));
-    const fillBtn = document.createElement('button');
-    fillBtn.className='small-action'; fillBtn.textContent='Étendre au polygone';
-    fillBtn.title = "Recale l'emprise de ce bâtiment exactement sur le polygone d'implantation (supprime tout écart dû à un tracé manuel).";
-    fillBtn.addEventListener('click', ()=>{
-      if(buildZone.length<3) return;
-      b.points = buildZone.map(p=>({x:p.x, z:p.z}));
-      rebuildMesh(b);
-      if(editingBuildingId===b.id) rebuildBldgVertexHandles(b);
-      flashStatus("Emprise recalée sur le polygone d'implantation");
-    });
-    const focusBtn = document.createElement('button');
-    focusBtn.className='small-action'; focusBtn.textContent='Centrer la vue';
-    focusBtn.addEventListener('click', ()=> focusOn(b));
-    const delBtn = document.createElement('button');
-    delBtn.className='small-action danger'; delBtn.textContent='Supprimer';
-    delBtn.addEventListener('click', ()=> deleteBuilding(b.id));
-    actions.append(editBtn, fillBtn, focusBtn, delBtn);
-    body.appendChild(actions);
-
-    card.append(head, meta, body);
+    card.append(head);
     bldgList.appendChild(card);
   });
+  if(selectedId && buildings.some(b=>b.id===selectedId) && bldgEditWindow.classList.contains('show')){
+    renderBldgEditWindow(buildings.find(b=>b.id===selectedId));
+  }
 }
+
+/* ============================================================
+   FENÊTRE DE MODIFICATION D'UN BÂTIMENT (gauche, sous les outils)
+   ============================================================ */
+const bldgEditWindow = document.getElementById('bldg-edit-window');
+const bewClose = document.getElementById('bew-close');
+bewClose.addEventListener('click', closeBldgEditWindow);
+function openBldgEditWindow(id){
+  bldgEditWindow.classList.add('show');
+  renderBldgEditWindow(buildings.find(b=>b.id===id));
+}
+function closeBldgEditWindow(){
+  bldgEditWindow.classList.remove('show');
+  if(editingBuildingId) stopEditBuildingShape();
+}
+function renderBldgEditWindow(b){
+  if(!b){ closeBldgEditWindow(); return; }
+  document.getElementById('bew-dot').style.background = '#'+USAGE_COLORS[usageAtFloor(b, b.floors)].toString(16).padStart(6,'0');
+  const nameInput = document.getElementById('bew-name');
+  nameInput.value = b.name;
+  nameInput.oninput = ()=>{ b.name = nameInput.value; renderRouteListNoop(); };
+  document.getElementById('bew-meta').textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${(b.floors*FLOOR_HEIGHT).toFixed(0)} m`;
+
+  const body = document.getElementById('bew-content');
+  body.innerHTML = '';
+
+  // Nombre d'étages — stepper +/- avec icônes plutôt qu'un simple champ nu.
+  const floorsField = document.createElement('div');
+  floorsField.className='field';
+  floorsField.innerHTML = `<label><i data-lucide="layers"></i> Nombre d'étages (R+${Math.max(b.floors-1,0)})</label>`;
+  const stepper = document.createElement('div');
+  stepper.className = 'stepper';
+  const minus = document.createElement('button'); minus.innerHTML = '<i data-lucide="minus"></i>';
+  const floorsInput = document.createElement('input');
+  floorsInput.type='number'; floorsInput.min=1; floorsInput.max=60; floorsInput.value=b.floors;
+  const plus = document.createElement('button'); plus.innerHTML = '<i data-lucide="plus"></i>';
+  function setFloors(v){
+    v = Math.max(1, Math.min(60, v));
+    b.floors = v; floorsInput.value = v;
+    normalizeBands(b);
+    rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+    if(window.lucide) lucide.createIcons();
+  }
+  minus.addEventListener('click', ()=> setFloors(b.floors-1));
+  plus.addEventListener('click', ()=> setFloors(b.floors+1));
+  floorsInput.addEventListener('change', ()=> setFloors(parseInt(floorsInput.value)||1));
+  stepper.append(minus, floorsInput, plus);
+  floorsField.appendChild(stepper);
+
+  const bandsTitle = document.createElement('div');
+  bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;';
+  bandsTitle.innerHTML = '<i data-lucide="palette" style="width:12px;height:12px;"></i> Répartition des usages par étage';
+  body.append(floorsField, bandsTitle);
+
+  b.bands.forEach((band, idx)=>{
+    const row = document.createElement('div');
+    row.className='band-row';
+    const fromLabel = document.createElement('span');
+    fromLabel.className='band-from-readonly';
+    fromLabel.style.cssText='font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--muted);min-width:22px;text-align:center;';
+    fromLabel.textContent = String(band.from);
+    const x = document.createElement('span'); x.className='x'; x.textContent='→';
+    const toInp = document.createElement('input');
+    toInp.type='number'; toInp.min=band.from; toInp.max=b.floors; toInp.value=band.to;
+    toInp.title = "Jusqu'à quel étage va ce bloc — les blocs au-dessus se recalent automatiquement";
+    const isLast = idx === b.bands.length-1;
+    if(isLast) toInp.disabled = true;
+    const sel = document.createElement('select');
+    Object.entries(USAGE_LABELS).forEach(([k,label])=>{
+      const opt = document.createElement('option');
+      opt.value=k; opt.textContent=label; if(k===band.usage) opt.selected=true;
+      // Colore chaque option avec la couleur de légende correspondante, pour
+      // reconnaître l'usage d'un coup d'œil sans lire le texte.
+      const hex = '#'+USAGE_COLORS[k].toString(16).padStart(6,'0');
+      opt.style.background = hex;
+      opt.style.color = '#0b1116';
+      sel.appendChild(opt);
+    });
+    sel.style.background = '#'+USAGE_COLORS[band.usage].toString(16).padStart(6,'0');
+    sel.style.color = '#0b1116';
+    sel.style.fontWeight = '700';
+    const del = document.createElement('button');
+    del.className='mini-btn danger'; del.innerHTML='<i data-lucide="x" style="width:11px;height:11px;"></i>';
+    del.title = 'Fusionner ce bloc avec celui du dessus';
+    del.disabled = b.bands.length<=1;
+    del.addEventListener('click', ()=>{
+      b.bands.splice(idx,1);
+      normalizeBands(b);
+      rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+    });
+    function commit(){
+      band.to = Math.max(band.from, Math.min(parseInt(toInp.value)||band.from, b.floors));
+      band.usage = sel.value;
+      normalizeBands(b);
+      rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+    }
+    toInp.addEventListener('change', commit);
+    sel.addEventListener('change', commit);
+    row.append(fromLabel, x, toInp, sel, del);
+    body.appendChild(row);
+  });
+
+  const addBandBtn = document.createElement('button');
+  addBandBtn.className='small-action';
+  addBandBtn.innerHTML='<i data-lucide="split" style="width:13px;height:13px;margin-right:5px;"></i> Ajouter une tranche d\'usage';
+  addBandBtn.style.cssText='margin-top:6px;display:flex;align-items:center;justify-content:center;';
+  addBandBtn.title = 'Scinde le bloc du haut en deux, moitié-moitié';
+  addBandBtn.disabled = b.bands[b.bands.length-1].from >= b.floors;
+  addBandBtn.addEventListener('click', ()=>{
+    const last = b.bands[b.bands.length-1];
+    if(last.from >= b.floors) return;
+    const mid = Math.floor((last.from + b.floors) / 2);
+    const splitAt = Math.max(last.from, Math.min(mid, b.floors-1));
+    last.to = splitAt;
+    b.bands.push({from:splitAt+1, to:b.floors, usage:'residentiel'});
+    normalizeBands(b);
+    rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+  });
+  body.appendChild(addBandBtn);
+
+  const actions = document.createElement('div');
+  actions.className='btn-row';
+  const editBtn = document.createElement('button');
+  editBtn.className='small-action';
+  editBtn.innerHTML = editingBuildingId===b.id
+    ? '<i data-lucide="check"></i> Terminer'
+    : '<i data-lucide="move-3d"></i> Modifier la forme';
+  editBtn.addEventListener('click', ()=>{
+    editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b);
+    renderBldgEditWindow(b);
+  });
+  const focusBtn = document.createElement('button');
+  focusBtn.className='small-action'; focusBtn.innerHTML='<i data-lucide="crosshair"></i> Centrer la vue';
+  focusBtn.addEventListener('click', ()=> focusOn(b));
+  const delBtn = document.createElement('button');
+  delBtn.className='small-action danger'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
+  delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
+  actions.append(editBtn, focusBtn, delBtn);
+  body.appendChild(actions);
+
+  if(window.lucide) lucide.createIcons();
+}
+function renderRouteListNoop(){ /* nom modifié : rafraîchit juste la pastille de la liste compacte */ renderList(); }
 
 function focusOn(b){
   const cx = b.points.reduce((s,p)=>s+p.x,0)/b.points.length;
@@ -3135,30 +3302,126 @@ function collectSiteLights(){
   });
   siteLights.forEach(l=> l.visible = isNight);
 }
+/* ============================================================
+   ÉCLAIRAGE — position solaire réelle (latitude de Lyon, 45.75° N) pour 5
+   heures de la journée (équinoxe, déclinaison ≈ 0 → lever/coucher symétriques
+   à 6h/18h solaires, ce qui évite tout souci de fuseau horaire/équation du
+   temps pour une démonstration) + un mode Nuit. Convention d'azimut : 0° =
+   Nord (+Z), 90° = Est (+X), 180° = Sud, 270° = Ouest — la même que
+   updateCompass() ci-dessus, donc le soleil tourne bien Est→Sud→Ouest.
+   ============================================================ */
+const LYON_LAT_RAD = 45.75 * Math.PI/180;
+function sunAltAz(hourDecimal){
+  const decl = 0; // approximation équinoxe
+  const H = (hourDecimal-12)*15*Math.PI/180;
+  const sinAlt = Math.sin(LYON_LAT_RAD)*Math.sin(decl) + Math.cos(LYON_LAT_RAD)*Math.cos(decl)*Math.cos(H);
+  const alt = Math.asin(Math.max(-1,Math.min(1,sinAlt)));
+  let cosAz = (Math.sin(decl) - Math.sin(alt)*Math.sin(LYON_LAT_RAD)) / (Math.cos(alt)*Math.cos(LYON_LAT_RAD) || 1e-9);
+  cosAz = Math.max(-1,Math.min(1,cosAz));
+  let az = Math.acos(cosAz);
+  if(H>0) az = 2*Math.PI - az;
+  return { alt, az };
+}
+const SUN_TIMES = [
+  { key:'lever',      label:'Levé du soleil',        hour:6.25  },
+  { key:'matin',       label:'Milieu de matinée',      hour:9.5   },
+  { key:'midi',        label:'Midi',                   hour:12    },
+  { key:'apresmidi',   label:"Milieu d'après-midi",    hour:14.5  },
+  { key:'coucher',     label:'Coucher du soleil',      hour:17.75 },
+];
+const SUN_DISTANCE = 260;
+let lightingMode = 'midi';
 let isNight = false;
-const btnNight = document.getElementById('btn-night');
-function setNightMode(night){
-  isNight = night;
-  sun.visible = !night;
-  sun.intensity = night ? 0.05 : 0.7; // soleil moins agressif le jour, quasi nul la nuit
-  hemiLight.intensity = night ? 0.55 : 0.75;
-  hemiLight.color.setHex(night ? 0x2c405f : 0xdfe8ef);
-  scene.environment = night ? nightEnvTexture : dayEnvTexture;
-  renderer.toneMappingExposure = night ? 1.0 : 0.85;
-  scene.background.setHex(night ? 0x0b1220 : 0x101820);
-  scene.fog.color.setHex(night ? 0x0b1220 : 0x101820);
-  siteLights.forEach(l=> l.visible = night);
-  applyVehicleLightState(); // phares/feux des véhicules (déjà modélisés dans vehicules.glb)
-  btnNight.querySelector('.tool-btn-label').textContent = night ? 'Jour' : 'Nuit';
-  // Après le premier rendu, lucide.createIcons() a remplacé le <i data-lucide="…">
-  // d'origine par un vrai <svg> : on ne peut donc plus faire setAttribute dessus
-  // comme sur un <i>. On remplace l'icône entière (svg ou i) par un <i> tout neuf
-  // avant de relancer createIcons(), qui se charge de le transformer en svg.
-  const iconEl = btnNight.querySelector('svg, i');
-  if(iconEl) iconEl.outerHTML = `<i data-lucide="${night ? 'sun' : 'moon'}"></i>`;
+
+function positionSunForHour(hourDecimal){
+  const { alt, az } = sunAltAz(hourDecimal);
+  const x = SUN_DISTANCE * Math.cos(alt) * Math.sin(az);
+  const z = SUN_DISTANCE * Math.cos(alt) * Math.cos(az);
+  const y = Math.max(8, SUN_DISTANCE * Math.sin(alt)); // jamais totalement à plat, même lever/coucher
+  sun.position.set(x, y, z);
+  // L'intensité et la teinte suivent la hauteur réelle du soleil : rasant et
+  // chaud (orangé) au lever/coucher, franc et plus neutre à midi.
+  const altDeg = alt*180/Math.PI;
+  const t = Math.max(0, Math.min(1, altDeg/44.25)); // 44.25° = hauteur max à midi, latitude de Lyon
+  sun.intensity = 0.55 + t*1.1;
+  sun.color.setHex(t<0.35 ? 0xffb066 : 0xfff2df);
+  hemiLight.intensity = 0.6 + t*0.2;
+  return { alt, az, t };
+}
+
+// Applique réellement le mode (soleil à une heure donnée OU nuit) — appelé
+// via setLightingMode() ci-dessous, qui affiche le spinner pendant l'appel
+// pour ne pas donner l'impression d'un blocage/bug (voir plus bas).
+function applyLightingModeNow(mode){
+  lightingMode = mode;
+  isNight = (mode === 'nuit');
+  if(isNight){
+    sun.visible = false;
+    hemiLight.intensity = 0.55;
+    hemiLight.color.setHex(0x2c405f);
+    scene.environment = nightEnvTexture;
+    renderer.toneMappingExposure = 1.0;
+    scene.background.setHex(0x0b1220);
+    scene.fog.color.setHex(0x0b1220);
+    siteLights.forEach(l=> l.visible = true);
+  } else {
+    sun.visible = true;
+    const cfg = SUN_TIMES.find(s=>s.key===mode) || SUN_TIMES[2];
+    positionSunForHour(cfg.hour);
+    scene.environment = dayEnvTexture;
+    renderer.toneMappingExposure = 0.85;
+    scene.background.setHex(0x101820);
+    scene.fog.color.setHex(0x101820);
+    siteLights.forEach(l=> l.visible = false);
+  }
+  applyVehicleLightState();
+  applyTrainWindowEmissive();
+  refreshSunPanelUI();
+}
+// Le changement d'environnement (scene.environment) et la bascule de
+// nombreuses lampes de rue peuvent déclencher une recompilation de shaders
+// PBR côté navigateur → un vrai figeage de quelques centaines de ms à plus
+// d'une seconde, qui ressemble à un bug si rien ne le signale. On affiche
+// donc un spinner AVANT, avec deux requestAnimationFrame pour laisser le
+// navigateur peindre ce spinner avant de lancer le travail bloquant.
+const loadingSpinner = document.getElementById('loading-spinner');
+function setLightingMode(mode){
+  loadingSpinner.classList.add('show');
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      applyLightingModeNow(mode);
+      loadingSpinner.classList.remove('show');
+    });
+  });
+}
+function refreshSunPanelUI(){
+  document.querySelectorAll('#sun-arc .sun-btn').forEach(btn=>{
+    btn.classList.toggle('active', !isNight && btn.dataset.time===lightingMode);
+  });
+  document.getElementById('sun-btn-night').classList.toggle('active', isNight);
+  const sunPanelBtn = document.getElementById('btn-sun-panel');
+  const iconEl = sunPanelBtn.querySelector('svg, i');
+  if(iconEl) iconEl.outerHTML = `<i data-lucide="${isNight ? 'moon':'sun-medium'}"></i>`;
+  sunPanelBtn.classList.toggle('active', isNight);
   if(window.lucide) lucide.createIcons();
 }
-btnNight.addEventListener('click', ()=> setNightMode(!isNight));
+const sunPanel = document.getElementById('sun-panel');
+document.getElementById('btn-sun-panel').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  sunPanel.classList.toggle('show');
+});
+document.querySelectorAll('#sun-arc .sun-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=> setLightingMode(btn.dataset.time));
+});
+document.getElementById('sun-btn-night').addEventListener('click', ()=> setLightingMode('nuit'));
+document.addEventListener('click', (ev)=>{
+  if(!sunPanel.contains(ev.target) && ev.target.id!=='btn-sun-panel' && !ev.target.closest('#btn-sun-panel')){
+    sunPanel.classList.remove('show');
+  }
+});
+// État initial : midi, soleil déjà positionné à l'ouverture (pas de spinner
+// nécessaire ici, rien n'a encore été rendu).
+applyLightingModeNow('midi');
 
 /* ============================================================
    LABELS — point au sol + étiquette décalée + ligne de rappel
@@ -3253,18 +3516,28 @@ function updateLabelPositions(){
     l.line.setAttribute('x2', cx); l.line.setAttribute('y2', cy - h*0.3);
   });
 }
+function stopLabelTool(){
+  labelPlacing = false;
+  btnLabel.classList.remove('active');
+}
 btnLabel.addEventListener('click', ()=>{
+  if(!labelPlacing){
+    // Comme les autres outils : n'en garder qu'un seul actif à la fois.
+    if(drawing) cancelDraw();
+    if(treePlacing) stopTreeTool();
+    if(grassPainting) stopGrassTool();
+  }
   labelPlacing = !labelPlacing;
   btnLabel.classList.toggle('active', labelPlacing);
   flashStatus(labelPlacing ? 'Cliquez sur la maquette pour poser un label (Échap pour annuler)' : 'Pose de label annulée');
 });
 window.addEventListener('keydown', (ev)=>{
-  if(ev.key==='Escape' && labelPlacing){ labelPlacing=false; btnLabel.classList.remove('active'); }
+  if(ev.key==='Escape' && labelPlacing) stopLabelTool();
 });
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!labelPlacing) return;
   const pt = groundPointFromEvent(ev);
-  labelPlacing = false; btnLabel.classList.remove('active');
+  stopLabelTool();
   if(!pt) return;
   const text = prompt('Texte du label :', '');
   if(!text) return;
@@ -3405,11 +3678,22 @@ fileLoad.addEventListener('change', (e)=>{
    allumés/éteints globalement avec le mode nuit (voir applyVehicleLightState).
    ============================================================ */
 const ROUTE_TYPES = {
+  train:  { label:'Train',   color:0xb9bfc4, speed:11, count:1,  wagons:3, part:'trainMilieu',                            length:16,   fallbackScale:[2.6,3.0,16] },
   tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  wagons:3, parts:['tramAvant','tramMilieu','tramArriere'], length:14,   fallbackScale:[2.2,2.6,9] },
   bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  wagons:1, part:'bus',                                    length:8.9,  fallbackScale:[2,2.4,6]  },
   voiture:{ label:'Voiture', color:0x2c0a71, speed:10, count:7,  wagons:1, part:'voiture',                                length:5.1,  fallbackScale:[1.7,1.3,3.4] },
   pieton: { label:'Piéton',  color:0x020202, speed:1.5,count:14, wagons:1, part:null,                                     length:0.5,  fallbackScale:[0.4,1.4,0.5] }
 };
+// Palette de couleurs "réalistes" de carrosserie pour les voitures — un petit
+// nombre de teintes plausibles (les couleurs les plus vendues dans la vraie
+// vie), piochées au hasard PAR INSTANCE plutôt qu'une seule couleur partagée
+// pour tout le parc. Volontairement limité à quelques matériaux clonés (pas
+// un par voiture) pour rester léger : toutes les voitures d'une même teinte
+// PARTAGENT le même matériau cloné, donc le nombre de matériaux réellement
+// créés reste égal à la taille de la palette, pas au nombre de véhicules.
+const CAR_COLOR_PALETTE = [0x141414, 0x5a5f66, 0xd8dadc, 0x0e1f36, 0x1c1c1c, 0x8a8f94, 0x2b2f33];
+const carPaletteMaterials = {}; // hex -> THREE.Material clonée (lazy, une par couleur réellement utilisée)
+
 let routes = []; // {id, name, type, points:[{x,y,z}], curve, vehicleGroup, agents:[{t,speed,wagonOffset,mesh}]}
 let routeIdCounter = 1;
 
@@ -3420,11 +3704,13 @@ let routeIdCounter = 1;
 // milieu/arrière) pour le tram.
 const WAGON_GAP = 0.4; // mètres entre deux caisses consécutives
 
-/* ---- Modèles réels (vehicules.glb) ------------------------------------ */
+/* ---- Modèles réels (vehicules.glb + trains.glb) ------------------------ */
 const VEHICLES_GLB_URL = './vehicules.glb';
-let vehicleTemplates = null; // {bus, voiture, tramAvant, tramMilieu, tramArriere} -> THREE.Object3D
+const TRAINS_GLB_URL = './trains.glb';
+let vehicleTemplates = null; // {bus, voiture, tramAvant, tramMilieu, tramArriere, trainMilieu} -> THREE.Object3D
 const vehicleBodyMaterials = {}; // type -> THREE.Material de carrosserie (couleur modifiable en direct)
 const vehicleLightMaterials = { blanc:null, rouge:null }; // matériaux de phares PARTAGÉS par tous les véhicules
+let trainWindowMaterial = null; // "vitres_trains" — rendu émissif la nuit (voir applyTrainWindowEmissive)
 // Matériau/geometry de secours pour piétons (aucun modèle piéton fourni) et
 // pour les véhicules si jamais vehicules.glb ne charge pas.
 const pedestrianGeo = new THREE.CapsuleGeometry(0.22, 0.9, 4, 8);
@@ -3446,6 +3732,36 @@ function applyVehicleLightState(){
   if(vehicleLightMaterials.blanc) vehicleLightMaterials.blanc.emissiveIntensity = on ? 3.0 : 0;
   if(vehicleLightMaterials.rouge) vehicleLightMaterials.rouge.emissiveIntensity = on ? 2.2 : 0;
 }
+// Vitres des trains ("vitres_trains") : émissives à 0.5 en mode nuit
+// seulement, avec la couleur d'émission déjà réglée sur son propre shader
+// (blanc jaunâtre chaud — celle du matériau lui-même, on ne la réécrase pas),
+// éteintes le jour comme les phares des autres véhicules.
+function applyTrainWindowEmissive(){
+  if(!trainWindowMaterial) return;
+  const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
+  trainWindowMaterial.emissiveIntensity = on ? 0.5 : 0;
+}
+function loadTrainsFromGLB(){
+  return new Promise((resolve)=>{
+    gltfLoader.load(TRAINS_GLB_URL, (gltf)=>{
+      const scene = gltf.scene;
+      const trainMilieu = findByNameCI(scene, 'train_milieu');
+      if(vehicleTemplates) vehicleTemplates.trainMilieu = trainMilieu;
+      else vehicleTemplates = { trainMilieu };
+      trainWindowMaterial = findMaterialByName(trainMilieu, 'vitres_trains');
+      if(trainWindowMaterial){
+        // Couleur d'émission "blanc jaunâtre" du shader du matériau : si le
+        // .glb n'en définit pas déjà une (export Blender par défaut à noir),
+        // on pose une teinte chaude plausible sans changer sa couleur de base.
+        if(!trainWindowMaterial.emissive || trainWindowMaterial.emissive.getHex()===0){
+          trainWindowMaterial.emissive = new THREE.Color(0xfff2c2);
+        }
+        applyTrainWindowEmissive();
+      }
+      resolve();
+    }, undefined, ()=>{ resolve(); }); // fichier optionnel : on continue sans trains si absent
+  });
+}
 function loadVehiclesFromGLB(){
   return new Promise((resolve)=>{
     gltfLoader.load(VEHICLES_GLB_URL, (gltf)=>{
@@ -3455,7 +3771,7 @@ function loadVehiclesFromGLB(){
       const tramAvant = findByNameCI(scene, 'tram_avant');
       const tramMilieu = findByNameCI(scene, 'tram_milieu');
       const tramArriere = findByNameCI(scene, 'tram_arrière') || findByNameCI(scene, 'tram_arriere');
-      vehicleTemplates = { bus, voiture, tramAvant, tramMilieu, tramArriere };
+      vehicleTemplates = Object.assign({ bus, voiture, tramAvant, tramMilieu, tramArriere }, vehicleTemplates);
 
       // Carrosserie : un matériau par type, modifiable en direct par le
       // sélecteur couleur admin — partagé par toutes les instances clonées,
@@ -3475,7 +3791,7 @@ function loadVehiclesFromGLB(){
     }, undefined, ()=>{
       // Échec de chargement : on continue avec des boîtes de secours plutôt
       // que de bloquer toute la circulation.
-      vehicleTemplates = null;
+      vehicleTemplates = vehicleTemplates || null;
       resolve();
     });
   });
@@ -3486,6 +3802,30 @@ function instantiateVehiclePart(cfg, wagonIndex){
   if(template){
     const obj = template.clone(true);
     obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    // Voitures : chaque instance pioche une couleur réaliste dans une petite
+    // palette partagée (voir CAR_COLOR_PALETTE) plutôt que la couleur unique
+    // "voiture" du .glb — un matériau cloné par COULEUR (pas par voiture),
+    // donc au plus 7 matériaux au total quelle que soit la taille du parc.
+    if(cfg===ROUTE_TYPES.voiture){
+      const hex = CAR_COLOR_PALETTE[Math.floor(Math.random()*CAR_COLOR_PALETTE.length)];
+      if(!carPaletteMaterials[hex] && vehicleBodyMaterials.voiture){
+        const m = vehicleBodyMaterials.voiture.clone();
+        m.color.setHex(hex);
+        carPaletteMaterials[hex] = m;
+      }
+      const carMat = carPaletteMaterials[hex];
+      if(carMat){
+        obj.traverse(o=>{
+          if(!o.isMesh) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          if(mats.some(mm=>mm===vehicleBodyMaterials.voiture)){
+            o.material = Array.isArray(o.material)
+              ? o.material.map(mm=> mm===vehicleBodyMaterials.voiture ? carMat : mm)
+              : carMat;
+          }
+        });
+      }
+    }
     return obj;
   }
   // Boîte de secours (piéton, ou modèle manquant) — dimensions approximatives.
@@ -3500,7 +3840,7 @@ function instantiateVehiclePart(cfg, wagonIndex){
   mesh.castShadow = true;
   return mesh;
 }
-ROUTE_TYPES.tram._fallbackKey='tram'; ROUTE_TYPES.bus._fallbackKey='bus'; ROUTE_TYPES.voiture._fallbackKey='voiture';
+ROUTE_TYPES.train._fallbackKey='train'; ROUTE_TYPES.tram._fallbackKey='tram'; ROUTE_TYPES.bus._fallbackKey='bus'; ROUTE_TYPES.voiture._fallbackKey='voiture';
 
 function createRoute(points, type, name){
   if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
@@ -3744,7 +4084,7 @@ animate();
 // vrais bus/trams/voitures au lieu de boîtes de secours. Le fichier est petit,
 // le délai est négligeable, et un échec de chargement ne bloque rien (repli
 // automatique sur les boîtes de secours, voir instantiateVehiclePart).
-loadVehiclesFromGLB().then(()=>{
+Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB()]).then(()=>{
   // Charge la vraie maquette si le fichier est présent à côté de index.html ;
   // sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
   // et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
