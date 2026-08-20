@@ -3422,6 +3422,7 @@ document.addEventListener('click', (ev)=>{
 // État initial : midi, soleil déjà positionné à l'ouverture (pas de spinner
 // nécessaire ici, rien n'a encore été rendu).
 const vehicleLightMaterials = { blanc:null, rouge:null }; // matériaux de phares PARTAGÉS par tous les véhicules — déclaré avant le premier appel de applyLightingModeNow pour éviter le TDZ
+let trainWindowMaterial = null; // "vitres_trains" — rendu émissif la nuit (voir applyTrainWindowEmissive) — déclaré avant le premier appel de applyLightingModeNow pour éviter le TDZ
 applyLightingModeNow('midi');
 
 /* ============================================================
@@ -3710,7 +3711,6 @@ const VEHICLES_GLB_URL = './vehicules.glb';
 const TRAINS_GLB_URL = './trains.glb';
 let vehicleTemplates = null; // {bus, voiture, tramAvant, tramMilieu, tramArriere, trainMilieu} -> THREE.Object3D
 const vehicleBodyMaterials = {}; // type -> THREE.Material de carrosserie (couleur modifiable en direct)
-let trainWindowMaterial = null; // "vitres_trains" — rendu émissif la nuit (voir applyTrainWindowEmissive)
 // Matériau/geometry de secours pour piétons (aucun modèle piéton fourni) et
 // pour les véhicules si jamais vehicules.glb ne charge pas.
 const pedestrianGeo = new THREE.CapsuleGeometry(0.22, 0.9, 4, 8);
