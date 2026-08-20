@@ -3680,7 +3680,7 @@ fileLoad.addEventListener('change', (e)=>{
    allumés/éteints globalement avec le mode nuit (voir applyVehicleLightState).
    ============================================================ */
 const ROUTE_TYPES = {
-  train:  { label:'Train',   color:0xb9bfc4, speed:11, count:1,  wagons:3, parts:['trainAvant','trainMilieu','trainArriere'], length:16,   fallbackScale:[2.6,3.0,16] },
+  train:  { label:'Train',   color:0xb9bfc4, speed:12, count:1,  wagons:4, parts:['trainAvant','trainMilieu','trainMilieu','trainArriere'], length:24,   fallbackScale:[2.6,3.0,16] },
   tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  wagons:3, parts:['tramAvant','tramMilieu','tramArriere'], length:14,   fallbackScale:[2.2,2.6,9] },
   bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  wagons:1, part:'bus',                                    length:8.9,  fallbackScale:[2,2.4,6]  },
   voiture:{ label:'Voiture', color:0x2c0a71, speed:10, count:7,  wagons:1, part:'voiture',                                length:5.1,  fallbackScale:[1.7,1.3,3.4] },
