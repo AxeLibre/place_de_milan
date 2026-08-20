@@ -3871,6 +3871,17 @@ function createRoute(points, type, name){
   worldRoot.add(line);
 
   const route = { id: routeIdCounter++, name: name || `${cfg.label} ${routeIdCounter-1}`, type, points, curve, vehicleGroup, line, agents };
+
+  // Les trains n'occupent leur voie qu'une partie du temps (arrivées
+  // espacées et aléatoires) plutôt que de tourner en boucle en permanence :
+  // voir tickTrainRoute(). Les wagons démarrent masqués, le premier passage
+  // arrive après un délai initial aléatoire pour désynchroniser les lignes
+  // entre elles.
+  if(type==='train'){
+    agents.forEach(a=>{ if(a.mesh) a.mesh.visible=false; });
+    route.trainCycle = { state:'wait', timer: 1+Math.random()*14 };
+  }
+
   routes.push(route);
   renderRouteList();
   return route;
@@ -3884,6 +3895,7 @@ function tickAgents(dt){
   for(const r of routes){
     const len = r.curve.getLength();
     if(len<=0) continue;
+    if(r.type==='train'){ tickTrainRoute(r, len, dt); continue; }
     r.agents.forEach((a)=>{
       a.t = (a.t + (a.speed*dt)/len) % 1;
       // le wagon n'est jamais exactement à a.t : il traîne derrière de
@@ -3903,6 +3915,58 @@ function tickAgents(dt){
       }
       m.lookAt(m.position.clone().add(tangent));
     });
+  }
+}
+
+// Un train ne boucle pas en continu sur sa voie comme les autres véhicules :
+// il fait un aller simple (tête à queue) puis disparaît, attend une durée
+// aléatoire, puis repart — de sorte qu'il ne soit présent qu'environ la
+// moitié du temps et que son arrivée ne soit pas prévisible/synchronisée
+// entre les différentes lignes.
+function tickTrainRoute(r, len, dt){
+  const cyc = r.trainCycle || (r.trainCycle = { state:'wait', timer: 1+Math.random()*14 });
+  if(cyc.state==='wait'){
+    cyc.timer -= dt;
+    if(cyc.timer<=0){
+      cyc.state = 'go';
+      const speed = r.agents[0] ? r.agents[0].speed : (ROUTE_TYPES.train.speed||11);
+      cyc.travelDuration = len/speed;
+      // Prochaine attente randomisée autour de la durée du trajet, pour une
+      // présence moyenne d'environ 50% du temps sur la voie (0.6x à 1.4x).
+      cyc.nextWait = cyc.travelDuration * (0.6 + Math.random()*0.8);
+      r.agents.forEach(a=>{ a.t = 0; });
+    }
+    return;
+  }
+  // state === 'go' : avance la tête du convoi sans boucler (pas de modulo),
+  // chaque wagon n'est visible que lorsque sa propre position (décalée par
+  // wagonOffset) se trouve effectivement entre le début et la fin de la voie.
+  let maxOffsetFrac = 0;
+  r.agents.forEach((a)=>{
+    a.t += (a.speed*dt)/len;
+    const offsetFrac = (a.wagonOffset||0)/len;
+    if(offsetFrac>maxOffsetFrac) maxOffsetFrac = offsetFrac;
+    const wagonT = a.t - offsetFrac;
+    const m = a.mesh;
+    if(!m) return;
+    if(wagonT<0 || wagonT>1){
+      m.visible = false;
+      return;
+    }
+    m.visible = true;
+    const pos = r.curve.getPointAt(wagonT);
+    const tangent = r.curve.getTangentAt(wagonT);
+    m.position.copy(pos);
+    m.position.y += 0.05;
+    m.lookAt(m.position.clone().add(tangent));
+  });
+  // Le train a fini son trajet une fois que même le dernier wagon (le plus
+  // en retard) a dépassé l'extrémité de la voie.
+  const headT = r.agents[0] ? r.agents[0].t : 0;
+  if(headT >= 1+maxOffsetFrac){
+    cyc.state = 'wait';
+    cyc.timer = cyc.nextWait;
+    r.agents.forEach(a=>{ if(a.mesh) a.mesh.visible=false; });
   }
 }
 
@@ -3933,7 +3997,15 @@ function reverseRoute(id){
     r.points.map(p=>new THREE.Vector3(p.x, p.y!==undefined?p.y:0.15, p.z)),
     false, 'catmullrom', 0.2
   );
-  r.agents.forEach((a,i)=>{ a.t = i/r.agents.length; });
+  if(r.type==='train'){
+    // Pour un train (aller simple, pas de boucle continue), on repart à
+    // zéro proprement : convoi masqué, nouveau délai aléatoire avant la
+    // prochaine arrivée sur la voie inversée.
+    r.agents.forEach(a=>{ a.t = 0; if(a.mesh) a.mesh.visible=false; });
+    r.trainCycle = { state:'wait', timer: 1+Math.random()*14 };
+  } else {
+    r.agents.forEach((a,i)=>{ a.t = i/r.agents.length; });
+  }
   renderRouteList();
   flashStatus(`Sens inversé : ${r.name}`);
 }
