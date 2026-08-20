@@ -82,15 +82,47 @@
     overflow-y:auto;
   }
   #toolbar-left .tool-btn{
-    justify-content:flex-start;width:180px;
+    justify-content:center;width:180px;text-align:center;
   }
+  #toolbar-left .tool-btn .tool-btn-label{text-transform:uppercase;letter-spacing:.03em;}
   #toolbar-left .tool-sep{height:1px;background:#2a3946;margin:4px 2px;}
   .tool-btn svg{width:16px;height:16px;flex-shrink:0;stroke-width:2;}
   .tool-btn .tool-btn-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
+  /* ---------- Popout rectangle/polygone à droite de "Nouveau bâtiment" ---------- */
+  .tool-btn-wrap{position:relative;}
+  #draw-mode-popout{
+    position:absolute;left:100%;top:0;margin-left:6px;z-index:8;
+    display:none;gap:6px;
+  }
+  #draw-mode-popout.show{display:flex;}
+  .draw-mode-btn{
+    width:34px;height:34px;flex-shrink:0;border-radius:4px;
+    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s ease;
+  }
+  .draw-mode-btn:hover{border-color:var(--accent);color:#fff;}
+  .draw-mode-btn svg{width:16px;height:16px;stroke-width:2;}
+
+  /* ---------- Mini liste des bâtiments (sous "Nouveau bâtiment"), visible
+     seulement quand cet outil est actif ---------- */
+  #bldg-mini-list{
+    display:none;flex-direction:column;padding:2px 2px 4px;max-height:260px;overflow-y:auto;
+  }
+  #bldg-mini-list.show{display:flex;}
+  #bldg-mini-empty{color:var(--muted);font-size:11px;line-height:1.4;font-family:'IBM Plex Mono',monospace;padding:4px 2px;}
+
+  /* ---------- Mini bloc arbres (sous "Arbre"), visible seulement quand cet
+     outil est actif ---------- */
+  #tree-mini-list{
+    display:none;flex-direction:column;padding:2px 2px 4px;
+  }
+  #tree-mini-list.show{display:flex;}
+  #tree-empty-note{color:var(--muted);font-size:11px;line-height:1.4;font-family:'IBM Plex Mono',monospace;padding:4px 2px;}
+
   /* ---------- Fenêtre de modification d'un bâtiment sélectionné (gauche, sous les outils) ---------- */
   #bldg-edit-window{
-    width:262px;flex-shrink:1;overflow-y:auto;min-height:0;
+    width:262px;flex-shrink:1;overflow-y:auto;overflow-x:hidden;min-height:0;
     background:rgba(15,22,29,.96);border:1px solid #2a3946;border-radius:8px;
     padding:12px 13px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;
@@ -194,26 +226,15 @@
   /* ---------- Side panel (fenêtre coulissante, masquée par défaut : gestion
      avancée — bâtiments/arbres/circulation/sauvegarde — plutôt qu'une colonne
      fixe permanente) ---------- */
-  #panel{
-    width:var(--panel-w);flex-shrink:0;background:var(--ink-2);
-    border-left:1px solid #23303b;display:flex;flex-direction:column;
-    overflow:hidden;
-    position:fixed;top:0;right:0;bottom:0;z-index:20;
-    box-shadow:-12px 0 30px rgba(0,0,0,.4);
-    transform:translateX(100%);transition:transform .18s ease;
+  #admin-panel{
+    position:absolute;bottom:78px;left:16px;z-index:6;width:240px;max-height:60vh;overflow-y:auto;
+    background:var(--ink-2);border:1px solid #23303b;border-radius:8px;
+    padding:14px 16px;box-shadow:0 12px 32px rgba(0,0,0,.4);
+    display:none;
   }
-  #panel.open{transform:translateX(0);}
-  #panel-toggle{
-    position:absolute;top:70px;right:16px;z-index:6;
-    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
-    border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;
-    font-family:'Space Grotesk',sans-serif;font-size:12.5px;transition:all .12s ease;
-  }
-  #panel-toggle:hover{border-color:var(--accent);color:#fff;}
-  #panel-toggle svg{width:15px;height:15px;stroke-width:2;}
-  #panel-scroll{overflow-y:auto;flex:1;padding:16px;}
-  #panel-scroll::-webkit-scrollbar{width:8px;}
-  #panel-scroll::-webkit-scrollbar-thumb{background:#2a3946;border-radius:4px;}
+  #admin-panel.show{display:block;}
+  #admin-panel::-webkit-scrollbar{width:8px;}
+  #admin-panel::-webkit-scrollbar-thumb{background:#2a3946;border-radius:4px;}
 
   .section-title{
     font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;
@@ -255,12 +276,12 @@
   .bldg-body{padding:0 10px 12px;border-top:1px solid #1a242d;display:none;}
   .bldg-body.open{display:block;}
 
-  .band-row{display:flex;gap:6px;align-items:center;margin:6px 0;font-size:11px;}
+  .band-row{display:flex;gap:5px;align-items:center;margin:6px 0;font-size:11px;}
   .band-row select{
     background:#141c24;border:1px solid #23303b;color:var(--paper);border-radius:3px;
-    padding:5px 6px;font-size:11px;flex-shrink:0;
+    padding:5px 4px;font-size:11px;flex:1;min-width:0;
   }
-  .band-row input[type=number]{width:44px;padding:5px 4px;font-size:11px;text-align:center;}
+  .band-row input[type=number]{width:38px;flex-shrink:0;padding:5px 2px;font-size:11px;text-align:center;}
   .band-row .x{color:var(--muted);flex-shrink:0;}
   .mini-btn{
     background:none;border:1px solid #2a3946;color:var(--muted);border-radius:3px;
@@ -269,11 +290,11 @@
   .mini-btn:hover{color:var(--paper);border-color:var(--blue);}
   .mini-btn.danger:hover{border-color:var(--com);color:var(--com);}
 
-  .btn-row{display:flex;gap:6px;margin-top:10px;}
+  .btn-row{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
   .small-action{
-    flex:1;font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;
+    flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;
     letter-spacing:.04em;background:#141c24;border:1px solid #23303b;color:var(--muted);
-    padding:6px;border-radius:3px;cursor:pointer;
+    padding:6px;border-radius:3px;cursor:pointer;white-space:normal;
   }
   .small-action:hover{color:var(--paper);border-color:var(--blue);}
   .small-action.danger:hover{color:var(--com);border-color:var(--com);}
@@ -408,7 +429,6 @@
     #ribbon{padding:8px 10px;gap:8px;}
     #status-line{display:none;}
     #compass{top:64px;right:8px;width:84px;height:84px;}
-    #panel-toggle{top:64px;right:8px;}
   }
   @media (max-width: 620px){
     #left-stack{bottom:auto;top:8px;left:8px;right:8px;width:auto;max-height:60vh;}
@@ -419,7 +439,6 @@
     #brush-row{width:100%;}
     #bldg-edit-window{width:100%;}
     #brand span{display:none;}
-    #panel{width:100vw;}
     #draw-hint{max-width:calc(100vw - 20px);flex-wrap:wrap;justify-content:center;}
   }
 </style>
@@ -441,8 +460,23 @@
     </div>
     <div id="left-stack">
     <div id="toolbar-left">
-      <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
+      <div class="tool-btn-wrap">
+        <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
+        <div id="draw-mode-popout">
+          <button class="draw-mode-btn" id="btn-mode-rect" title="Rectangle (cliquer-glisser-lâcher)"><i data-lucide="square"></i></button>
+          <button class="draw-mode-btn" id="btn-mode-poly" title="Polygone (clics successifs)"><i data-lucide="pentagon"></i></button>
+        </div>
+      </div>
+      <div id="bldg-mini-list">
+        <div id="bldg-mini-empty">Aucun bâtiment. Dessinez son emprise au sol.</div>
+        <div id="bldg-list"></div>
+      </div>
       <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
+      <div id="tree-mini-list">
+        <span id="tree-count" style="display:none;"></span>
+        <div id="tree-empty-note">Aucun arbre. Cliquez dans le polygone d'implantation pour en planter un ; recliquez sur un arbre pour le retirer.</div>
+        <button class="small-action" id="btn-clear-trees" style="display:none;width:100%;align-items:center;gap:5px;justify-content:center;margin:4px 0 2px;"><i data-lucide="trash-2" style="width:12px;height:12px;"></i> Supprimer tous les arbres</button>
+      </div>
       <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
       <div id="brush-row">
         <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
@@ -475,7 +509,6 @@
       <button class="sun-btn sun-btn-night" id="sun-btn-night" title="Mode nuit"><i data-lucide="moon"></i><span>NUIT</span></button>
     </div>
     <div id="loading-spinner"><div class="ring"></div></div>
-    <button id="panel-toggle" title="Bâtiments, arbres, circulation, sauvegarde"><i data-lucide="layout-panel-left"></i><span>Panneau</span></button>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
       <div class="legend-item"><div class="swatch" style="background:var(--res)"></div>Résidentiel</div>
@@ -489,6 +522,15 @@
       <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i></button>
       <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
       <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
+      <button id="btn-admin-panel" class="mini-fab admin-only" title="Circulation & couleurs véhicules (admin)"><i data-lucide="settings"></i></button>
+    </div>
+    <div id="admin-panel" class="admin-only">
+      <div class="section-title">Circulation</div>
+      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender.</div>
+      <button class="small-action" id="btn-load-routes" style="margin-bottom:8px;width:100%;display:flex;align-items:center;gap:5px;justify-content:center;"><i data-lucide="folder-open" style="width:14px;height:14px;"></i> Charger routes.json</button>
+      <div id="route-list" style="display:flex;flex-direction:column;"></div>
+      <div class="section-title">Couleurs véhicules</div>
+      <div id="vehicle-colors" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px;"></div>
     </div>
     <div id="about-overlay">
       <div id="about-modal">
@@ -539,36 +581,12 @@
     <div id="label-layer"></div>
     <div id="draw-hint">
       <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
-      <span><kbd>Entrée</kbd> valider</span>
+      <span id="draw-hint-enter"><kbd>Entrée</kbd> valider</span>
       <span><kbd>Échap</kbd> annuler</span>
     </div>
     <input type="file" id="file-load" accept="application/json">
     <input type="file" id="file-glb" accept=".glb,.gltf">
     <input type="file" id="file-routes" accept="application/json">
-  </div>
-
-  <div id="panel">
-    <div id="panel-scroll">
-      <div class="section-title">Bâtiments <span id="bldg-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="empty-note">Aucun bâtiment. Cliquez sur <b style="color:var(--paper)">+ Nouveau bâtiment</b> puis dessinez son emprise au sol directement sur la maquette. Le tracé est contraint au polygone d'implantation. Vous pouvez aussi cliquer directement sur un bâtiment de la maquette pour l'éditer.</div>
-      <div id="bldg-list"></div>
-
-      <div class="section-title">Arbres <span id="tree-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-      <div id="tree-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucun arbre. Cliquez sur <b style="color:var(--paper)">+ Arbre</b> puis dans le polygone d'implantation pour en planter un ; recliquez sur un arbre pour le retirer.</div>
-      <button class="small-action" id="btn-clear-trees" style="margin-bottom:8px;width:100%;display:none;align-items:center;gap:5px;justify-content:center;"><i data-lucide="trash-2" style="width:14px;height:14px;"></i> Supprimer tous les arbres</button>
-
-      <div class="section-title">Gazon</div>
-      <div style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;margin-bottom:16px;">Cliquez <b style="color:var(--paper)"><i data-lucide="paintbrush" style="width:12px;height:12px;vertical-align:-2px;"></i> Gazon</b> puis glissez sur la place pour peindre ; clic droit pour effacer. Taille du pinceau réglable sous le bouton Gazon.</div>
-
-      <div class="section-title">Circulation</div>
-      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender (voir avec l'administrateur du site).</div>
-      <button class="small-action admin-only" id="btn-load-routes" style="margin-bottom:8px;width:100%;align-items:center;gap:5px;justify-content:center;"><i data-lucide="folder-open" style="width:14px;height:14px;"></i> Charger routes.json</button>
-      <div class="admin-only" id="route-list" style="flex-direction:column;"></div>
-
-      <div class="section-title admin-only">Admin · couleurs véhicules</div>
-      <div class="admin-only" id="vehicle-colors" style="flex-direction:column;gap:8px;margin-bottom:16px;"></div>
-
-    </div>
   </div>
 </div>
 
@@ -1365,7 +1383,10 @@ fileGlb.addEventListener('change', (e)=>{
 let buildings = [];      // {id,name,points:[{x,z}],floors,bands:[{from,to,usage}],group,selected}
 let idCounter = 1;
 let drawing = false;
+let drawMode = 'polygon'; // 'polygon' | 'rect'
 let drawPoints = [];
+let rectDragging = false;
+let rectStartPt = null;
 let drawMarkers = new THREE.Group();
 let previewLine = null;
 worldRoot.add(drawMarkers);
@@ -1485,27 +1506,60 @@ function groundPointFromEvent(ev){
    DRAW MODE
    ============================================================ */
 const btnDraw = document.getElementById('btn-draw');
+const drawModePopout = document.getElementById('draw-mode-popout');
+const btnModeRect = document.getElementById('btn-mode-rect');
+const btnModePoly = document.getElementById('btn-mode-poly');
 const drawHint = document.getElementById('draw-hint');
 const drawHintText = document.getElementById('draw-hint-text');
+const drawHintEnter = document.getElementById('draw-hint-enter');
+const bldgMiniList = document.getElementById('bldg-mini-list');
+let drawMenuOpen = false;
 
-function startDraw(){
+function refreshBldgMiniListVisibility(){
+  const show = drawMenuOpen || drawing;
+  bldgMiniList.classList.toggle('show', show);
+  if(show) renderList();
+}
+function openDrawMenu(){
+  drawMenuOpen = true;
+  btnDraw.classList.add('active');
+  drawModePopout.classList.add('show');
+  refreshBldgMiniListVisibility();
+}
+function closeDrawMenu(){
+  drawMenuOpen = false;
+  drawModePopout.classList.remove('show');
+  if(!drawing) btnDraw.classList.remove('active');
+  refreshBldgMiniListVisibility();
+}
+
+function startDraw(mode){
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
+  drawMode = mode || 'polygon';
   drawing = true; drawPoints = [];
   clearMarkers();
   btnDraw.classList.add('active');
-  btnDraw.querySelector('.tool-btn-label').textContent = 'Dessin en cours…';
+  btnDraw.querySelector('.tool-btn-label').textContent = drawMode==='rect' ? 'Dessin en cours (rectangle)…' : 'Dessin en cours…';
+  drawHintText.textContent = drawMode==='rect'
+    ? 'Cliquez-glissez sur le sol pour tracer le rectangle du bâtiment'
+    : 'Cliquez sur le sol pour poser les sommets du bâtiment';
+  drawHintEnter.style.display = drawMode==='rect' ? 'none' : '';
   drawHint.classList.add('show');
   controls.enabled = false; // left click reserved for placing points while drawing
+  refreshBldgMiniListVisibility();
 }
 function cancelDraw(){
-  drawing = false; drawPoints = [];
+  drawing = false; drawPoints = []; rectDragging = false; rectStartPt = null;
   clearMarkers();
   btnDraw.classList.remove('active');
   btnDraw.querySelector('.tool-btn-label').textContent = 'Nouveau bâtiment';
   drawHint.classList.remove('show');
+  drawHintEnter.style.display = '';
   controls.enabled = true;
+  closeDrawMenu();
+  refreshBldgMiniListVisibility();
 }
 function clearMarkers(){
   drawMarkers.clear();
@@ -1976,18 +2030,51 @@ function finishDraw(){
 }
 
 btnDraw.addEventListener('click', ()=>{
-  drawing ? cancelDraw() : startDraw();
+  if(drawing){ cancelDraw(); return; }
+  drawMenuOpen ? closeDrawMenu() : openDrawMenu();
 });
+btnModePoly.addEventListener('click', ()=>{ closeDrawMenu(); startDraw('polygon'); });
+btnModeRect.addEventListener('click', ()=>{ closeDrawMenu(); startDraw('rect'); });
 
 renderer.domElement.addEventListener('click', (ev)=>{
-  if(!drawing) return;
+  if(!drawing || drawMode!=='polygon') return;
   const pt = groundPointFromEvent(ev);
   if(pt) addDrawPoint(pt);
 });
 window.addEventListener('keydown', (ev)=>{
   if(!drawing) return;
-  if(ev.key==='Enter') finishDraw();
+  if(ev.key==='Enter' && drawMode==='polygon') finishDraw();
   if(ev.key==='Escape') cancelDraw();
+});
+
+// ---- Mode rectangle : cliquer-glisser-lâcher trace un rectangle au sol,
+// contraint au polygone d'implantation via le même pipeline (finishDraw) que
+// le mode polygone — aucune duplication de la logique de réparation de bord.
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!drawing || drawMode!=='rect' || ev.button!==0) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  const start = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
+  rectDragging = true;
+  rectStartPt = {x:start.x, z:start.z};
+  drawPoints = [{x:rectStartPt.x, z:rectStartPt.z}];
+  refreshPreview();
+});
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!drawing || drawMode!=='rect' || !rectDragging) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  const x0=rectStartPt.x, z0=rectStartPt.z, x1=pt.x, z1=pt.z;
+  drawPoints = [ {x:x0,z:z0}, {x:x1,z:z0}, {x:x1,z:z1}, {x:x0,z:z1} ];
+  refreshPreview();
+});
+window.addEventListener('pointerup', ()=>{
+  if(!drawing || drawMode!=='rect' || !rectDragging) return;
+  rectDragging = false;
+  const tooSmall = drawPoints.length<4 ||
+    (Math.hypot(drawPoints[0].x-drawPoints[2].x, drawPoints[0].z-drawPoints[2].z) < 1);
+  if(tooSmall){ drawPoints = []; clearMarkers(); return; }
+  finishDraw();
 });
 
 /* ============================================================
@@ -2103,7 +2190,9 @@ function startTreeTool(){
   btnTree.classList.add('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Cliquez le polygone…';
   drawHint.classList.add('show');
   drawHintText.textContent = "Cliquez dans le polygone d'implantation pour planter un arbre · recliquez un arbre pour le retirer (Échap pour arrêter)";
+  drawHintEnter.style.display = 'none';
   controls.enabled = false;
+  document.getElementById('tree-mini-list').classList.add('show');
 }
 function stopTreeTool(){
   treePlacing = false;
@@ -2115,6 +2204,7 @@ function stopTreeTool(){
   if(treePreviewObj) treePreviewObj.visible = false;
   treeHoverId = null;
   renderer.domElement.style.cursor = '';
+  document.getElementById('tree-mini-list').classList.remove('show');
 }
 btnTree.addEventListener('click', ()=> treePlacing ? stopTreeTool() : startTreeTool());
 window.addEventListener('keydown', (ev)=>{
@@ -2389,6 +2479,7 @@ function startGrassTool(){
   btnGrass.classList.add('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Glissez pour peindre…';
   drawHint.classList.add('show');
   drawHintText.textContent = "Glissez sur la place pour peindre du gazon · clic droit pour effacer (Échap pour arrêter)";
+  drawHintEnter.style.display = 'none';
   ensureGrassCursorDecal();
   updateBrushRowState();
 }
@@ -2721,7 +2812,10 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
 renderer.domElement.addEventListener('click', (ev)=>{
   if(toolIsActive()) return;
   const hit = buildingHitAt(ev);
-  if(!hit) return;
+  if(!hit){
+    if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
+    return;
+  }
   selectBuilding(hit.id);
   openBldgEditWindow(hit.id);
 });
@@ -3056,11 +3150,9 @@ window.addEventListener('keydown', (ev)=>{
    SIDE PANEL — building list & editors
    ============================================================ */
 const bldgList = document.getElementById('bldg-list');
-const emptyNote = document.getElementById('empty-note');
-const bldgCount = document.getElementById('bldg-count');
+const emptyNote = document.getElementById('bldg-mini-empty');
 
 function renderList(){
-  bldgCount.textContent = buildings.length ? `(${buildings.length})` : '';
   emptyNote.style.display = buildings.length ? 'none' : 'block';
   bldgList.innerHTML = '';
   buildings.forEach(b=>{
@@ -3109,6 +3201,7 @@ function openBldgEditWindow(id){
 function closeBldgEditWindow(){
   bldgEditWindow.classList.remove('show');
   if(editingBuildingId) stopEditBuildingShape();
+  if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
 }
 function renderBldgEditWindow(b){
   if(!b){ closeBldgEditWindow(); return; }
@@ -3267,15 +3360,15 @@ btnToggleLegend.addEventListener('click', ()=>{
 });
 
 /* ============================================================
-   PANNEAU LATÉRAL (bâtiments / arbres / circulation / sauvegarde) —
-   masqué par défaut, ouvert via le bouton "Panneau" ou automatiquement
-   quand on sélectionne un bâtiment sur la maquette.
+   PANNEAU ADMIN (circulation / couleurs véhicules) — masqué par défaut,
+   accessible uniquement en mode admin (?admin=1), ouvert via le petit
+   bouton engrenage en bas à gauche.
    ============================================================ */
-const sidePanel = document.getElementById('panel');
-const panelToggle = document.getElementById('panel-toggle');
-function openPanel(){ sidePanel.classList.add('open'); }
-function closePanel(){ sidePanel.classList.remove('open'); }
-panelToggle.addEventListener('click', ()=> sidePanel.classList.toggle('open'));
+const adminPanel = document.getElementById('admin-panel');
+const btnAdminPanel = document.getElementById('btn-admin-panel');
+if(btnAdminPanel){
+  btnAdminPanel.addEventListener('click', ()=> adminPanel.classList.toggle('show'));
+}
 
 /* ============================================================
    MODALE À PROPOS
