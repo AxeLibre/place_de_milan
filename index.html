@@ -630,6 +630,7 @@ if(new URLSearchParams(location.search).get('admin')==='1'){
 const viewport = document.getElementById('viewport');
 const statusLine = document.getElementById('status-line');
 const scene = new THREE.Scene();
+let bldgHoverMaterial = null; // assigné plus bas (voir survol bâtiment) ; déclaré ici tôt car resize() y fait référence dès le chargement
 scene.background = new THREE.Color(0x101820);
 scene.fog = new THREE.Fog(0x101820, 420, 950); // brouillard allégé : commence plus loin pour rester lisible dézoomé, tout en restant présent en fond
 
@@ -665,7 +666,7 @@ function resize(){
   const w = viewport.clientWidth, h = viewport.clientHeight;
   camera.aspect = w/h; camera.updateProjectionMatrix();
   renderer.setSize(w,h);
-  if(typeof bldgHoverMaterial !== 'undefined') bldgHoverMaterial.resolution.set(w,h);
+  if(bldgHoverMaterial) bldgHoverMaterial.resolution.set(w,h);
 }
 window.addEventListener('resize', resize);
 
@@ -2642,7 +2643,7 @@ function selectBuilding(id){
    ============================================================ */
 let bldgHoverId = null;
 let bldgHoverOutline = null;
-const bldgHoverMaterial = new THREE.LineMaterial({
+bldgHoverMaterial = new LineMaterial({
   color: 0x6fe8ff, transparent:true, opacity:1, linewidth:4.5, // px, résolution mise à jour dans resize()
   depthTest:false
 });
