@@ -139,16 +139,21 @@
   }
   .brush-btn.disabled{opacity:.4;pointer-events:none;}
 
-  /* ---------- Help ("?") button, bottom-left ---------- */
-  #btn-help{
+  /* ---------- Petit menu bas-gauche : capture / sauver / charger / aide ---------- */
+  #bottom-left-menu{
     position:absolute;bottom:22px;left:16px;z-index:6;
-    width:38px;height:38px;border-radius:50%;
+    display:flex;align-items:center;gap:8px;
+  }
+  #bottom-left-menu .mini-fab{
+    width:38px;height:38px;border-radius:50%;flex-shrink:0;
     background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
     display:flex;align-items:center;justify-content:center;cursor:pointer;
     font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;
     transition:all .12s ease;
   }
-  #btn-help:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px);}
+  #bottom-left-menu .mini-fab:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px);}
+  #bottom-left-menu .mini-fab svg{width:17px;height:17px;stroke-width:2;}
+  #btn-help{ font-size:16px; }
 
   /* ---------- About modal ---------- */
   #about-overlay{
@@ -295,7 +300,7 @@
   body.is-admin button.admin-only{display:inline-flex;}
 
   #compass{
-    position:absolute;top:70px;right:16px;z-index:5;width:46px;height:46px;
+    position:absolute;top:70px;right:72px;z-index:7;width:46px;height:46px;
     background:var(--ink-2);border:1px solid #2a3946;border-radius:50%;
     display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;
     font-size:9px;font-weight:700;color:var(--accent);cursor:pointer;padding:0;
@@ -477,7 +482,12 @@
       <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div>Hôtel</div>
       <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div>Services / équipements</div>
     </div>
-    <button id="btn-help" title="À propos">?</button>
+    <div id="bottom-left-menu">
+      <button id="btn-help" class="mini-fab" title="À propos">?</button>
+      <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i></button>
+      <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
+      <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
+    </div>
     <div id="about-overlay">
       <div id="about-modal">
         <h2>Place de Milan <button id="about-close" title="Fermer"><i data-lucide="x"></i></button></h2>
@@ -487,7 +497,7 @@
           <li><b>+ Nouveau bâtiment</b> : tracez une emprise au sol, elle est contrainte au polygone d'implantation.</li>
           <li><b>Arbre / Gazon</b> : plantez des arbres et peignez des zones végétalisées.</li>
           <li><b>Légende</b> : bascule entre la coloration par usage (résidentiel, bureaux…) et un rendu neutre en verre.</li>
-          <li><b>Exporter / Sauver</b> : générez une image PNG ou sauvegardez votre projet en JSON.</li>
+          <li><b>Exporter / Sauver</b> : générez une image PNG ou sauvegardez votre projet en JSON (boutons en bas à gauche).</li>
         </ul>
         <p style="color:var(--muted);font-size:11.5px;">Maquette 3D et voies importées depuis Blender.</p>
       </div>
@@ -536,13 +546,6 @@
       <div class="admin-only" id="vehicle-colors" style="flex-direction:column;gap:8px;margin-bottom:16px;"></div>
 
     </div>
-    <div id="footer-actions">
-      <button class="primary-btn" id="btn-export-png">Exporter l'image (PNG)</button>
-      <div class="secondary-row">
-        <button class="tool-btn" id="btn-save-json"><i data-lucide="save"></i><span class="tool-btn-label">Sauver le projet</span></button>
-        <button class="tool-btn" id="btn-load-json"><i data-lucide="folder-open"></i><span class="tool-btn-label">Charger</span></button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -560,6 +563,9 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { Line2 } from "three/addons/lines/Line2.js";
+import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 
 /* ============================================================
    CONFIG
@@ -659,6 +665,7 @@ function resize(){
   const w = viewport.clientWidth, h = viewport.clientHeight;
   camera.aspect = w/h; camera.updateProjectionMatrix();
   renderer.setSize(w,h);
+  if(typeof bldgHoverMaterial !== 'undefined') bldgHoverMaterial.resolution.set(w,h);
 }
 window.addEventListener('resize', resize);
 
@@ -688,15 +695,18 @@ const compassNeedle = document.getElementById('compass-needle');
 function updateCompass(){
   const dx = camera.position.x - controls.target.x;
   const dz = camera.position.z - controls.target.z;
-  // Azimut de la caméra autour de la cible, mesuré depuis +Z (Nord) : 0 quand
-  // la caméra est plein Sud en train de regarder plein Nord.
-  const azimuth = Math.atan2(dx, dz);
+  // Azimut de la DIRECTION DE VUE de la caméra (cible - caméra), mesuré depuis
+  // +Z (Nord) : 0 quand la caméra est plein Sud en train de regarder plein
+  // Nord. On part bien de -dx/-dz (la direction vers laquelle on regarde),
+  // pas de dx/dz (la direction vers la caméra), sinon l'aiguille pointe à
+  // l'envers (Sud affiché quand on regarde le Nord, et inversement).
+  const azimuth = Math.atan2(-dx, -dz);
   compassNeedle.style.transform = `rotate(${azimuth}rad)`;
 }
 function orientCameraNorth(){
   const offset = camera.position.clone().sub(controls.target);
   const radiusXZ = Math.hypot(offset.x, offset.z);
-  offset.x = 0; offset.z = radiusXZ; // caméra plein Sud de la cible -> elle regarde plein Nord (+Z)
+  offset.x = 0; offset.z = -radiusXZ; // caméra plein Sud de la cible (-Z) -> elle regarde plein Nord (+Z)
   camera.position.set(controls.target.x+offset.x, camera.position.y, controls.target.z+offset.z);
   controls.update();
 }
@@ -2542,11 +2552,15 @@ function rebuildMesh(b){
     b.group.add(line);
   }
 
-  // selection halo
+  // selection halo — surélevé et depthTest désactivé pour éviter tout
+  // z-fighting/scintillement avec le sol juste en dessous (c'était la
+  // "ligne scintillante à la base des nouveaux bâtiments" : à 0.06 elle
+  // était quasi coplanaire avec le sol et clignotait selon l'angle caméra).
   if(b.id === selectedId){
-    const outlinePts = b.points.map(p=>new THREE.Vector3(p.x,0.06,p.z));
+    const outlinePts = b.points.map(p=>new THREE.Vector3(p.x,0.18,p.z));
     outlinePts.push(outlinePts[0].clone());
-    const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:NEON_BLUE}));
+    const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:NEON_BLUE, depthTest:false, transparent:true}));
+    halo.renderOrder = 39;
     b.group.add(halo);
   }
 
@@ -2628,13 +2642,15 @@ function selectBuilding(id){
    ============================================================ */
 let bldgHoverId = null;
 let bldgHoverOutline = null;
+const bldgHoverMaterial = new THREE.LineMaterial({
+  color: 0x6fe8ff, transparent:true, opacity:1, linewidth:4.5, // px, résolution mise à jour dans resize()
+  depthTest:false
+});
+bldgHoverMaterial.resolution.set(window.innerWidth, window.innerHeight);
 function ensureBldgHoverOutline(){
   if(bldgHoverOutline) return bldgHoverOutline;
-  bldgHoverOutline = new THREE.Line(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({ color:NEON_BLUE, transparent:true, opacity:0.95 })
-  );
-  bldgHoverOutline.renderOrder = 40;
+  bldgHoverOutline = new Line2(new LineGeometry(), bldgHoverMaterial);
+  bldgHoverOutline.renderOrder = 41;
   worldRoot.add(bldgHoverOutline);
   return bldgHoverOutline;
 }
@@ -2659,10 +2675,13 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
     if(bldgHoverId !== hit.id){
       bldgHoverId = hit.id;
       ensureBldgHoverOutline();
-      const pts = hit.points.map(p=>new THREE.Vector3(p.x,0.08,p.z));
-      pts.push(pts[0].clone());
+      const flat = [];
+      hit.points.forEach(p=> flat.push(p.x, 0.2, p.z));
+      flat.push(hit.points[0].x, 0.2, hit.points[0].z);
       bldgHoverOutline.geometry.dispose();
-      bldgHoverOutline.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+      bldgHoverOutline.geometry = new LineGeometry();
+      bldgHoverOutline.geometry.setPositions(flat);
+      bldgHoverOutline.computeLineDistances();
       bldgHoverOutline.visible = true;
     }
     renderer.domElement.style.cursor = 'pointer';
@@ -3343,9 +3362,12 @@ function positionSunForHour(hourDecimal){
   // chaud (orangé) au lever/coucher, franc et plus neutre à midi.
   const altDeg = alt*180/Math.PI;
   const t = Math.max(0, Math.min(1, altDeg/44.25)); // 44.25° = hauteur max à midi, latitude de Lyon
-  sun.intensity = 0.55 + t*1.1;
+  sun.intensity = 0.7 + t*1.35;
   sun.color.setHex(t<0.35 ? 0xffb066 : 0xfff2df);
-  hemiLight.intensity = 0.6 + t*0.2;
+  // La lumière ambiante (hémisphère) était presque aussi forte que le soleil
+  // au lever/coucher (0.6 vs 0.55), ce qui noyait les ombres de contraste :
+  // on part maintenant beaucoup plus bas (0.22) et on monte plus doucement.
+  hemiLight.intensity = 0.22 + t*0.28;
   return { alt, az, t };
 }
 
@@ -3680,6 +3702,7 @@ fileLoad.addEventListener('change', (e)=>{
    allumés/éteints globalement avec le mode nuit (voir applyVehicleLightState).
    ============================================================ */
 const ROUTE_TYPES = {
+  tgv:    { label:'TGV',     color:0x1c3f7a, speed:16, count:1,  wagons:4, parts:['tgvAvant','tgvMilieu','tgvMilieu','tgvArriere'], length:24,   fallbackScale:[2.7,3.1,17] },
   train:  { label:'Train',   color:0xb9bfc4, speed:12, count:1,  wagons:4, parts:['trainAvant','trainMilieu','trainMilieu','trainArriere'], length:21,   fallbackScale:[2.6,3.0,16] },
   tram:   { label:'Tram',    color:0xe9e9e9, speed:8,  count:1,  wagons:3, parts:['tramAvant','tramMilieu','tramArriere'], length:14,   fallbackScale:[2.2,2.6,9] },
   bus:    { label:'Bus',     color:0x7a0000, speed:7,  count:4,  wagons:1, part:'bus',                                    length:8.9,  fallbackScale:[2,2.4,6]  },
@@ -3727,10 +3750,15 @@ function findMaterialByName(root, name){
   });
   return found;
 }
+function applyVehicleLightStateTrainExtras(on){
+  if(vehicleLightMaterials.blancTrain) vehicleLightMaterials.blancTrain.emissiveIntensity = on ? 3.0 : 0;
+  if(vehicleLightMaterials.rougeTrain) vehicleLightMaterials.rougeTrain.emissiveIntensity = on ? 2.2 : 0;
+}
 function applyVehicleLightState(){
   const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
   if(vehicleLightMaterials.blanc) vehicleLightMaterials.blanc.emissiveIntensity = on ? 3.0 : 0;
   if(vehicleLightMaterials.rouge) vehicleLightMaterials.rouge.emissiveIntensity = on ? 2.2 : 0;
+  applyVehicleLightStateTrainExtras(on);
 }
 // Vitres des trains ("vitres_trains") : émissives à 0.5 en mode nuit
 // seulement, avec la couleur d'émission déjà réglée sur son propre shader
@@ -3748,9 +3776,14 @@ function loadTrainsFromGLB(){
       const trainAvant = findByNameCI(scene, 'train_avant');
       const trainMilieu = findByNameCI(scene, 'train_milieu');
       const trainArriere = findByNameCI(scene, 'train_arrière') || findByNameCI(scene, 'train_arriere');
-      if(vehicleTemplates) Object.assign(vehicleTemplates, { trainAvant, trainMilieu, trainArriere });
-      else vehicleTemplates = { trainAvant, trainMilieu, trainArriere };
-      trainWindowMaterial = findMaterialByName(trainMilieu, 'vitres_trains') || findMaterialByName(trainAvant, 'vitres_trains') || findMaterialByName(trainArriere, 'vitres_trains');
+      const tgvAvant = findByNameCI(scene, 'tgv_avant');
+      const tgvMilieu = findByNameCI(scene, 'tgv_milieu');
+      const tgvArriere = findByNameCI(scene, 'tgv_arrière') || findByNameCI(scene, 'tgv_arriere');
+      const trainSet = { trainAvant, trainMilieu, trainArriere, tgvAvant, tgvMilieu, tgvArriere };
+      if(vehicleTemplates) Object.assign(vehicleTemplates, trainSet);
+      else vehicleTemplates = trainSet;
+      trainWindowMaterial = findMaterialByName(trainMilieu, 'vitres_trains') || findMaterialByName(trainAvant, 'vitres_trains') || findMaterialByName(trainArriere, 'vitres_trains')
+        || findMaterialByName(tgvMilieu, 'vitres_trains') || findMaterialByName(tgvAvant, 'vitres_trains') || findMaterialByName(tgvArriere, 'vitres_trains');
       if(trainWindowMaterial){
         // Couleur d'émission "blanc jaunâtre" du shader du matériau : si le
         // .glb n'en définit pas déjà une (export Blender par défaut à noir),
@@ -3760,6 +3793,15 @@ function loadTrainsFromGLB(){
         }
         applyTrainWindowEmissive();
       }
+      // Phares train/TGV : trains.glb est un fichier séparé de vehicules.glb,
+      // donc ses matériaux "phare_blanc"/"phare_rouge" sont des instances
+      // DIFFÉRENTES de celles trouvées côté bus/voiture/tram — sans ceci les
+      // phares des trains et TGV ne s'allumaient jamais en mode nuit.
+      const trainBlanc = findMaterialByName(tgvAvant,'phare_blanc') || findMaterialByName(trainAvant,'phare_blanc');
+      const trainRouge = findMaterialByName(tgvArriere,'phare_rouge') || findMaterialByName(trainArriere,'phare_rouge');
+      if(trainBlanc){ trainBlanc.emissive = new THREE.Color(0xffffff); vehicleLightMaterials.blancTrain = trainBlanc; }
+      if(trainRouge){ trainRouge.emissive = new THREE.Color(0xff2a2a); vehicleLightMaterials.rougeTrain = trainRouge; }
+      applyVehicleLightState();
       resolve();
     }, undefined, ()=>{ resolve(); }); // fichier optionnel : on continue sans trains si absent
   });
@@ -3842,7 +3884,7 @@ function instantiateVehiclePart(cfg, wagonIndex){
   mesh.castShadow = true;
   return mesh;
 }
-ROUTE_TYPES.train._fallbackKey='train'; ROUTE_TYPES.tram._fallbackKey='tram'; ROUTE_TYPES.bus._fallbackKey='bus'; ROUTE_TYPES.voiture._fallbackKey='voiture';
+ROUTE_TYPES.train._fallbackKey='train'; ROUTE_TYPES.tgv._fallbackKey='tgv'; ROUTE_TYPES.tram._fallbackKey='tram'; ROUTE_TYPES.bus._fallbackKey='bus'; ROUTE_TYPES.voiture._fallbackKey='voiture';
 
 function createRoute(points, type, name){
   if(!points || points.length<2) return null; // pas assez de points pour tracer un chemin
@@ -3877,7 +3919,7 @@ function createRoute(points, type, name){
   // voir tickTrainRoute(). Les wagons démarrent masqués, le premier passage
   // arrive après un délai initial aléatoire pour désynchroniser les lignes
   // entre elles.
-  if(type==='train'){
+  if(type==='train' || type==='tgv'){
     agents.forEach(a=>{ if(a.mesh) a.mesh.visible=false; });
     route.trainCycle = { state:'wait', timer: 1+Math.random()*14 };
   }
@@ -3895,7 +3937,7 @@ function tickAgents(dt){
   for(const r of routes){
     const len = r.curve.getLength();
     if(len<=0) continue;
-    if(r.type==='train'){ tickTrainRoute(r, len, dt); continue; }
+    if(r.type==='train' || r.type==='tgv'){ tickTrainRoute(r, len, dt); continue; }
     r.agents.forEach((a)=>{
       a.t = (a.t + (a.speed*dt)/len) % 1;
       // le wagon n'est jamais exactement à a.t : il traîne derrière de
@@ -3997,7 +4039,7 @@ function reverseRoute(id){
     r.points.map(p=>new THREE.Vector3(p.x, p.y!==undefined?p.y:0.15, p.z)),
     false, 'catmullrom', 0.2
   );
-  if(r.type==='train'){
+  if(r.type==='train' || r.type==='tgv'){
     // Pour un train (aller simple, pas de boucle continue), on repart à
     // zéro proprement : convoi masqué, nouveau délai aléatoire avant la
     // prochaine arrivée sur la voie inversée.
