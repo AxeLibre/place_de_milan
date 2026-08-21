@@ -4522,7 +4522,7 @@ function extCreateSlice(faceC, referenceOutward, parentSlice){
     rotateHandle: extMakeHandle(0x2ee8ff, 'cone'),
   };
   slice.group.name = 'ExtGareTranche';
-  worldRoot.add(slice.group);
+  scene.add(slice.group);
   scene.add(slice.moveHandle);
   scene.add(slice.rotateHandle);
   extRebuildSliceGeometry(slice);
@@ -4625,7 +4625,7 @@ function extConfirmPendingSlice(){
 function extCancelPendingSlice(){
   if(!extPendingSlice) return;
   const slice = extPendingSlice;
-  worldRoot.remove(slice.group);
+  scene.remove(slice.group);
   scene.remove(slice.moveHandle, slice.rotateHandle);
   extPendingSlice = null;
   if(slice.parentId){
@@ -4640,9 +4640,9 @@ function extExitTool(){
   extToolActive = false;
   btnExtensionGare.classList.remove('active');
   if(extPendingSlice){ worldRoot.remove(extPendingSlice.group); scene.remove(extPendingSlice.moveHandle, extPendingSlice.rotateHandle); extPendingSlice=null; }
-  extHallSlices.forEach(s=> worldRoot.remove(s.group));
+  extHallSlices.forEach(s=> scene.remove(s.group));
   extHallSlices = [];
-  if(extFusedMesh){ worldRoot.remove(extFusedMesh); extFusedMesh.geometry.dispose(); extFusedMesh=null; }
+  if(extFusedMesh){ scene.remove(extFusedMesh); extFusedMesh.geometry.dispose(); extFusedMesh=null; }
   extPlusButtons.forEach(btn=>btn.remove());
   extPlusButtons.clear();
   extGareHint.classList.remove('show');
@@ -4702,9 +4702,9 @@ function extFusionnerTranches(){
   const mesh = new THREE.Mesh(merged, extMaterial());
   mesh.castShadow = true; mesh.receiveShadow = true;
   mesh.name = 'ExtGareFusion';
-  worldRoot.add(mesh);
+  scene.add(mesh);
   extFusedMesh = mesh;
-  extHallSlices.forEach(s=>{ worldRoot.remove(s.group); extRemovePlusButton(s.id); });
+  extHallSlices.forEach(s=>{ scene.remove(s.group); extRemovePlusButton(s.id); });
   extHallSlices = [];
   extGareHintText.textContent = "Extension fusionnée ✓ (sommets soudés, rendu lissé).";
   btnExtFusionner.style.display = 'none';
