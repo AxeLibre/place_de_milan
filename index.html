@@ -3873,7 +3873,7 @@ const DETECTOR_STOP_WAIT = { tram:2, train:4, tgv:4 };
 // (plus la constante est grande, plus la transition est rapide).
 const DETECTOR_EASE = { toHalf:1.6, toStop:3.2, toCruise:0.7, cruiseHold:1.2 };
 function updateDetectorSpeedControl(r, dt, headPos){
-  const box = detectorBoxes[r.type];
+  const box = detectorBoxes[r.type==='tgv' ? 'train' : r.type];
   if(!box){ r.speedFactor = 1; return; }
   if(!r.speedCtrl) r.speedCtrl = { state:'cruise', factor:1, wasInZone:false, stopTimer:0 };
   const sc = r.speedCtrl;
