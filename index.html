@@ -349,6 +349,27 @@
   }
   #site-status-banner button:hover{color:var(--paper);}
   #label-layer{position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden;}
+  #ext-gare-layer{position:absolute;inset:0;pointer-events:none;z-index:6;overflow:hidden;}
+  .ext-plus-btn{
+    position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;
+    width:34px;height:34px;border-radius:50%;border:2px solid #fff;
+    background:var(--acc,#e0663f);color:#fff;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 10px rgba(0,0,0,.4);font-size:20px;font-weight:700;line-height:1;
+    animation:extPlusPulse 1.6s ease-in-out infinite;
+  }
+  .ext-plus-btn:hover{filter:brightness(1.15);}
+  @keyframes extPlusPulse{0%,100%{box-shadow:0 2px 10px rgba(224,102,63,.5);}50%{box-shadow:0 2px 18px rgba(224,102,63,.95);}}
+  #ext-gare-hint{
+    position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:8;
+    background:rgba(15,20,26,.92);color:#fff;padding:8px 16px;border-radius:8px;
+    font-size:13px;display:none;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.4);
+  }
+  #ext-gare-hint.show{display:flex;}
+  #ext-gare-hint button{
+    background:var(--acc,#e0663f);color:#fff;border:none;border-radius:6px;padding:5px 12px;
+    font-size:12px;cursor:pointer;font-weight:600;
+  }
+  #ext-gare-hint button.ghost{background:transparent;border:1px solid rgba(255,255,255,.35);}
   #label-lines{position:absolute;inset:0;pointer-events:none;z-index:3;width:100%;height:100%;}
   .label-chip{
     position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;
@@ -579,6 +600,13 @@
     <div id="site-status-banner"></div>
     <svg id="label-lines"></svg>
     <div id="label-layer"></div>
+    <div id="ext-gare-layer"></div>
+    <div id="ext-gare-hint">
+      <span id="ext-gare-hint-text">Fais glisser la face A (sphère orange) pour la positionner, la poignée bleue pour l'orienter.</span>
+      <button id="ext-gare-valider">Valider la tranche</button>
+      <button id="ext-gare-fusionner" class="ghost" style="display:none;">Fusionner (lissage)</button>
+      <button id="ext-gare-annuler" class="ghost">Annuler</button>
+    </div>
     <div id="draw-hint">
       <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
       <span id="draw-hint-enter"><kbd>Entrée</kbd> valider</span>
@@ -603,7 +631,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeVertices, mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
@@ -1327,11 +1355,10 @@ btnTogglePLU.addEventListener('click', ()=>{
 });
 const btnExtensionGare = document.getElementById('btn-toggle-extension-gare');
 btnExtensionGare.addEventListener('click', ()=>{
-  if(!extensionGareMesh){ flashStatus("Extension Gare introuvable dans la maquette chargée"); return; }
-  extensionGareMesh.visible = !extensionGareMesh.visible;
-  btnExtensionGare.classList.toggle('active', extensionGareMesh.visible);
-  const label = btnExtensionGare.querySelector('.tool-btn-label');
-  if(label) label.textContent = extensionGareMesh.visible ? 'Retirer Extension Gare' : 'Ajouter Extension Gare';
+  // La maquette "Extension_Gare" statique du .glb ne sert plus ici : l'outil
+  // interactif (tranches déplaçables/orientables, chaînables) est défini plus
+  // bas dans ce fichier — voir "OUTIL EXTENSION GARE".
+  toggleExtensionGareTool();
 });
 function showSiteBanner(html, ok=false){
   const el = document.getElementById('site-status-banner');
@@ -4373,6 +4400,331 @@ function tryAutoLoadRoutes(){
    ============================================================ */
 resize();
 const clock = new THREE.Clock();
+/* ============================================================
+   OUTIL EXTENSION GARE — tranches chaînables, face C fixe (collée au
+   hall ou à la tranche précédente), face A déplaçable + orientable
+   (plan horizontal), fusion finale par soudure des sommets proches.
+   ============================================================ */
+const extGareLayer   = document.getElementById('ext-gare-layer');
+const extGareHint     = document.getElementById('ext-gare-hint');
+const extGareHintText = document.getElementById('ext-gare-hint-text');
+const btnExtValider    = document.getElementById('ext-gare-valider');
+const btnExtFusionner  = document.getElementById('ext-gare-fusionner');
+const btnExtAnnuler    = document.getElementById('ext-gare-annuler');
+
+const EXT_DEPTH_DEFAULT  = 12;   // m, profondeur par défaut d'une nouvelle tranche
+const EXT_HEIGHT_DEFAULT = 9;    // m, repli si la hauteur du hall n'est pas mesurable
+
+let extToolActive   = false;
+let extHallSlices    = [];  // tranches validées (dans l'ordre de la chaîne)
+let extPendingSlice  = null; // tranche en cours d'édition (déplaçable/orientable), ou null
+let extFusedMesh     = null;
+let extDragMode      = null; // 'move' | 'rotate' | null
+const extPlusButtons = new Map(); // sliceId -> HTMLElement
+
+function extMaterial(){
+  let src = null;
+  if(hallMesh) hallMesh.traverse(o=>{ if(!src && o.isMesh && o.material) src = o.material; });
+  if(src){
+    const m = src.clone();
+    m.side = THREE.DoubleSide;
+    return m;
+  }
+  return new THREE.MeshStandardMaterial({ color:0x8fa4b3, roughness:0.6, metalness:0.1, side:THREE.DoubleSide });
+}
+function extHallHeight(){
+  if(hallMesh){
+    const box = new THREE.Box3().setFromObject(hallMesh);
+    const h = box.max.y - box.min.y;
+    if(isFinite(h) && h>1) return h;
+  }
+  return EXT_HEIGHT_DEFAULT;
+}
+// Bord de façade (2 points au sol) le plus aligné avec une direction "vers
+// l'extérieur" donnée — utilisé pour la face A du hall (première tranche)
+// comme pour chaque face A déjà validée (tranches suivantes).
+function extOutwardEdgeFromObject(obj, preferredOutward){
+  const pts = [];
+  obj.traverse(o=>{
+    if(!o.isMesh) return;
+    o.updateWorldMatrix(true,false);
+    const pos = o.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    for(let i=0;i<pos.count;i++){ v.fromBufferAttribute(pos,i).applyMatrix4(o.matrixWorld); pts.push({x:v.x,z:v.z}); }
+  });
+  const hull = convexHullXZ(dedupe(pts));
+  if(hull.length<3) return null;
+  const centroid = hull.reduce((s,p)=>({x:s.x+p.x,z:s.z+p.z}),{x:0,z:0});
+  centroid.x/=hull.length; centroid.z/=hull.length;
+  const ref = preferredOutward || new THREE.Vector3(0,0,1);
+  let best=null, bestDot=-Infinity;
+  for(let i=0;i<hull.length;i++){
+    const p1=hull[i], p2=hull[(i+1)%hull.length];
+    let nx = (p2.z-p1.z), nz = -(p2.x-p1.x);
+    const len = Math.hypot(nx,nz)||1; nx/=len; nz/=len;
+    const mid = {x:(p1.x+p2.x)/2, z:(p1.z+p2.z)/2};
+    if((mid.x-centroid.x)*nx + (mid.z-centroid.z)*nz < 0){ nx=-nx; nz=-nz; }
+    const dot = nx*ref.x + nz*ref.z;
+    if(dot>bestDot){ bestDot=dot; best={p1:{...p1}, p2:{...p2}, normal:new THREE.Vector3(nx,0,nz)}; }
+  }
+  return best;
+}
+function extOutwardNormalFor(p1,p2, referenceOutward){
+  let nx=(p2.z-p1.z), nz=-(p2.x-p1.x);
+  const len=Math.hypot(nx,nz)||1; nx/=len; nz/=len;
+  const n = new THREE.Vector3(nx,0,nz);
+  if(referenceOutward && n.dot(referenceOutward)<0) n.negate();
+  return n;
+}
+function extMakeHandle(color, shape){
+  const geo = shape==='cone' ? new THREE.ConeGeometry(0.9,2.2,16) : new THREE.SphereGeometry(1.1,16,16);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color, depthTest:false}));
+  mesh.renderOrder = 50;
+  return mesh;
+}
+function extCreateSlice(faceC, referenceOutward, parentSlice){
+  const width = Math.hypot(faceC.p2.x-faceC.p1.x, faceC.p2.z-faceC.p1.z);
+  const widthDirC = new THREE.Vector2((faceC.p2.x-faceC.p1.x)/width, (faceC.p2.z-faceC.p1.z)/width);
+  const outward = extOutwardNormalFor(faceC.p1, faceC.p2, referenceOutward);
+  const midC = {x:(faceC.p1.x+faceC.p2.x)/2, z:(faceC.p1.z+faceC.p2.z)/2};
+  const slice = {
+    id: 'ext'+(idCounter++),
+    parentId: parentSlice ? parentSlice.id : null,
+    faceC: { p1:{...faceC.p1}, p2:{...faceC.p2} },
+    widthDirC,
+    width,
+    height: extHallHeight(),
+    outwardHint: outward.clone(),
+    center: { x: midC.x + outward.x*EXT_DEPTH_DEFAULT, z: midC.z + outward.z*EXT_DEPTH_DEFAULT },
+    angle: Math.atan2(widthDirC.y, widthDirC.x), // direction de la largeur de A (rad)
+    confirmed: false,
+    group: new THREE.Group(),
+    moveHandle: extMakeHandle(0xe0663f, 'sphere'),
+    rotateHandle: extMakeHandle(0x2ee8ff, 'cone'),
+  };
+  slice.group.name = 'ExtGareTranche';
+  worldRoot.add(slice.group);
+  scene.add(slice.moveHandle);
+  scene.add(slice.rotateHandle);
+  extRebuildSliceGeometry(slice);
+  extUpdateHandlePositions(slice);
+  return slice;
+}
+function extFaceAPoints(slice){
+  const dx=Math.cos(slice.angle), dz=Math.sin(slice.angle);
+  const h=slice.width/2;
+  return {
+    p1: { x: slice.center.x - dx*h, z: slice.center.z - dz*h },
+    p2: { x: slice.center.x + dx*h, z: slice.center.z + dz*h }
+  };
+}
+function extRebuildSliceGeometry(slice){
+  slice.group.clear();
+  const faceA = extFaceAPoints(slice);
+  slice.faceA = faceA;
+  const pts = [slice.faceC.p1, slice.faceC.p2, faceA.p2, faceA.p1];
+  const shape = new THREE.Shape(pts.map(p=>new THREE.Vector2(p.x,-p.z)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: slice.height, bevelEnabled:false, curveSegments:1 });
+  geo.rotateX(-Math.PI/2);
+  const mesh = new THREE.Mesh(geo, extMaterial());
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  slice.group.add(mesh);
+  const edges = new THREE.EdgesGeometry(geo, 25);
+  slice.group.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color:0x0b1116, transparent:true, opacity:0.4})));
+  if(!slice.confirmed){
+    const outlinePts = pts.map(p=>new THREE.Vector3(p.x,0.2,p.z)); outlinePts.push(outlinePts[0].clone());
+    const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:NEON_BLUE, depthTest:false, transparent:true}));
+    halo.renderOrder = 39;
+    slice.group.add(halo);
+  }
+}
+function extUpdateHandlePositions(slice){
+  const faceA = slice.faceA;
+  const y = slice.height + 1.6;
+  const cx = (faceA.p1.x+faceA.p2.x)/2, cz=(faceA.p1.z+faceA.p2.z)/2;
+  slice.moveHandle.position.set(cx, y, cz);
+  slice.rotateHandle.position.set(faceA.p2.x, y, faceA.p2.z);
+  const visible = slice===extPendingSlice;
+  slice.moveHandle.visible = visible;
+  slice.rotateHandle.visible = visible;
+}
+function extUpdatePendingSlice(){
+  if(!extPendingSlice) return;
+  extRebuildSliceGeometry(extPendingSlice);
+  extUpdateHandlePositions(extPendingSlice);
+}
+
+/* ---- démarrage / chaînage / validation ---------------------------- */
+function startExtensionGareTool(){
+  if(!hallMesh){ flashStatus("Hall de gare introuvable dans la maquette chargée"); return; }
+  extToolActive = true;
+  btnExtensionGare.classList.add('active');
+  const edge = extOutwardEdgeFromObject(hallMesh, hallFacadeWorldNormal);
+  if(!edge){ flashStatus("Impossible de déterminer la façade du hall"); extToolActive=false; return; }
+  extPendingSlice = extCreateSlice(edge, hallFacadeWorldNormal || edge.normal, null);
+  extShowEditingBar();
+}
+function toggleExtensionGareTool(){
+  if(extToolActive || extHallSlices.length || extPendingSlice){ extExitTool(); return; }
+  startExtensionGareTool();
+}
+function extAddChainedSlice(parentSlice){
+  extToolActive = true;
+  btnExtensionGare.classList.add('active');
+  const faceC = { p1: parentSlice.faceA.p1, p2: parentSlice.faceA.p2 };
+  extPendingSlice = extCreateSlice(faceC, parentSlice.outwardHint, parentSlice);
+  extRemovePlusButton(parentSlice.id);
+  extShowEditingBar();
+}
+function extShowEditingBar(){
+  extGareHint.classList.add('show');
+  extGareHintText.textContent = "Fais glisser la sphère orange pour déplacer la face A, la poignée bleue pour l'orienter.";
+  btnExtValider.style.display = '';
+  btnExtFusionner.style.display = 'none';
+  btnExtAnnuler.textContent = 'Annuler';
+}
+function extShowIdleBar(){
+  if(!extHallSlices.length){ extGareHint.classList.remove('show'); return; }
+  extGareHint.classList.add('show');
+  extGareHintText.textContent = "Clique le (+) pour ajouter une tranche, ou fusionne pour lisser le rendu.";
+  btnExtValider.style.display = 'none';
+  btnExtFusionner.style.display = extFusedMesh ? 'none' : '';
+  btnExtAnnuler.textContent = 'Fermer';
+}
+function extConfirmPendingSlice(){
+  if(!extPendingSlice) return;
+  const slice = extPendingSlice;
+  slice.confirmed = true;
+  extRebuildSliceGeometry(slice);
+  scene.remove(slice.moveHandle, slice.rotateHandle);
+  extHallSlices.push(slice);
+  extPendingSlice = null;
+  extMakePlusButton(slice);
+  extShowIdleBar();
+}
+function extCancelPendingSlice(){
+  if(!extPendingSlice) return;
+  const slice = extPendingSlice;
+  worldRoot.remove(slice.group);
+  scene.remove(slice.moveHandle, slice.rotateHandle);
+  extPendingSlice = null;
+  if(slice.parentId){
+    const parent = extHallSlices.find(s=>s.id===slice.parentId);
+    if(parent) extMakePlusButton(parent);
+    extShowIdleBar();
+  } else {
+    extExitTool();
+  }
+}
+function extExitTool(){
+  extToolActive = false;
+  btnExtensionGare.classList.remove('active');
+  if(extPendingSlice){ worldRoot.remove(extPendingSlice.group); scene.remove(extPendingSlice.moveHandle, extPendingSlice.rotateHandle); extPendingSlice=null; }
+  extHallSlices.forEach(s=> worldRoot.remove(s.group));
+  extHallSlices = [];
+  if(extFusedMesh){ worldRoot.remove(extFusedMesh); extFusedMesh.geometry.dispose(); extFusedMesh=null; }
+  extPlusButtons.forEach(btn=>btn.remove());
+  extPlusButtons.clear();
+  extGareHint.classList.remove('show');
+}
+function extMakePlusButton(slice){
+  extRemovePlusButton(slice.id);
+  const btn = document.createElement('div');
+  btn.className = 'ext-plus-btn';
+  btn.textContent = '+';
+  btn.title = 'Ajouter une nouvelle tranche de hall';
+  btn.addEventListener('click', ()=> extAddChainedSlice(slice));
+  extGareLayer.appendChild(btn);
+  extPlusButtons.set(slice.id, btn);
+}
+function extRemovePlusButton(sliceId){
+  const btn = extPlusButtons.get(sliceId);
+  if(btn){ btn.remove(); extPlusButtons.delete(sliceId); }
+}
+function updateExtGarePlusButtons(){
+  if(!extPlusButtons.size) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  if(!rect.width||!rect.height) return;
+  const activeCam = planViewActive ? orthoCamera : camera;
+  const v = new THREE.Vector3();
+  extHallSlices.forEach(slice=>{
+    const btn = extPlusButtons.get(slice.id);
+    if(!btn) return;
+    const cx=(slice.faceA.p1.x+slice.faceA.p2.x)/2, cz=(slice.faceA.p1.z+slice.faceA.p2.z)/2;
+    v.set(cx, slice.height+1.6, cz).project(activeCam);
+    const behind = v.z>1;
+    btn.style.display = behind ? 'none' : 'flex';
+    btn.style.left = ((v.x*0.5+0.5)*rect.width)+'px';
+    btn.style.top = ((1-(v.y*0.5+0.5))*rect.height)+'px';
+  });
+}
+
+/* ---- fusion finale : soudure des sommets proches pour un rendu lisse -- */
+function extFusionnerTranches(){
+  if(extPendingSlice){ flashStatus("Valide la tranche en cours avant de fusionner"); return; }
+  if(extHallSlices.length<1){ flashStatus("Aucune tranche à fusionner"); return; }
+  const geoms = [];
+  extHallSlices.forEach(slice=>{
+    slice.group.traverse(o=>{
+      if(o.isMesh){
+        const g = o.geometry.clone();
+        o.updateWorldMatrix(true,false);
+        g.applyMatrix4(o.matrixWorld);
+        // ne garder que la géométrie "pleine" (pas les EdgesGeometry/lignes)
+        if(g.index || g.attributes.position) geoms.push(g);
+      }
+    });
+  });
+  if(!geoms.length){ flashStatus("Rien à fusionner"); return; }
+  let merged = geoms.length>1 ? mergeGeometries(geoms, false) : geoms[0];
+  merged = mergeVertices(merged, 1e-3);
+  merged.computeVertexNormals();
+  const mesh = new THREE.Mesh(merged, extMaterial());
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.name = 'ExtGareFusion';
+  worldRoot.add(mesh);
+  extFusedMesh = mesh;
+  extHallSlices.forEach(s=>{ worldRoot.remove(s.group); extRemovePlusButton(s.id); });
+  extHallSlices = [];
+  extGareHintText.textContent = "Extension fusionnée ✓ (sommets soudés, rendu lissé).";
+  btnExtFusionner.style.display = 'none';
+  btnExtAnnuler.textContent = 'Fermer';
+}
+
+/* ---- interactions souris : déplacer / orienter la face A -------------- */
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!extPendingSlice || ev.button!==0) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects([extPendingSlice.moveHandle, extPendingSlice.rotateHandle]);
+  if(!hits.length) return;
+  extDragMode = hits[0].object===extPendingSlice.moveHandle ? 'move' : 'rotate';
+  controls.enabled = false;
+  ev.stopPropagation();
+});
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!extDragMode || !extPendingSlice) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  if(extDragMode==='move'){
+    extPendingSlice.center = { x: pt.x, z: pt.z };
+  } else {
+    const dx = pt.x - extPendingSlice.center.x, dz = pt.z - extPendingSlice.center.z;
+    if(Math.hypot(dx,dz) > 0.3) extPendingSlice.angle = Math.atan2(dz,dx);
+  }
+  extUpdatePendingSlice();
+});
+window.addEventListener('pointerup', ()=>{
+  if(!extDragMode) return;
+  extDragMode = null;
+  controls.enabled = true;
+});
+btnExtValider.addEventListener('click', extConfirmPendingSlice);
+btnExtAnnuler.addEventListener('click', extCancelPendingSlice);
+btnExtFusionner.addEventListener('click', extFusionnerTranches);
+
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -4380,6 +4732,7 @@ function animate(){
   tickAgents(dt);
   updateCompass();
   updateLabelPositions();
+  updateExtGarePlusButtons();
   if(drawGuideGroup.visible){
     const t = performance.now()/1000;
     drawGuideRing.scale.setScalar((2.6 + Math.sin(t*3.2)*0.35)/2.6);
