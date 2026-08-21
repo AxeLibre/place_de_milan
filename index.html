@@ -4459,6 +4459,18 @@ function extHallHeight(){
 // "objs" peut être un objet 3D unique OU un tableau d'objets (pièces du hall
 // éclatées dans le .glb — voir extHallParts()) : dans les deux cas on prend
 // l'union de tous leurs sommets avant de calculer l'enveloppe.
+//
+// IMPORTANT : on NE PREND PAS simplement "l'arête de l'enveloppe convexe la
+// mieux alignée avec la normale" — la façade réelle du hall n'est presque
+// jamais un unique segment parfaitement droit dans le modèle (légers
+// décrochages, sommets non parfaitement collinéaires), ce qui fait que
+// l'enveloppe convexe découpe la façade en plusieurs petites arêtes. Prendre
+// la "meilleure" arête isolée ne renvoyait alors qu'un minuscule tronçon de
+// quelques mètres au lieu de toute la largeur du hall (~35 m). On regroupe
+// donc tous les points de l'enveloppe proches du plan de façade (à une
+// tolérance près le long de la normale) et on prend l'étendue complète de ce
+// groupe le long de la largeur — ça couvre toute la façade même si elle
+// zigzague légèrement.
 function extOutwardEdgeFromObject(objs, preferredOutward){
   const list = Array.isArray(objs) ? objs : [objs];
   const pts = [];
@@ -4475,18 +4487,23 @@ function extOutwardEdgeFromObject(objs, preferredOutward){
   if(hull.length<3) return null;
   const centroid = hull.reduce((s,p)=>({x:s.x+p.x,z:s.z+p.z}),{x:0,z:0});
   centroid.x/=hull.length; centroid.z/=hull.length;
-  const ref = preferredOutward || new THREE.Vector3(0,0,1);
-  let best=null, bestDot=-Infinity;
-  for(let i=0;i<hull.length;i++){
-    const p1=hull[i], p2=hull[(i+1)%hull.length];
-    let nx = (p2.z-p1.z), nz = -(p2.x-p1.x);
-    const len = Math.hypot(nx,nz)||1; nx/=len; nz/=len;
-    const mid = {x:(p1.x+p2.x)/2, z:(p1.z+p2.z)/2};
-    if((mid.x-centroid.x)*nx + (mid.z-centroid.z)*nz < 0){ nx=-nx; nz=-nz; }
-    const dot = nx*ref.x + nz*ref.z;
-    if(dot>bestDot){ bestDot=dot; best={p1:{...p1}, p2:{...p2}, normal:new THREE.Vector3(nx,0,nz)}; }
-  }
-  return best;
+  const ref = (preferredOutward||new THREE.Vector3(0,0,1)).clone().setY(0).normalize();
+  const widthDir = new THREE.Vector2(-ref.z, ref.x); // perpendiculaire, dans le plan XZ
+  // projection de chaque sommet de l'enveloppe sur la normale (distance au
+  // centroïde dans la direction "vers l'extérieur") et sur la largeur
+  let maxN = -Infinity;
+  const projN = hull.map(p=>{ const d=(p.x-centroid.x)*ref.x + (p.z-centroid.z)*ref.z; if(d>maxN) maxN=d; return d; });
+  const TOL = 2.5; // m — regroupe tous les sommets à moins de 2.5 m du point le plus "avancé"
+  let front = hull.filter((p,i)=> projN[i] > maxN-TOL);
+  if(front.length<2) front = hull; // filet de sécurité si la tolérance est trop stricte
+  let minW=Infinity, maxW=-Infinity, p1=front[0], p2=front[0];
+  front.forEach(p=>{
+    const w = (p.x-centroid.x)*widthDir.x + (p.z-centroid.z)*widthDir.y;
+    if(w<minW){ minW=w; p1=p; }
+    if(w>maxW){ maxW=w; p2=p; }
+  });
+  const normal = extOutwardNormalFor(p1,p2, ref);
+  return { p1:{x:p1.x,z:p1.z}, p2:{x:p2.x,z:p2.z}, normal };
 }
 function extOutwardNormalFor(p1,p2, referenceOutward){
   let nx=(p2.z-p1.z), nz=-(p2.x-p1.x);
@@ -4496,9 +4513,9 @@ function extOutwardNormalFor(p1,p2, referenceOutward){
   return n;
 }
 function extMakeHandle(color, shape){
-  const geo = shape==='cone' ? new THREE.ConeGeometry(0.9,2.2,16) : new THREE.SphereGeometry(1.1,16,16);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color, depthTest:false}));
-  mesh.renderOrder = 50;
+  const geo = shape==='cone' ? new THREE.ConeGeometry(1.3,3,16) : new THREE.SphereGeometry(1.5,16,16);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color, depthTest:false, depthWrite:false, transparent:true}));
+  mesh.renderOrder = 999;
   return mesh;
 }
 function extCreateSlice(faceC, referenceOutward, parentSlice){
