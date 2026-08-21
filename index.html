@@ -74,7 +74,7 @@
     max-height:calc(100vh - 110px);
   }
   #toolbar-left{
-    flex-shrink:0;
+    flex-shrink:0;width:214px;
     display:flex;flex-direction:column;gap:6px;
     background:rgba(24,36,48,.9);border:1px solid #2a3946;border-radius:8px;
     padding:8px;backdrop-filter:blur(6px);
@@ -3182,7 +3182,7 @@ function renderList(){
     dot.style.background = '#'+USAGE_COLORS[usageAtFloor(b, b.floors)].toString(16).padStart(6,'0');
     const nameSpan = document.createElement('span');
     nameSpan.textContent = b.name;
-    nameSpan.style.flex = '1';
+    nameSpan.style.cssText = 'flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
     const meta = document.createElement('span');
     meta.style.cssText = 'color:var(--muted);font-size:11px;font-family:IBM Plex Mono,monospace;';
     meta.textContent = `${b.floors} niv.`;
