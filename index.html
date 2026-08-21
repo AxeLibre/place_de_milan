@@ -4432,9 +4432,22 @@ function extMaterial(){
   }
   return new THREE.MeshStandardMaterial({ color:0x8fa4b3, roughness:0.6, metalness:0.1, side:THREE.DoubleSide });
 }
+// Le hall réel est souvent éclaté en PLUSIEURS objets dans le .glb (le loader
+// glTF ajoute un suffixe hexadécimal — "Hall_Gare_5e1c11", etc. — dès que
+// plusieurs pièces Blender partagent le même nom d'origine). findByNameCI ne
+// renvoie qu'UN SEUL de ces morceaux (souvent un petit détail comme une
+// menuiserie), ce qui donnait une façade minuscule et mal placée. On récupère
+// donc ici TOUTES les pièces dont le nom commence par "Hall_Gare".
+function extHallParts(){
+  const parts = findAllByNameCI(siteRoot, 'Hall_Gare');
+  if(parts.length) return parts;
+  return hallMesh ? [hallMesh] : [];
+}
 function extHallHeight(){
-  if(hallMesh){
-    const box = new THREE.Box3().setFromObject(hallMesh);
+  const parts = extHallParts();
+  if(parts.length){
+    const box = new THREE.Box3();
+    parts.forEach(p=> box.expandByObject(p));
     const h = box.max.y - box.min.y;
     if(isFinite(h) && h>1) return h;
   }
@@ -4443,14 +4456,20 @@ function extHallHeight(){
 // Bord de façade (2 points au sol) le plus aligné avec une direction "vers
 // l'extérieur" donnée — utilisé pour la face A du hall (première tranche)
 // comme pour chaque face A déjà validée (tranches suivantes).
-function extOutwardEdgeFromObject(obj, preferredOutward){
+// "objs" peut être un objet 3D unique OU un tableau d'objets (pièces du hall
+// éclatées dans le .glb — voir extHallParts()) : dans les deux cas on prend
+// l'union de tous leurs sommets avant de calculer l'enveloppe.
+function extOutwardEdgeFromObject(objs, preferredOutward){
+  const list = Array.isArray(objs) ? objs : [objs];
   const pts = [];
-  obj.traverse(o=>{
-    if(!o.isMesh) return;
-    o.updateWorldMatrix(true,false);
-    const pos = o.geometry.attributes.position;
-    const v = new THREE.Vector3();
-    for(let i=0;i<pos.count;i++){ v.fromBufferAttribute(pos,i).applyMatrix4(o.matrixWorld); pts.push({x:v.x,z:v.z}); }
+  list.forEach(obj=>{
+    obj.traverse(o=>{
+      if(!o.isMesh) return;
+      o.updateWorldMatrix(true,false);
+      const pos = o.geometry.attributes.position;
+      const v = new THREE.Vector3();
+      for(let i=0;i<pos.count;i++){ v.fromBufferAttribute(pos,i).applyMatrix4(o.matrixWorld); pts.push({x:v.x,z:v.z}); }
+    });
   });
   const hull = convexHullXZ(dedupe(pts));
   if(hull.length<3) return null;
@@ -4556,10 +4575,11 @@ function extUpdatePendingSlice(){
 
 /* ---- démarrage / chaînage / validation ---------------------------- */
 function startExtensionGareTool(){
-  if(!hallMesh){ flashStatus("Hall de gare introuvable dans la maquette chargée"); return; }
+  const hallParts = extHallParts();
+  if(!hallParts.length){ flashStatus("Hall de gare introuvable dans la maquette chargée"); return; }
   extToolActive = true;
   btnExtensionGare.classList.add('active');
-  const edge = extOutwardEdgeFromObject(hallMesh, hallFacadeWorldNormal);
+  const edge = extOutwardEdgeFromObject(hallParts, hallFacadeWorldNormal);
   if(!edge){ flashStatus("Impossible de déterminer la façade du hall"); extToolActive=false; return; }
   extPendingSlice = extCreateSlice(edge, hallFacadeWorldNormal || edge.normal, null);
   extShowEditingBar();
