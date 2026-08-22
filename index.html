@@ -605,6 +605,7 @@
       <span id="ext-gare-hint-text">Fais glisser la face A (sphère orange) pour la positionner, la poignée bleue pour l'orienter.</span>
       <button id="ext-gare-valider">Valider la tranche</button>
       <button id="ext-gare-fusionner" class="ghost" style="display:none;">Fusionner (lissage)</button>
+      <button id="ext-gare-suppr-derniere" class="ghost" style="display:none;">Suppr. dernière tranche</button>
       <button id="ext-gare-annuler" class="ghost">Annuler</button>
     </div>
     <div id="draw-hint">
@@ -4410,15 +4411,18 @@ const extGareHint     = document.getElementById('ext-gare-hint');
 const extGareHintText = document.getElementById('ext-gare-hint-text');
 const btnExtValider    = document.getElementById('ext-gare-valider');
 const btnExtFusionner  = document.getElementById('ext-gare-fusionner');
+const btnExtSupprDerniere = document.getElementById('ext-gare-suppr-derniere');
 const btnExtAnnuler    = document.getElementById('ext-gare-annuler');
 
 const EXT_DEPTH_DEFAULT  = 12;   // m, profondeur par défaut d'une nouvelle tranche
 const EXT_HEIGHT_DEFAULT = 9;    // m, repli si la hauteur du hall n'est pas mesurable
 
 let extToolActive   = false;
+let extEditMode      = false; // true = poignées de toutes les tranches confirmées visibles (édition a posteriori)
 let extHallSlices    = [];  // tranches validées (dans l'ordre de la chaîne)
 let extPendingSlice  = null; // tranche en cours d'édition (déplaçable/orientable), ou null
 let extFusedMesh     = null;
+let extDragSlice     = null; // tranche actuellement déplacée à la souris (pending OU confirmée en mode édition)
 let extDragMode      = null; // 'move' | 'rotate' | null
 let extModuleTemplate = undefined; // undefined = pas encore tenté, null = échec, objet = ok
 const extPlusButtons = new Map(); // sliceId -> HTMLElement
@@ -4477,17 +4481,31 @@ function extDeformModuleToQuad(slice){
   if(!tpl) return null;
   const { faceC, faceA } = slice;
   const spanZ = (tpl.zA - tpl.zC) || 1;
+  // Tolérances de "snap" : tout sommet suffisamment proche du bord C ou A du
+  // module authored est plaqué EXACTEMENT sur la ligne cible (w=0 ou w=1,
+  // idem en u) plutôt que juste "proche". Sans ça, l'interpolation linéaire
+  // fait légèrement rentrer les sommets de bord vers l'intérieur de chaque
+  // tranche (de manière indépendante des deux côtés de la jointure), ce qui
+  // ouvre une fine fente visible entre deux tranches chaînées.
+  const EPS_Z = Math.max(0.05, Math.abs(spanZ)*0.01);
   const group = new THREE.Group();
   tpl.bakedMeshes.forEach(({geo, material})=>{
     const g = geo.clone();
     const pos = g.attributes.position;
     for(let i=0;i<pos.count;i++){
       const lx = pos.getX(i), ly = pos.getY(i), lz = pos.getZ(i);
-      let w = (lz - tpl.zC) / spanZ; w = Math.max(0, Math.min(1, w));
+      let w;
+      if(Math.abs(lz-tpl.zC)<=EPS_Z) w = 0;
+      else if(Math.abs(lz-tpl.zA)<=EPS_Z) w = 1;
+      else { w = (lz - tpl.zC) / spanZ; w = Math.max(0, Math.min(1, w)); }
       const xMinAtW = tpl.xC.min + (tpl.xA.min - tpl.xC.min)*w;
       const xMaxAtW = tpl.xC.max + (tpl.xA.max - tpl.xC.max)*w;
       const spanX = (xMaxAtW - xMinAtW) || 1;
-      let u = (lx - xMinAtW) / spanX; u = Math.max(-0.05, Math.min(1.05, u)); // légère tolérance hors bande
+      const EPS_X = Math.max(0.05, Math.abs(spanX)*0.01);
+      let u;
+      if(Math.abs(lx-xMinAtW)<=EPS_X) u = 0;
+      else if(Math.abs(lx-xMaxAtW)<=EPS_X) u = 1;
+      else { u = (lx - xMinAtW) / spanX; u = Math.max(-0.05, Math.min(1.05, u)); }
       const leftX  = faceC.p1.x + (faceA.p1.x-faceC.p1.x)*w, leftZ  = faceC.p1.z + (faceA.p1.z-faceC.p1.z)*w;
       const rightX = faceC.p2.x + (faceA.p2.x-faceC.p2.x)*w, rightZ = faceC.p2.z + (faceA.p2.z-faceC.p2.z)*w;
       const fx = leftX + (rightX-leftX)*u, fz = leftZ + (rightZ-leftZ)*u;
@@ -4673,15 +4691,23 @@ function extUpdateHandlePositions(slice){
   const cx = (faceA.p1.x+faceA.p2.x)/2, cz=(faceA.p1.z+faceA.p2.z)/2;
   slice.moveHandle.position.set(cx, y, cz);
   slice.rotateHandle.position.set(faceA.p2.x, y, faceA.p2.z);
-  const visible = slice===extPendingSlice;
+  const visible = (slice===extPendingSlice) || (slice.confirmed && extEditMode);
   slice.moveHandle.visible = visible;
   slice.rotateHandle.visible = visible;
 }
-function extUpdatePendingSlice(){
-  if(!extPendingSlice) return;
-  extRebuildSliceGeometry(extPendingSlice);
-  extUpdateHandlePositions(extPendingSlice);
+// Quand on modifie la face A d'une tranche déjà confirmée (via ses poignées
+// en mode édition), toutes les tranches suivantes de la chaîne doivent
+// recoller leur face C dessus, sinon la chaîne se déchire à partir de là.
+function extPropagateChainFrom(index){
+  for(let j=index; j<extHallSlices.length; j++){
+    const prev = extHallSlices[j-1];
+    const cur = extHallSlices[j];
+    cur.faceC = { p1:{x:prev.faceA.p1.x, z:prev.faceA.p1.z}, p2:{x:prev.faceA.p2.x, z:prev.faceA.p2.z} };
+    extRebuildSliceGeometry(cur);
+    extUpdateHandlePositions(cur);
+  }
 }
+
 
 /* ---- démarrage / chaînage / validation ---------------------------- */
 function startExtensionGareTool(){
@@ -4692,45 +4718,78 @@ function startExtensionGareTool(){
   const edge = extOutwardEdgeFromObject(hallParts, hallFacadeWorldNormal);
   if(!edge){ flashStatus("Impossible de déterminer la façade du hall"); extToolActive=false; return; }
   extPendingSlice = extCreateSlice(edge, hallFacadeWorldNormal || edge.normal, null);
-  extShowEditingBar();
+  extRefreshBar();
 }
+// Bouton toolbar "Ajouter Extension Gare" — cycle à 3 états :
+//  1) rien construit               -> démarre la création de la 1ère tranche
+//  2) construit, affiché en édition -> cache l'extension (sans rien supprimer)
+//  3) construit, caché              -> réaffiche en mode édition (poignées + (+))
+// Si l'extension a déjà été fusionnée, le bouton bascule juste sa visibilité.
 function toggleExtensionGareTool(){
-  if(extToolActive || extHallSlices.length || extPendingSlice){ extExitTool(); return; }
-  startExtensionGareTool();
+  if(extPendingSlice) return; // création en cours : on passe par Valider/Annuler
+  const hasExtension = extHallSlices.length>0 || extFusedMesh;
+  if(!hasExtension){ startExtensionGareTool(); return; }
+  if(extFusedMesh){
+    extFusedMesh.visible = !extFusedMesh.visible;
+    btnExtensionGare.classList.toggle('active', extFusedMesh.visible);
+    return;
+  }
+  if(extEditMode) extHideExtension(); else extShowExtensionForEditing();
+}
+function extHideExtension(){
+  extEditMode = false;
+  extToolActive = false;
+  extHallSlices.forEach(s=>{ s.group.visible = false; extUpdateHandlePositions(s); });
+  extPlusButtons.forEach(btn=> btn.style.display='none');
+  btnExtensionGare.classList.remove('active');
+  extRefreshBar();
+}
+function extShowExtensionForEditing(){
+  extEditMode = true;
+  extToolActive = true;
+  btnExtensionGare.classList.add('active');
+  extHallSlices.forEach(s=>{ s.group.visible = true; extUpdateHandlePositions(s); });
+  const last = extHallSlices[extHallSlices.length-1];
+  if(last) extMakePlusButton(last);
+  extRefreshBar();
 }
 function extAddChainedSlice(parentSlice){
   extToolActive = true;
   btnExtensionGare.classList.add('active');
-  const faceC = { p1: parentSlice.faceA.p1, p2: parentSlice.faceA.p2 };
+  const faceC = { p1:{x:parentSlice.faceA.p1.x, z:parentSlice.faceA.p1.z}, p2:{x:parentSlice.faceA.p2.x, z:parentSlice.faceA.p2.z} };
   extPendingSlice = extCreateSlice(faceC, parentSlice.outwardHint, parentSlice);
   extRemovePlusButton(parentSlice.id);
-  extShowEditingBar();
+  extRefreshBar();
 }
-function extShowEditingBar(){
+// Met à jour le texte + la visibilité des boutons de la barre selon l'état
+// courant (création d'une nouvelle tranche VS édition des tranches déjà
+// posées VS rien à afficher).
+function extRefreshBar(){
+  const creating = !!extPendingSlice;
+  const editing = !creating && extEditMode && extHallSlices.length>0;
+  if(!creating && !editing){ extGareHint.classList.remove('show'); return; }
   extGareHint.classList.add('show');
-  extGareHintText.textContent = "Fais glisser la sphère orange pour déplacer la face A, la poignée bleue pour l'orienter.";
-  btnExtValider.style.display = '';
-  btnExtFusionner.style.display = 'none';
-  btnExtAnnuler.textContent = 'Annuler';
-}
-function extShowIdleBar(){
-  if(!extHallSlices.length){ extGareHint.classList.remove('show'); return; }
-  extGareHint.classList.add('show');
-  extGareHintText.textContent = "Clique le (+) pour ajouter une tranche, ou fusionne pour lisser le rendu.";
-  btnExtValider.style.display = 'none';
-  btnExtFusionner.style.display = extFusedMesh ? 'none' : '';
-  btnExtAnnuler.textContent = 'Fermer';
+  extGareHintText.textContent = creating
+    ? "Fais glisser la sphère orange pour déplacer la face A, la poignée bleue pour l'orienter."
+    : "Glisse les poignées pour ajuster une tranche, clique le (+) pour en ajouter une.";
+  btnExtValider.style.display = creating ? '' : 'none';
+  btnExtFusionner.style.display = (!creating && !extFusedMesh && extHallSlices.length>0) ? '' : 'none';
+  btnExtSupprDerniere.style.display = extHallSlices.length>0 ? '' : 'none';
+  btnExtAnnuler.textContent = creating ? 'Annuler' : 'Cacher';
 }
 function extConfirmPendingSlice(){
   if(!extPendingSlice) return;
   const slice = extPendingSlice;
   slice.confirmed = true;
-  extRebuildSliceGeometry(slice);
-  scene.remove(slice.moveHandle, slice.rotateHandle);
-  extHallSlices.push(slice);
   extPendingSlice = null;
+  extRebuildSliceGeometry(slice);
+  extHallSlices.push(slice);
+  extEditMode = true;
+  extToolActive = true;
+  btnExtensionGare.classList.add('active');
   extMakePlusButton(slice);
-  extShowIdleBar();
+  extUpdateHandlePositions(slice);
+  extRefreshBar();
 }
 function extCancelPendingSlice(){
   if(!extPendingSlice) return;
@@ -4738,19 +4797,44 @@ function extCancelPendingSlice(){
   scene.remove(slice.group);
   scene.remove(slice.moveHandle, slice.rotateHandle);
   extPendingSlice = null;
-  if(slice.parentId){
+  if(slice.parentId && extHallSlices.length){
     const parent = extHallSlices.find(s=>s.id===slice.parentId);
     if(parent) extMakePlusButton(parent);
-    extShowIdleBar();
+    extEditMode = true;
+    extRefreshBar();
   } else {
-    extExitTool();
+    extExitToolFully();
   }
 }
-function extExitTool(){
+// Supprime la DERNIÈRE tranche confirmée de la chaîne (utile pour revenir en
+// arrière sans tout recommencer). Si une nouvelle tranche est en cours de
+// création à partir de celle qu'on supprime, elle est annulée avec.
+function extDeleteLastSlice(){
+  if(!extHallSlices.length) return;
+  const last = extHallSlices[extHallSlices.length-1];
+  if(extPendingSlice && extPendingSlice.parentId===last.id){
+    scene.remove(extPendingSlice.group);
+    scene.remove(extPendingSlice.moveHandle, extPendingSlice.rotateHandle);
+    extPendingSlice = null;
+  }
+  extHallSlices.pop();
+  extRemovePlusButton(last.id);
+  scene.remove(last.group);
+  scene.remove(last.moveHandle, last.rotateHandle);
+  if(!extHallSlices.length && !extPendingSlice){ extExitToolFully(); return; }
+  const newLast = extHallSlices[extHallSlices.length-1];
+  if(newLast && !extPendingSlice) extMakePlusButton(newLast);
+  if(!extPendingSlice) extEditMode = true;
+  extRefreshBar();
+}
+// Suppression COMPLÈTE (uniquement quand on annule la toute première tranche
+// jamais validée — dans tous les autres cas on cache au lieu de supprimer).
+function extExitToolFully(){
   extToolActive = false;
+  extEditMode = false;
   btnExtensionGare.classList.remove('active');
-  if(extPendingSlice){ worldRoot.remove(extPendingSlice.group); scene.remove(extPendingSlice.moveHandle, extPendingSlice.rotateHandle); extPendingSlice=null; }
-  extHallSlices.forEach(s=> scene.remove(s.group));
+  if(extPendingSlice){ scene.remove(extPendingSlice.group); scene.remove(extPendingSlice.moveHandle, extPendingSlice.rotateHandle); extPendingSlice=null; }
+  extHallSlices.forEach(s=>{ scene.remove(s.group); scene.remove(s.moveHandle, s.rotateHandle); });
   extHallSlices = [];
   if(extFusedMesh){ scene.remove(extFusedMesh); extFusedMesh.geometry.dispose(); extFusedMesh=null; }
   extPlusButtons.forEach(btn=>btn.remove());
@@ -4773,6 +4857,7 @@ function extRemovePlusButton(sliceId){
 }
 function updateExtGarePlusButtons(){
   if(!extPlusButtons.size) return;
+  if(!extEditMode && !extPendingSlice){ extPlusButtons.forEach(btn=> btn.style.display='none'); return; }
   const rect = renderer.domElement.getBoundingClientRect();
   if(!rect.width||!rect.height) return;
   const activeCam = planViewActive ? orthoCamera : camera;
@@ -4808,53 +4893,71 @@ function extFusionnerTranches(){
   });
   if(!geoms.length){ flashStatus("Rien à fusionner"); return; }
   let merged = geoms.length>1 ? mergeGeometries(geoms, true) : geoms[0];
-  merged = mergeVertices(merged, 1e-3);
+  merged = mergeVertices(merged, 5e-3); // 5mm : soude les sommets de jointure sans coller les détails proches
   merged.computeVertexNormals();
   const mesh = new THREE.Mesh(merged, materials.length>1 ? materials : materials[0]);
   mesh.castShadow = true; mesh.receiveShadow = true;
   mesh.name = 'ExtGareFusion';
   scene.add(mesh);
   extFusedMesh = mesh;
-  extHallSlices.forEach(s=>{ scene.remove(s.group); extRemovePlusButton(s.id); });
+  extHallSlices.forEach(s=>{ scene.remove(s.group); scene.remove(s.moveHandle, s.rotateHandle); extRemovePlusButton(s.id); });
   extHallSlices = [];
-  extGareHintText.textContent = "Extension fusionnée ✓ (sommets soudés, rendu lissé).";
-  btnExtFusionner.style.display = 'none';
-  btnExtAnnuler.textContent = 'Fermer';
+  extEditMode = false;
+  flashStatus("Extension fusionnée ✓ (sommets soudés, rendu lissé).");
+  extRefreshBar();
 }
 
-/* ---- interactions souris : déplacer / orienter la face A -------------- */
+/* ---- interactions souris : déplacer / orienter la face A (tranche en
+   cours de création OU n'importe quelle tranche confirmée en mode édition) */
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if(!extPendingSlice || ev.button!==0) return;
+  if(ev.button!==0) return;
+  const candidates = [];
+  if(extPendingSlice) candidates.push(extPendingSlice);
+  if(extEditMode) extHallSlices.forEach(s=>{ if(s!==extPendingSlice) candidates.push(s); });
+  if(!candidates.length) return;
+  const handleObjs = [];
+  candidates.forEach(s=> handleObjs.push(s.moveHandle, s.rotateHandle));
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects([extPendingSlice.moveHandle, extPendingSlice.rotateHandle]);
+  const hits = raycaster.intersectObjects(handleObjs);
   if(!hits.length) return;
-  extDragMode = hits[0].object===extPendingSlice.moveHandle ? 'move' : 'rotate';
+  const hitObj = hits[0].object;
+  extDragSlice = candidates.find(s=> s.moveHandle===hitObj || s.rotateHandle===hitObj);
+  extDragMode = hitObj===extDragSlice.moveHandle ? 'move' : 'rotate';
   controls.enabled = false;
   ev.stopPropagation();
 });
 renderer.domElement.addEventListener('pointermove', (ev)=>{
-  if(!extDragMode || !extPendingSlice) return;
+  if(!extDragMode || !extDragSlice) return;
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
   if(extDragMode==='move'){
-    extPendingSlice.center = { x: pt.x, z: pt.z };
+    extDragSlice.center = { x: pt.x, z: pt.z };
   } else {
-    const dx = pt.x - extPendingSlice.center.x, dz = pt.z - extPendingSlice.center.z;
-    if(Math.hypot(dx,dz) > 0.3) extPendingSlice.angle = Math.atan2(dz,dx);
+    const dx = pt.x - extDragSlice.center.x, dz = pt.z - extDragSlice.center.z;
+    if(Math.hypot(dx,dz) > 0.3) extDragSlice.angle = Math.atan2(dz,dx);
   }
-  extUpdatePendingSlice();
+  extRebuildSliceGeometry(extDragSlice);
+  extUpdateHandlePositions(extDragSlice);
+  if(extDragSlice.confirmed){
+    const idx = extHallSlices.indexOf(extDragSlice);
+    if(idx>=0) extPropagateChainFrom(idx+1);
+  }
 });
 window.addEventListener('pointerup', ()=>{
   if(!extDragMode) return;
   extDragMode = null;
+  extDragSlice = null;
   controls.enabled = true;
 });
 btnExtValider.addEventListener('click', extConfirmPendingSlice);
-btnExtAnnuler.addEventListener('click', extCancelPendingSlice);
+btnExtAnnuler.addEventListener('click', ()=>{
+  if(extPendingSlice) extCancelPendingSlice(); else extHideExtension();
+});
 btnExtFusionner.addEventListener('click', extFusionnerTranches);
+btnExtSupprDerniere.addEventListener('click', extDeleteLastSlice);
 
 function animate(){
   requestAnimationFrame(animate);
