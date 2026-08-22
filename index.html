@@ -4420,7 +4420,89 @@ let extHallSlices    = [];  // tranches validées (dans l'ordre de la chaîne)
 let extPendingSlice  = null; // tranche en cours d'édition (déplaçable/orientable), ou null
 let extFusedMesh     = null;
 let extDragMode      = null; // 'move' | 'rotate' | null
+let extModuleTemplate = undefined; // undefined = pas encore tenté, null = échec, objet = ok
 const extPlusButtons = new Map(); // sliceId -> HTMLElement
+
+// ---- Réutilisation du mesh authored "Extension_Gare" (déformation cage/FFD) ----
+// Idée : plutôt que de générer une boîte procédurale (toit plat, aucun rapport
+// visuel avec le hall), on prend le VRAI mesh Extension_Gare déjà modélisé
+// dans le .glb (toiture, mullions, matériaux...) et on déforme ses sommets en
+// coordonnées locales (u = largeur normalisée, w = profondeur normalisée)
+// pour les replaquer sur le quadrilatère cible (C1, C2, A2, A1) de chaque
+// tranche — une interpolation bilinéaire à 4 coins, l'équivalent d'une cage
+// de déformation calculée à la volée. Ça garde la face C exactement fixe et
+// la face A libre, tout en conservant l'apparence authored.
+function extBuildModuleTemplate(){
+  if(extModuleTemplate !== undefined) return extModuleTemplate; // déjà tenté (succès ou échec)
+  if(!extensionGareMesh){ extModuleTemplate = null; return null; }
+  extensionGareMesh.updateWorldMatrix(true,false);
+  const parentInv = new THREE.Matrix4().copy(extensionGareMesh.matrixWorld).invert();
+  const bakedMeshes = [];
+  const allLocalXZ = [];
+  extensionGareMesh.traverse(o=>{
+    if(!o.isMesh) return;
+    o.updateWorldMatrix(true,false);
+    const localMat = new THREE.Matrix4().multiplyMatrices(parentInv, o.matrixWorld);
+    const geo = o.geometry.clone();
+    geo.applyMatrix4(localMat);
+    const pos = geo.attributes.position;
+    for(let i=0;i<pos.count;i++) allLocalXZ.push({x:pos.getX(i), z:pos.getZ(i)});
+    bakedMeshes.push({ geo, material: o.material });
+  });
+  if(!bakedMeshes.length){ extModuleTemplate = null; return null; }
+  let zMin=Infinity, zMax=-Infinity;
+  allLocalXZ.forEach(p=>{ if(p.z<zMin) zMin=p.z; if(p.z>zMax) zMax=p.z; });
+  // La face C doit être proche de l'origine locale (voir consignes de nettoyage
+  // Blender données à l'utilisateur) : c'est donc l'extrémité la plus proche de 0.
+  const cAtMax = Math.abs(zMax) <= Math.abs(zMin);
+  const zC = cAtMax ? zMax : zMin;
+  const zA = cAtMax ? zMin : zMax;
+  const BAND = Math.max(0.5, Math.abs(zA-zC)*0.04);
+  function xRangeNear(zTarget){
+    let mn=Infinity, mx=-Infinity, tol=BAND;
+    for(let pass=0; pass<4 && mn===Infinity; pass++, tol*=3){
+      allLocalXZ.forEach(p=>{ if(Math.abs(p.z-zTarget)<=tol){ if(p.x<mn) mn=p.x; if(p.x>mx) mx=p.x; } });
+    }
+    return {min:mn, max:mx};
+  }
+  const xC = xRangeNear(zC), xA = xRangeNear(zA);
+  extModuleTemplate = { bakedMeshes, zC, zA, xC, xA, depth: Math.abs(zA-zC) };
+  return extModuleTemplate;
+}
+// Déforme le module authored (coordonnées locales) sur le quadrilatère monde
+// [faceC.p1, faceC.p2, faceA.p2, faceA.p1] de la tranche. Retourne un Group
+// prêt à ajouter à la scène, ou null si le template n'est pas disponible.
+function extDeformModuleToQuad(slice){
+  const tpl = extBuildModuleTemplate();
+  if(!tpl) return null;
+  const { faceC, faceA } = slice;
+  const spanZ = (tpl.zA - tpl.zC) || 1;
+  const group = new THREE.Group();
+  tpl.bakedMeshes.forEach(({geo, material})=>{
+    const g = geo.clone();
+    const pos = g.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const lx = pos.getX(i), ly = pos.getY(i), lz = pos.getZ(i);
+      let w = (lz - tpl.zC) / spanZ; w = Math.max(0, Math.min(1, w));
+      const xMinAtW = tpl.xC.min + (tpl.xA.min - tpl.xC.min)*w;
+      const xMaxAtW = tpl.xC.max + (tpl.xA.max - tpl.xC.max)*w;
+      const spanX = (xMaxAtW - xMinAtW) || 1;
+      let u = (lx - xMinAtW) / spanX; u = Math.max(-0.05, Math.min(1.05, u)); // légère tolérance hors bande
+      const leftX  = faceC.p1.x + (faceA.p1.x-faceC.p1.x)*w, leftZ  = faceC.p1.z + (faceA.p1.z-faceC.p1.z)*w;
+      const rightX = faceC.p2.x + (faceA.p2.x-faceC.p2.x)*w, rightZ = faceC.p2.z + (faceA.p2.z-faceC.p2.z)*w;
+      const fx = leftX + (rightX-leftX)*u, fz = leftZ + (rightZ-leftZ)*u;
+      pos.setXYZ(i, fx, ly, fz);
+    }
+    pos.needsUpdate = true;
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    const mat = material ? material.clone() : extMaterial();
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    group.add(mesh);
+  });
+  return group;
+}
 
 function extMaterial(){
   let src = null;
@@ -4531,7 +4613,7 @@ function extCreateSlice(faceC, referenceOutward, parentSlice){
     width,
     height: extHallHeight(),
     outwardHint: outward.clone(),
-    center: { x: midC.x + outward.x*EXT_DEPTH_DEFAULT, z: midC.z + outward.z*EXT_DEPTH_DEFAULT },
+    center: { x: midC.x + outward.x*(extBuildModuleTemplate()?.depth || EXT_DEPTH_DEFAULT), z: midC.z + outward.z*(extBuildModuleTemplate()?.depth || EXT_DEPTH_DEFAULT) },
     angle: Math.atan2(widthDirC.y, widthDirC.x), // direction de la largeur de A (rad)
     confirmed: false,
     group: new THREE.Group(),
@@ -4559,14 +4641,21 @@ function extRebuildSliceGeometry(slice){
   const faceA = extFaceAPoints(slice);
   slice.faceA = faceA;
   const pts = [slice.faceC.p1, slice.faceC.p2, faceA.p2, faceA.p1];
-  const shape = new THREE.Shape(pts.map(p=>new THREE.Vector2(p.x,-p.z)));
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: slice.height, bevelEnabled:false, curveSegments:1 });
-  geo.rotateX(-Math.PI/2);
-  const mesh = new THREE.Mesh(geo, extMaterial());
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  slice.group.add(mesh);
-  const edges = new THREE.EdgesGeometry(geo, 25);
-  slice.group.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color:0x0b1116, transparent:true, opacity:0.4})));
+  const deformed = extDeformModuleToQuad(slice);
+  if(deformed){
+    slice.group.add(deformed);
+  } else {
+    // Repli si le mesh authored "Extension_Gare" est indisponible : simple
+    // volume procédural à toit plat (moins fidèle visuellement).
+    const shape = new THREE.Shape(pts.map(p=>new THREE.Vector2(p.x,-p.z)));
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: slice.height, bevelEnabled:false, curveSegments:1 });
+    geo.rotateX(-Math.PI/2);
+    const mesh = new THREE.Mesh(geo, extMaterial());
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    slice.group.add(mesh);
+    const edges = new THREE.EdgesGeometry(geo, 25);
+    slice.group.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color:0x0b1116, transparent:true, opacity:0.4})));
+  }
   if(!slice.confirmed){
     const outlinePts = pts.map(p=>new THREE.Vector3(p.x,0.2,p.z)); outlinePts.push(outlinePts[0].clone());
     const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:NEON_BLUE, depthTest:false, transparent:true}));
@@ -4576,7 +4665,11 @@ function extRebuildSliceGeometry(slice){
 }
 function extUpdateHandlePositions(slice){
   const faceA = slice.faceA;
-  const y = slice.height + 1.6;
+  // Hauteur FIXE et basse (indépendante de la hauteur du bâtiment) : en vue
+  // quasi top-down, une poignée posée en haut d'un hall de 15-20m sort du
+  // champ ou passe inaperçue. Proche du sol, elle reste toujours visible et
+  // c'est de toute façon un déplacement sur le plan horizontal.
+  const y = 2.2;
   const cx = (faceA.p1.x+faceA.p2.x)/2, cz=(faceA.p1.z+faceA.p2.z)/2;
   slice.moveHandle.position.set(cx, y, cz);
   slice.rotateHandle.position.set(faceA.p2.x, y, faceA.p2.z);
@@ -4701,22 +4794,23 @@ function extFusionnerTranches(){
   if(extPendingSlice){ flashStatus("Valide la tranche en cours avant de fusionner"); return; }
   if(extHallSlices.length<1){ flashStatus("Aucune tranche à fusionner"); return; }
   const geoms = [];
+  const materials = [];
   extHallSlices.forEach(slice=>{
     slice.group.traverse(o=>{
       if(o.isMesh){
         const g = o.geometry.clone();
         o.updateWorldMatrix(true,false);
         g.applyMatrix4(o.matrixWorld);
-        // ne garder que la géométrie "pleine" (pas les EdgesGeometry/lignes)
-        if(g.index || g.attributes.position) geoms.push(g);
+        geoms.push(g);
+        materials.push(o.material);
       }
     });
   });
   if(!geoms.length){ flashStatus("Rien à fusionner"); return; }
-  let merged = geoms.length>1 ? mergeGeometries(geoms, false) : geoms[0];
+  let merged = geoms.length>1 ? mergeGeometries(geoms, true) : geoms[0];
   merged = mergeVertices(merged, 1e-3);
   merged.computeVertexNormals();
-  const mesh = new THREE.Mesh(merged, extMaterial());
+  const mesh = new THREE.Mesh(merged, materials.length>1 ? materials : materials[0]);
   mesh.castShadow = true; mesh.receiveShadow = true;
   mesh.name = 'ExtGareFusion';
   scene.add(mesh);
