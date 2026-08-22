@@ -4449,7 +4449,7 @@ function extBuildModuleTemplate(){
   extensionGareMesh.updateWorldMatrix(true,false);
   const parentInv = new THREE.Matrix4().copy(extensionGareMesh.matrixWorld).invert();
   const bakedMeshes = [];
-  const allLocalXZ = [];
+  const allLocalPts = [];
   extensionGareMesh.traverse(o=>{
     if(!o.isMesh) return;
     o.updateWorldMatrix(true,false);
@@ -4457,12 +4457,12 @@ function extBuildModuleTemplate(){
     const geo = o.geometry.clone();
     geo.applyMatrix4(localMat);
     const pos = geo.attributes.position;
-    for(let i=0;i<pos.count;i++) allLocalXZ.push({x:pos.getX(i), z:pos.getZ(i)});
+    for(let i=0;i<pos.count;i++) allLocalPts.push({x:pos.getX(i), y:pos.getY(i), z:pos.getZ(i)});
     bakedMeshes.push({ geo, material: o.material });
   });
   if(!bakedMeshes.length){ extModuleTemplate = null; return null; }
   let zMin=Infinity, zMax=-Infinity;
-  allLocalXZ.forEach(p=>{ if(p.z<zMin) zMin=p.z; if(p.z>zMax) zMax=p.z; });
+  allLocalPts.forEach(p=>{ if(p.z<zMin) zMin=p.z; if(p.z>zMax) zMax=p.z; });
   // La face C doit être proche de l'origine locale (voir consignes de nettoyage
   // Blender données à l'utilisateur) : c'est donc l'extrémité la plus proche de 0.
   const cAtMax = Math.abs(zMax) <= Math.abs(zMin);
@@ -4472,12 +4472,28 @@ function extBuildModuleTemplate(){
   function xRangeNear(zTarget){
     let mn=Infinity, mx=-Infinity, tol=BAND;
     for(let pass=0; pass<4 && mn===Infinity; pass++, tol*=3){
-      allLocalXZ.forEach(p=>{ if(Math.abs(p.z-zTarget)<=tol){ if(p.x<mn) mn=p.x; if(p.x>mx) mx=p.x; } });
+      allLocalPts.forEach(p=>{ if(Math.abs(p.z-zTarget)<=tol){ if(p.x<mn) mn=p.x; if(p.x>mx) mx=p.x; } });
     }
     return {min:mn, max:mx};
   }
   const xC = xRangeNear(zC), xA = xRangeNear(zA);
-  extModuleTemplate = { bakedMeshes, zC, zA, xC, xA, depth: Math.abs(zA-zC) };
+  // Le module authored n'a pas forcément la même altitude moyenne à ses deux
+  // extrémités (ex : une très légère pente de toiture continue sur ~13cm
+  // dans le modèle de la gare). Si on l'ignore, chaque tranche chaînée
+  // repart de l'altitude "0" de sa propre face C au lieu de continuer depuis
+  // l'altitude réelle de la face A précédente → un décalage vertical
+  // s'accumule à chaque jointure. On mesure cet écart une fois ici
+  // ("riseY") pour le reporter en cascade sur toute la chaîne (voir
+  // slice.yBase dans extCreateSlice / extDeformModuleToQuad).
+  function meanYNear(zTarget){
+    let sum=0,n=0, tol=BAND;
+    for(let pass=0; pass<4 && n===0; pass++, tol*=3){
+      allLocalPts.forEach(p=>{ if(Math.abs(p.z-zTarget)<=tol){ sum+=p.y; n++; } });
+    }
+    return n ? sum/n : 0;
+  }
+  const riseY = meanYNear(zA) - meanYNear(zC);
+  extModuleTemplate = { bakedMeshes, zC, zA, xC, xA, depth: Math.abs(zA-zC), riseY };
   return extModuleTemplate;
 }
 // Déforme le module authored (coordonnées locales) sur le quadrilatère monde
@@ -4516,7 +4532,7 @@ function extDeformModuleToQuad(slice){
       const leftX  = faceC.p1.x + (faceA.p1.x-faceC.p1.x)*w, leftZ  = faceC.p1.z + (faceA.p1.z-faceC.p1.z)*w;
       const rightX = faceC.p2.x + (faceA.p2.x-faceC.p2.x)*w, rightZ = faceC.p2.z + (faceA.p2.z-faceC.p2.z)*w;
       const fx = leftX + (rightX-leftX)*u, fz = leftZ + (rightZ-leftZ)*u;
-      pos.setXYZ(i, fx, ly, fz);
+      pos.setXYZ(i, fx, ly + slice.yBase, fz);
     }
     pos.needsUpdate = true;
     g.computeVertexNormals();
@@ -4647,6 +4663,10 @@ function extCreateSlice(faceC, referenceOutward, parentSlice){
     outwardHint: outward.clone(),
     center: { x: midC.x + outward.x*depth, z: midC.z + outward.z*depth },
     angle: Math.atan2(widthDirC.y, widthDirC.x), // direction de la largeur de A (rad)
+    // Altitude cumulée de la chaîne (voir riseY dans extBuildModuleTemplate) :
+    // chaque tranche reprend l'altitude de sa parente + le décalage propre au
+    // module, pour que face C colle exactement (X, Y et Z) à la face A d'avant.
+    yBase: parentSlice ? parentSlice.yBase + (extBuildModuleTemplate()?.riseY || 0) : 0,
     confirmed: false,
     group: new THREE.Group(),
   };
@@ -4727,8 +4747,20 @@ function extPropagateChainFrom(index){
     const prev = extHallSlices[j-1];
     const cur = extHallSlices[j];
     cur.faceC = { p1:{x:prev.faceA.p1.x, z:prev.faceA.p1.z}, p2:{x:prev.faceA.p2.x, z:prev.faceA.p2.z} };
+    cur.yBase = prev.yBase + (extBuildModuleTemplate()?.riseY || 0);
     extRebuildSliceGeometry(cur);
     extUpdateHandlePositions(cur);
+  }
+  // Si une NOUVELLE tranche est en cours de création (pas encore validée)
+  // au bout de la chaîne qu'on vient de mettre à jour, elle doit suivre elle
+  // aussi — sinon elle reste "orpheline" tant qu'on ne la fait pas glisser
+  // soi-même après coup.
+  const tip = extHallSlices[extHallSlices.length-1];
+  if(extPendingSlice && tip && extPendingSlice.parentId===tip.id){
+    extPendingSlice.faceC = { p1:{x:tip.faceA.p1.x, z:tip.faceA.p1.z}, p2:{x:tip.faceA.p2.x, z:tip.faceA.p2.z} };
+    extPendingSlice.yBase = tip.yBase + (extBuildModuleTemplate()?.riseY || 0);
+    extRebuildSliceGeometry(extPendingSlice);
+    extUpdateHandlePositions(extPendingSlice);
   }
 }
 
