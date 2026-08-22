@@ -359,6 +359,13 @@
   }
   .ext-plus-btn:hover{filter:brightness(1.15);}
   @keyframes extPlusPulse{0%,100%{box-shadow:0 2px 10px rgba(224,102,63,.5);}50%{box-shadow:0 2px 18px rgba(224,102,63,.95);}}
+  .ext-handle{
+    position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:grab;
+    box-shadow:0 2px 8px rgba(0,0,0,.5);border:2px solid #fff;z-index:7;
+  }
+  .ext-handle:active{cursor:grabbing;}
+  .ext-handle-move{width:26px;height:26px;border-radius:50%;background:#e0663f;}
+  .ext-handle-rotate{width:20px;height:20px;border-radius:5px;background:#2ee8ff;transform:translate(-50%,-50%) rotate(45deg);}
   #ext-gare-hint{
     position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:8;
     background:rgba(15,20,26,.92);color:#fff;padding:8px 16px;border-radius:8px;
@@ -4612,17 +4619,24 @@ function extOutwardNormalFor(p1,p2, referenceOutward){
   if(referenceOutward && n.dot(referenceOutward)<0) n.negate();
   return n;
 }
-function extMakeHandle(color, shape){
-  const geo = shape==='cone' ? new THREE.ConeGeometry(1.3,3,16) : new THREE.SphereGeometry(1.5,16,16);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color, depthTest:false, depthWrite:false, transparent:true}));
-  mesh.renderOrder = 999;
-  return mesh;
+function extRemoveHandleEls(slice){
+  if(slice.moveHandleEl) slice.moveHandleEl.remove();
+  if(slice.rotateHandleEl) slice.rotateHandleEl.remove();
+}
+function extMakeHandleEl(kind){
+  const el = document.createElement('div');
+  el.className = 'ext-handle ' + (kind==='move' ? 'ext-handle-move' : 'ext-handle-rotate');
+  el.title = kind==='move' ? 'Déplacer la face A' : 'Orienter la face A';
+  el.style.display = 'none';
+  extGareLayer.appendChild(el);
+  return el;
 }
 function extCreateSlice(faceC, referenceOutward, parentSlice){
   const width = Math.hypot(faceC.p2.x-faceC.p1.x, faceC.p2.z-faceC.p1.z);
   const widthDirC = new THREE.Vector2((faceC.p2.x-faceC.p1.x)/width, (faceC.p2.z-faceC.p1.z)/width);
   const outward = extOutwardNormalFor(faceC.p1, faceC.p2, referenceOutward);
   const midC = {x:(faceC.p1.x+faceC.p2.x)/2, z:(faceC.p1.z+faceC.p2.z)/2};
+  const depth = extBuildModuleTemplate()?.depth || EXT_DEPTH_DEFAULT;
   const slice = {
     id: 'ext'+(idCounter++),
     parentId: parentSlice ? parentSlice.id : null,
@@ -4631,17 +4645,20 @@ function extCreateSlice(faceC, referenceOutward, parentSlice){
     width,
     height: extHallHeight(),
     outwardHint: outward.clone(),
-    center: { x: midC.x + outward.x*(extBuildModuleTemplate()?.depth || EXT_DEPTH_DEFAULT), z: midC.z + outward.z*(extBuildModuleTemplate()?.depth || EXT_DEPTH_DEFAULT) },
+    center: { x: midC.x + outward.x*depth, z: midC.z + outward.z*depth },
     angle: Math.atan2(widthDirC.y, widthDirC.x), // direction de la largeur de A (rad)
     confirmed: false,
     group: new THREE.Group(),
-    moveHandle: extMakeHandle(0xe0663f, 'sphere'),
-    rotateHandle: extMakeHandle(0x2ee8ff, 'cone'),
   };
   slice.group.name = 'ExtGareTranche';
   scene.add(slice.group);
-  scene.add(slice.moveHandle);
-  scene.add(slice.rotateHandle);
+  // Poignées en overlay DOM (comme le bouton +) : toujours à taille et
+  // position fixes à l'écran, jamais occultées ni sous-dimensionnées par la
+  // caméra 3D — contrairement aux anciennes sphères/cônes en mesh Three.js.
+  slice.moveHandleEl = extMakeHandleEl('move');
+  slice.rotateHandleEl = extMakeHandleEl('rotate');
+  slice.moveHandleEl.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); extDragSlice=slice; extDragMode='move'; controls.enabled=false; });
+  slice.rotateHandleEl.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); extDragSlice=slice; extDragMode='rotate'; controls.enabled=false; });
   extRebuildSliceGeometry(slice);
   extUpdateHandlePositions(slice);
   return slice;
@@ -4683,17 +4700,24 @@ function extRebuildSliceGeometry(slice){
 }
 function extUpdateHandlePositions(slice){
   const faceA = slice.faceA;
-  // Hauteur FIXE et basse (indépendante de la hauteur du bâtiment) : en vue
-  // quasi top-down, une poignée posée en haut d'un hall de 15-20m sort du
-  // champ ou passe inaperçue. Proche du sol, elle reste toujours visible et
-  // c'est de toute façon un déplacement sur le plan horizontal.
-  const y = 2.2;
-  const cx = (faceA.p1.x+faceA.p2.x)/2, cz=(faceA.p1.z+faceA.p2.z)/2;
-  slice.moveHandle.position.set(cx, y, cz);
-  slice.rotateHandle.position.set(faceA.p2.x, y, faceA.p2.z);
   const visible = (slice===extPendingSlice) || (slice.confirmed && extEditMode);
-  slice.moveHandle.visible = visible;
-  slice.rotateHandle.visible = visible;
+  if(!visible){ slice.moveHandleEl.style.display='none'; slice.rotateHandleEl.style.display='none'; return; }
+  extProjectHandleEl(slice.moveHandleEl, (faceA.p1.x+faceA.p2.x)/2, (faceA.p1.z+faceA.p2.z)/2);
+  extProjectHandleEl(slice.rotateHandleEl, faceA.p2.x, faceA.p2.z);
+}
+// Place un marqueur DOM en projetant un point monde à l'écran (identique au
+// principe déjà utilisé pour le bouton +). Utilisé pour les poignées ET
+// rappelé à chaque frame (voir updateExtGarePlusButtons) pour rester
+// synchronisé quand la caméra bouge.
+function extProjectHandleEl(el, x, z){
+  const rect = renderer.domElement.getBoundingClientRect();
+  if(!rect.width||!rect.height) return;
+  const activeCam = planViewActive ? orthoCamera : camera;
+  const v = new THREE.Vector3(x, 0.6, z).project(activeCam);
+  if(v.z>1){ el.style.display='none'; return; }
+  el.style.display='block';
+  el.style.left = ((v.x*0.5+0.5)*rect.width)+'px';
+  el.style.top = ((1-(v.y*0.5+0.5))*rect.height)+'px';
 }
 // Quand on modifie la face A d'une tranche déjà confirmée (via ses poignées
 // en mode édition), toutes les tranches suivantes de la chaîne doivent
@@ -4757,7 +4781,18 @@ function extAddChainedSlice(parentSlice){
   extToolActive = true;
   btnExtensionGare.classList.add('active');
   const faceC = { p1:{x:parentSlice.faceA.p1.x, z:parentSlice.faceA.p1.z}, p2:{x:parentSlice.faceA.p2.x, z:parentSlice.faceA.p2.z} };
-  extPendingSlice = extCreateSlice(faceC, parentSlice.outwardHint, parentSlice);
+  // IMPORTANT : on utilise la direction ACTUELLE de la tranche parente
+  // (centre de sa face A moins centre de sa face C), pas son "outwardHint"
+  // figé au moment de sa propre création. Si le parent a depuis été pivoté
+  // significativement, l'ancien indice figé pouvait être quasi perpendiculaire
+  // à sa nouvelle orientation réelle, faisant partir la nouvelle tranche du
+  // mauvais côté (effet "détaché") avant que l'utilisateur ne la repositionne.
+  const pMidC = {x:(parentSlice.faceC.p1.x+parentSlice.faceC.p2.x)/2, z:(parentSlice.faceC.p1.z+parentSlice.faceC.p2.z)/2};
+  const pMidA = {x:(parentSlice.faceA.p1.x+parentSlice.faceA.p2.x)/2, z:(parentSlice.faceA.p1.z+parentSlice.faceA.p2.z)/2};
+  const liveDir = new THREE.Vector3(pMidA.x-pMidC.x, 0, pMidA.z-pMidC.z);
+  if(liveDir.lengthSq() < 1e-6) liveDir.copy(parentSlice.outwardHint); // filet de sécurité (parent quasi nul)
+  else liveDir.normalize();
+  extPendingSlice = extCreateSlice(faceC, liveDir, parentSlice);
   extRemovePlusButton(parentSlice.id);
   extRefreshBar();
 }
@@ -4795,7 +4830,7 @@ function extCancelPendingSlice(){
   if(!extPendingSlice) return;
   const slice = extPendingSlice;
   scene.remove(slice.group);
-  scene.remove(slice.moveHandle, slice.rotateHandle);
+  extRemoveHandleEls(slice);
   extPendingSlice = null;
   if(slice.parentId && extHallSlices.length){
     const parent = extHallSlices.find(s=>s.id===slice.parentId);
@@ -4814,13 +4849,13 @@ function extDeleteLastSlice(){
   const last = extHallSlices[extHallSlices.length-1];
   if(extPendingSlice && extPendingSlice.parentId===last.id){
     scene.remove(extPendingSlice.group);
-    scene.remove(extPendingSlice.moveHandle, extPendingSlice.rotateHandle);
+    extRemoveHandleEls(extPendingSlice);
     extPendingSlice = null;
   }
   extHallSlices.pop();
   extRemovePlusButton(last.id);
   scene.remove(last.group);
-  scene.remove(last.moveHandle, last.rotateHandle);
+  extRemoveHandleEls(last);
   if(!extHallSlices.length && !extPendingSlice){ extExitToolFully(); return; }
   const newLast = extHallSlices[extHallSlices.length-1];
   if(newLast && !extPendingSlice) extMakePlusButton(newLast);
@@ -4833,8 +4868,8 @@ function extExitToolFully(){
   extToolActive = false;
   extEditMode = false;
   btnExtensionGare.classList.remove('active');
-  if(extPendingSlice){ scene.remove(extPendingSlice.group); scene.remove(extPendingSlice.moveHandle, extPendingSlice.rotateHandle); extPendingSlice=null; }
-  extHallSlices.forEach(s=>{ scene.remove(s.group); scene.remove(s.moveHandle, s.rotateHandle); });
+  if(extPendingSlice){ scene.remove(extPendingSlice.group); extRemoveHandleEls(extPendingSlice); extPendingSlice=null; }
+  extHallSlices.forEach(s=>{ scene.remove(s.group); extRemoveHandleEls(s); });
   extHallSlices = [];
   if(extFusedMesh){ scene.remove(extFusedMesh); extFusedMesh.geometry.dispose(); extFusedMesh=null; }
   extPlusButtons.forEach(btn=>btn.remove());
@@ -4856,6 +4891,11 @@ function extRemovePlusButton(sliceId){
   if(btn){ btn.remove(); extPlusButtons.delete(sliceId); }
 }
 function updateExtGarePlusButtons(){
+  // Poignées : suivent la caméra à chaque frame (pending + toutes les
+  // tranches confirmées si le mode édition est actif).
+  if(extPendingSlice) extUpdateHandlePositions(extPendingSlice);
+  if(extEditMode) extHallSlices.forEach(s=> extUpdateHandlePositions(s));
+  // Boutons (+)
   if(!extPlusButtons.size) return;
   if(!extEditMode && !extPendingSlice){ extPlusButtons.forEach(btn=> btn.style.display='none'); return; }
   const rect = renderer.domElement.getBoundingClientRect();
@@ -4900,7 +4940,7 @@ function extFusionnerTranches(){
   mesh.name = 'ExtGareFusion';
   scene.add(mesh);
   extFusedMesh = mesh;
-  extHallSlices.forEach(s=>{ scene.remove(s.group); scene.remove(s.moveHandle, s.rotateHandle); extRemovePlusButton(s.id); });
+  extHallSlices.forEach(s=>{ scene.remove(s.group); extRemoveHandleEls(s); extRemovePlusButton(s.id); });
   extHallSlices = [];
   extEditMode = false;
   flashStatus("Extension fusionnée ✓ (sommets soudés, rendu lissé).");
@@ -4908,28 +4948,13 @@ function extFusionnerTranches(){
 }
 
 /* ---- interactions souris : déplacer / orienter la face A (tranche en
-   cours de création OU n'importe quelle tranche confirmée en mode édition) */
-renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if(ev.button!==0) return;
-  const candidates = [];
-  if(extPendingSlice) candidates.push(extPendingSlice);
-  if(extEditMode) extHallSlices.forEach(s=>{ if(s!==extPendingSlice) candidates.push(s); });
-  if(!candidates.length) return;
-  const handleObjs = [];
-  candidates.forEach(s=> handleObjs.push(s.moveHandle, s.rotateHandle));
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
-  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(handleObjs);
-  if(!hits.length) return;
-  const hitObj = hits[0].object;
-  extDragSlice = candidates.find(s=> s.moveHandle===hitObj || s.rotateHandle===hitObj);
-  extDragMode = hitObj===extDragSlice.moveHandle ? 'move' : 'rotate';
-  controls.enabled = false;
-  ev.stopPropagation();
-});
-renderer.domElement.addEventListener('pointermove', (ev)=>{
+   cours de création OU n'importe quelle tranche confirmée en mode édition).
+   Le pointerdown est posé directement sur chaque poignée DOM (voir
+   extCreateSlice) — plus besoin de raycaster sur des meshes 3D, ce qui
+   supprime tout souci de visibilité/angle de caméra. On écoute le
+   déplacement sur window (pas juste le canvas) pour ne pas perdre le drag
+   si le curseur sort momentanément de la zone. */
+window.addEventListener('pointermove', (ev)=>{
   if(!extDragMode || !extDragSlice) return;
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
