@@ -1615,6 +1615,7 @@ function startDraw(mode){
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   drawMode = mode || 'polygon';
   drawing = true; drawPoints = [];
   clearMarkers();
@@ -2109,6 +2110,12 @@ function finishDraw(){
 
 btnDraw.addEventListener('click', ()=>{
   if(drawing){ cancelDraw(); return; }
+  if(!drawMenuOpen){
+    if(treePlacing) stopTreeTool();
+    if(grassPainting) stopGrassTool();
+    if(labelPlacing) stopLabelTool();
+    if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+  }
   drawMenuOpen ? closeDrawMenu() : openDrawMenu();
 });
 btnModePoly.addEventListener('click', ()=>{ closeDrawMenu(); startDraw('polygon'); });
@@ -2265,6 +2272,7 @@ function startTreeTool(){
   if(drawing) cancelDraw();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   treePlacing = true;
   btnTree.classList.add('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Cliquez le polygone…';
   drawHint.classList.add('show');
@@ -2556,6 +2564,7 @@ function startGrassTool(){
   if(drawing) cancelDraw();
   if(treePlacing) stopTreeTool();
   if(labelPlacing) stopLabelTool();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   grassPainting = true;
   btnGrass.classList.add('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Glissez pour peindre…';
   drawHint.classList.add('show');
@@ -3753,6 +3762,7 @@ btnLabel.addEventListener('click', ()=>{
     if(drawing) cancelDraw();
     if(treePlacing) stopTreeTool();
     if(grassPainting) stopGrassTool();
+    if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   }
   labelPlacing = !labelPlacing;
   btnLabel.classList.toggle('active', labelPlacing);
@@ -4551,25 +4561,33 @@ function extDeformModuleToQuad(slice){
   // gardaient alors une interpolation linéaire résiduelle au lieu d'être
   // plaqués pile sur la ligne de jonction — d'où la fine marche visible
   // entre deux tranches chaînées.
-  const EPS_Z = Math.max(0.08, Math.abs(spanZ)*0.012);
+  // Tolérance de snap exprimée en FRACTION du profil (et non plus en mètres
+  // absolus) : les sommets de faîtage/rive de toiture ne sont pas toujours
+  // à une distance métrique constante du plan C/A exact (bandeau en léger
+  // retrait, chanfrein de rive…), donc un seuil absolu en manquait certains
+  // près du sommet (« top ») ou du côté le plus rentrant (« concave »),
+  // laissant une interpolation résiduelle → fine marche visible. On snap
+  // désormais tout sommet situé dans les derniers ~6% du profil, en
+  // fraction relative, ce qui couvre correctement rive de toit et bandeau
+  // quelle que soit l'échelle du module.
+  const SNAP_FRAC = 0.06;
   const group = new THREE.Group();
   tpl.bakedMeshes.forEach(({geo, material})=>{
     const g = geo.clone();
     const pos = g.attributes.position;
     for(let i=0;i<pos.count;i++){
       const lx = pos.getX(i), ly = pos.getY(i), lz = pos.getZ(i);
-      let w;
-      if(Math.abs(lz-tpl.zC)<=EPS_Z) w = 0;
-      else if(Math.abs(lz-tpl.zA)<=EPS_Z) w = 1;
-      else { w = (lz - tpl.zC) / spanZ; w = Math.max(0, Math.min(1, w)); }
+      let w = (lz - tpl.zC) / spanZ;
+      if(w<=SNAP_FRAC) w = 0;
+      else if(w>=1-SNAP_FRAC) w = 1;
+      else w = Math.max(0, Math.min(1, w));
       const xMinAtW = tpl.xC.min + (tpl.xA.min - tpl.xC.min)*w;
       const xMaxAtW = tpl.xC.max + (tpl.xA.max - tpl.xC.max)*w;
       const spanX = (xMaxAtW - xMinAtW) || 1;
-      const EPS_X = Math.max(0.08, Math.abs(spanX)*0.012);
-      let u;
-      if(Math.abs(lx-xMinAtW)<=EPS_X) u = 0;
-      else if(Math.abs(lx-xMaxAtW)<=EPS_X) u = 1;
-      else { u = (lx - xMinAtW) / spanX; u = Math.max(-0.05, Math.min(1.05, u)); }
+      let u = (lx - xMinAtW) / spanX;
+      if(u<=SNAP_FRAC) u = 0;
+      else if(u>=1-SNAP_FRAC) u = 1;
+      else u = Math.max(-0.05, Math.min(1.05, u));
       const leftX  = faceC.p1.x + (faceA.p1.x-faceC.p1.x)*w, leftZ  = faceC.p1.z + (faceA.p1.z-faceC.p1.z)*w;
       const rightX = faceC.p2.x + (faceA.p2.x-faceC.p2.x)*w, rightZ = faceC.p2.z + (faceA.p2.z-faceC.p2.z)*w;
       const fx = leftX + (rightX-leftX)*u, fz = leftZ + (rightZ-leftZ)*u;
@@ -4808,6 +4826,10 @@ function extPropagateChainFrom(index){
 
 /* ---- démarrage / chaînage / validation ---------------------------- */
 function startExtensionGareTool(){
+  if(drawing) cancelDraw();
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
   const hallParts = extHallParts();
   if(!hallParts.length){ flashStatus("Hall de gare introuvable dans la maquette chargée"); return; }
   extToolActive = true;
@@ -4840,6 +4862,10 @@ function extHideExtension(){
   extRefreshBar();
 }
 function extShowExtensionForEditing(){
+  if(drawing) cancelDraw();
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
   extEditMode = true;
   extToolActive = true;
   btnExtensionGare.classList.add('active');
@@ -4877,8 +4903,9 @@ function extRefreshBar(){
   extGareHint.classList.add('show');
   extGareHintText.textContent = creating
     ? "Fais glisser la sphère orange pour déplacer la face A, la poignée bleue pour l'orienter."
-    : "Glisse les poignées pour ajuster une tranche, clique le (+) pour en ajouter une.";
-  btnExtValider.style.display = creating ? '' : 'none';
+    : "Glisse les poignées pour ajuster une tranche, clique le (+) ou \"Ajouter nouvelle tranche\" pour en ajouter une.";
+  btnExtValider.style.display = (creating || editing) ? '' : 'none';
+  btnExtValider.textContent = creating ? 'Valider la tranche' : 'Ajouter nouvelle tranche';
   btnExtSupprDerniere.style.display = extHallSlices.length>0 ? '' : 'none';
   btnExtAnnuler.textContent = creating ? 'Annuler' : 'Terminer';
 }
@@ -5015,7 +5042,10 @@ window.addEventListener('pointerup', ()=>{
   extDragSlice = null;
   controls.enabled = true;
 });
-btnExtValider.addEventListener('click', extConfirmPendingSlice);
+btnExtValider.addEventListener('click', ()=>{
+  if(extPendingSlice) extConfirmPendingSlice();
+  else if(extHallSlices.length) extAddChainedSlice(extHallSlices[extHallSlices.length-1]);
+});
 btnExtAnnuler.addEventListener('click', ()=>{
   if(extPendingSlice) extCancelPendingSlice(); else extHideExtension();
 });
