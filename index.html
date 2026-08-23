@@ -385,6 +385,10 @@
   }
   .ext-handle:active{cursor:grabbing;}
   .ext-handle-move{width:26px;height:26px;border-radius:50%;background:#e0663f;}
+  #box-select-rect{
+    position:absolute;border:1.5px dashed var(--accent);background:rgba(46,232,255,.12);
+    pointer-events:none;z-index:9;display:none;
+  }
   .ext-handle-rotate{width:20px;height:20px;border-radius:5px;background:#2ee8ff;transform:translate(-50%,-50%) rotate(45deg);}
   #ext-gare-hint{
     position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:8;
@@ -505,6 +509,7 @@
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
       <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
+      <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
     <div id="left-stack">
@@ -540,6 +545,7 @@
         <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
       </div>
       <div class="tool-sep"></div>
+      <button class="tool-btn ghost" id="btn-box-select" title="Sélectionner plusieurs bâtiments en traçant un carré englobant sur la grille"><i data-lucide="square-dashed"></i><span class="tool-btn-label">Sélection carré</span></button>
       <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
     </div>
     <div id="bldg-edit-window">
@@ -569,6 +575,7 @@
       <button class="sun-btn sun-btn-night" id="sun-btn-night" title="Mode nuit"><i data-lucide="moon"></i><span>NUIT</span></button>
     </div>
     <div id="loading-spinner"><div class="ring"></div></div>
+    <div id="box-select-rect"></div>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
       <div class="legend-item"><div class="swatch" style="background:var(--res)"></div>Résidentiel</div>
@@ -1466,6 +1473,42 @@ let drawMarkers = new THREE.Group();
 let previewLine = null;
 worldRoot.add(drawMarkers);
 
+/* ------------------------------------------------------------
+   Marqueurs à taille d'écran CONSTANTE quel que soit le zoom —
+   même comportement que les poignées DOM (.ext-handle-move, 26px)
+   de l'extension gare. Géométrie créée en rayon unitaire (1), puis
+   remise à l'échelle chaque frame (voir updateScreenSizedMarkers,
+   appelé depuis animate()) en fonction de la caméra active
+   (perspective ou orthographique en vue plan).
+   ------------------------------------------------------------ */
+const SCREEN_SIZED_MARKER_PX = 13; // rayon écran cible (~26px de diamètre, comme .ext-handle-move)
+let screenSizedMarkers = [];
+const _ssmTmpPos = new THREE.Vector3();
+function registerScreenSizedMarker(obj){ screenSizedMarkers.push(obj); return obj; }
+function unregisterScreenSizedMarkersOf(group){
+  screenSizedMarkers = screenSizedMarkers.filter(o=> o.parent !== group);
+}
+function updateScreenSizedMarkers(){
+  if(!screenSizedMarkers.length) return;
+  const cam = planViewActive ? orthoCamera : camera;
+  const h = renderer.domElement.clientHeight || renderer.domElement.height || 1;
+  for(const obj of screenSizedMarkers){
+    if(!obj.parent) continue;
+    let worldRadius;
+    if(cam.isOrthographicCamera){
+      const worldHeight = (cam.top - cam.bottom) / cam.zoom;
+      worldRadius = SCREEN_SIZED_MARKER_PX * (worldHeight / h);
+    } else {
+      obj.getWorldPosition(_ssmTmpPos);
+      const dist = _ssmTmpPos.distanceTo(cam.position);
+      const vFov = cam.fov * Math.PI/180;
+      const worldHeightAtDist = 2*Math.tan(vFov/2)*dist;
+      worldRadius = SCREEN_SIZED_MARKER_PX * (worldHeightAtDist / h);
+    }
+    obj.scale.setScalar(worldRadius);
+  }
+}
+
 /* ============================================================
    REPÈRES CIRCULAIRES (textures radiales) — utilisés pour le guide de
    tracé, le pinceau de gazon et les anneaux de sélection de sommets.
@@ -1641,6 +1684,7 @@ function cancelDraw(){
   refreshBldgMiniListVisibility();
 }
 function clearMarkers(){
+  unregisterScreenSizedMarkersOf(drawMarkers);
   drawMarkers.clear();
   if(previewLine){ worldRoot.remove(previewLine); previewLine.geometry.dispose(); previewLine=null; }
   if(previewHazard){ worldRoot.remove(previewHazard); previewHazard=null; }
@@ -2082,9 +2126,12 @@ function addDrawPoint(pt){
   }
   toInsert.forEach(p=>{
     drawPoints.push({x:p.x, z:p.z});
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,12), new THREE.MeshBasicMaterial({color:0xe0663f}));
+    // Rayon unitaire : la taille réelle à l'écran est recalculée chaque
+    // frame par updateScreenSizedMarkers() pour rester constante au zoom.
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1,14,14), new THREE.MeshBasicMaterial({color:0xe0663f}));
     m.position.set(p.x,0.2,p.z);
     drawMarkers.add(m);
+    registerScreenSizedMarker(m);
   });
   refreshPreview();
 }
@@ -2864,7 +2911,7 @@ function ensureBldgHoverOutline(){
   return bldgHoverOutline;
 }
 function toolIsActive(){
-  return drawing || treePlacing || grassPainting || !!editingBuildingId;
+  return drawing || treePlacing || grassPainting || !!editingBuildingId || boxSelectMode;
 }
 function buildingHitAt(ev){
   const rect = renderer.domElement.getBoundingClientRect();
@@ -2901,14 +2948,120 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   }
 });
 renderer.domElement.addEventListener('click', (ev)=>{
-  if(toolIsActive()) return;
+  if(toolIsActive() || boxSelectMode) return;
   const hit = buildingHitAt(ev);
   if(!hit){
     if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
+    if(multiSelectedIds.size) clearMultiSelection();
     return;
   }
+  if(multiSelectedIds.size) clearMultiSelection();
   selectBuilding(hit.id);
   openBldgEditWindow(hit.id);
+});
+
+/* ============================================================
+   SÉLECTION MULTIPLE PAR CARRÉ ENGLOBANT (glisser sur la grille)
+   ============================================================
+   Un simple rectangle en pixels écran (div #box-select-rect), tracé au
+   clic-glisser pendant que l'outil est actif. Au relâchement, on projette
+   les sommets de chaque bâtiment à l'écran (caméra active : perspective ou
+   orthographique en vue plan) et on sélectionne tout bâtiment dont au moins
+   un sommet tombe dans le rectangle — plus intuitif qu'exiger que le
+   bâtiment entier soit englobé.
+   ============================================================ */
+let boxSelectMode = false;
+let boxSelectDragging = false;
+let boxSelectStart = null; // {x,y} en pixels écran, relatif au canvas
+let multiSelectedIds = new Set();
+const boxSelectRectEl = document.getElementById('box-select-rect');
+const btnBoxSelect = document.getElementById('btn-box-select');
+let boxSelectOutlineGroup = new THREE.Group(); worldRoot.add(boxSelectOutlineGroup);
+const _boxSelProj = new THREE.Vector3();
+
+function rebuildBoxSelectOutlines(){
+  boxSelectOutlineGroup.clear();
+  multiSelectedIds.forEach(id=>{
+    const b = buildings.find(x=>x.id===id);
+    if(!b) return;
+    const flat = [];
+    b.points.forEach(p=> flat.push(p.x, 0.25, p.z));
+    flat.push(b.points[0].x, 0.25, b.points[0].z);
+    const geo = new LineGeometry();
+    geo.setPositions(flat);
+    const mat = new LineMaterial({ color:0x2ee8ff, transparent:true, opacity:1, linewidth:3.5, depthTest:false });
+    mat.resolution.set(window.innerWidth, window.innerHeight);
+    const line = new Line2(geo, mat);
+    line.computeLineDistances();
+    line.renderOrder = 42;
+    boxSelectOutlineGroup.add(line);
+  });
+}
+function clearMultiSelection(){
+  multiSelectedIds.clear();
+  boxSelectOutlineGroup.clear();
+}
+function setBoxSelectMode(on){
+  boxSelectMode = on;
+  btnBoxSelect.classList.toggle('active', on);
+  renderer.domElement.style.cursor = on ? 'crosshair' : '';
+  if(on){
+    clearMultiSelection();
+    flashStatus('Tracez un carré englobant sur la grille pour sélectionner plusieurs bâtiments');
+  } else {
+    boxSelectDragging = false;
+    boxSelectRectEl.style.display = 'none';
+    controls.enabled = true;
+  }
+}
+btnBoxSelect.addEventListener('click', ()=> setBoxSelectMode(!boxSelectMode));
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!boxSelectMode || ev.button!==0) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  boxSelectStart = { x: ev.clientX-rect.left, y: ev.clientY-rect.top };
+  boxSelectDragging = true;
+  controls.enabled = false;
+  boxSelectRectEl.style.left = boxSelectStart.x+'px';
+  boxSelectRectEl.style.top = boxSelectStart.y+'px';
+  boxSelectRectEl.style.width = '0px';
+  boxSelectRectEl.style.height = '0px';
+  boxSelectRectEl.style.display = 'block';
+});
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!boxSelectDragging) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = ev.clientX-rect.left, y = ev.clientY-rect.top;
+  const left = Math.min(x, boxSelectStart.x), top = Math.min(y, boxSelectStart.y);
+  const w = Math.abs(x-boxSelectStart.x), h = Math.abs(y-boxSelectStart.y);
+  boxSelectRectEl.style.left = left+'px';
+  boxSelectRectEl.style.top = top+'px';
+  boxSelectRectEl.style.width = w+'px';
+  boxSelectRectEl.style.height = h+'px';
+});
+window.addEventListener('pointerup', (ev)=>{
+  if(!boxSelectDragging) return;
+  boxSelectDragging = false;
+  controls.enabled = true;
+  boxSelectRectEl.style.display = 'none';
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = ev.clientX-rect.left, y = ev.clientY-rect.top;
+  const left = Math.min(x, boxSelectStart.x), top = Math.min(y, boxSelectStart.y);
+  const w = Math.abs(x-boxSelectStart.x), h = Math.abs(y-boxSelectStart.y);
+  if(w<4 && h<4) return; // simple clic, pas un vrai carré : on ignore
+  const cam = planViewActive ? orthoCamera : camera;
+  const cw = renderer.domElement.clientWidth, ch = renderer.domElement.clientHeight;
+  const picked = [];
+  buildings.forEach(b=>{
+    const hit = b.points.some(p=>{
+      _boxSelProj.set(p.x, 0.2, p.z).project(cam);
+      const sx = (_boxSelProj.x*0.5+0.5)*cw, sy = (1-(_boxSelProj.y*0.5+0.5))*ch;
+      return sx>=left && sx<=left+w && sy>=top && sy<=top+h;
+    });
+    if(hit) picked.push(b.id);
+  });
+  multiSelectedIds = new Set(picked);
+  rebuildBoxSelectOutlines();
+  flashStatus(picked.length ? `${picked.length} bâtiment(s) sélectionné(s)` : 'Aucun bâtiment dans ce carré');
 });
 
 /* ============================================================
@@ -3638,6 +3791,17 @@ function setLightingMode(mode){
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       applyLightingModeNow(mode);
+      // applyLightingModeNow() ne fait que changer des propriétés JS
+      // (matériaux, environnement, lampes) — la VRAIE recompilation des
+      // shaders PBR par le navigateur n'a lieu qu'au prochain rendu qui les
+      // utilise réellement. Si on masquait le spinner ici, il disparaissait
+      // donc avant que ce rendu (déclenché plus tard par la boucle
+      // animate()) n'ait eu lieu, laissant l'utilisateur face à un figeage
+      // sans indicateur. On force donc ici un rendu synchrone immédiat
+      // (qui déclenche la compilation bloquante pendant qu'elle est encore
+      // masquée par le spinner), et on ne masque le spinner qu'après.
+      const activeCam = planViewActive ? orthoCamera : camera;
+      renderer.render(scene, activeCam);
       loadingSpinner.classList.remove('show');
     });
   });
@@ -3653,6 +3817,23 @@ function refreshSunPanelUI(){
   sunPanelBtn.classList.toggle('active', isNight);
   if(window.lucide) lucide.createIcons();
 }
+// ---------------- Simulation PLAY / PAUSE ----------------
+// Met en pause tickAgents() (véhicules, piétons...) sans toucher au reste
+// (caméra, rendu, édition) — un simple flag lu dans animate().
+let simulationPaused = false;
+const btnSimToggle = document.getElementById('btn-sim-toggle');
+function refreshSimToggleUI(){
+  const iconEl = btnSimToggle.querySelector('svg, i');
+  if(iconEl) iconEl.outerHTML = `<i data-lucide="${simulationPaused ? 'play':'pause'}"></i>`;
+  btnSimToggle.querySelector('.tool-btn-label').textContent = simulationPaused ? 'Reprendre' : 'Simulation';
+  btnSimToggle.classList.toggle('active', simulationPaused);
+  if(window.lucide) lucide.createIcons();
+}
+btnSimToggle.addEventListener('click', ()=>{
+  simulationPaused = !simulationPaused;
+  refreshSimToggleUI();
+  flashStatus(simulationPaused ? 'Simulation en pause' : 'Simulation relancée');
+});
 const sunPanel = document.getElementById('sun-panel');
 document.getElementById('btn-sun-panel').addEventListener('click', (ev)=>{
   ev.stopPropagation();
@@ -5110,10 +5291,11 @@ function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
   controls.update();
-  tickAgents(dt);
+  if(!simulationPaused) tickAgents(dt);
   updateCompass();
   updateLabelPositions();
   updateExtGarePlusButtons();
+  updateScreenSizedMarkers();
   if(drawGuideGroup.visible){
     const t = performance.now()/1000;
     drawGuideRing.scale.setScalar((2.6 + Math.sin(t*3.2)*0.35)/2.6);
