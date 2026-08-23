@@ -2954,16 +2954,28 @@ function stopEditBuildingShape(){
   renderList();
 }
 const BLDG_HANDLE_COLOR = 0xe0663f, BLDG_HANDLE_HOVER = 0xffab7a, BLDG_HANDLE_DRAG = 0xffffff, BLDG_HANDLE_SELECTED = NEON_BLUE;
+// Rayon réduit + liseré blanc en coque inversée (BackSide) pour retrouver le
+// même rendu "boule orange qualitative" que les poignées de l'extension gare
+// (fond orange, contour blanc net), en plus petit comme demandé.
+const BLDG_HANDLE_RADIUS = 0.55;
 function rebuildBldgVertexHandles(b){
   bldgVertexGroup.clear();
   bldgVertexHandles = b.points.map((p,i)=>{
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.8,14,14),
-      new THREE.MeshStandardMaterial({ color:BLDG_HANDLE_COLOR, emissive:BLDG_HANDLE_COLOR, emissiveIntensity:0.25 })
+    const holder = new THREE.Group();
+    const rim = new THREE.Mesh(
+      new THREE.SphereGeometry(BLDG_HANDLE_RADIUS*1.22, 16, 16),
+      new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.BackSide })
     );
-    mesh.position.set(p.x, 0.3, p.z);
-    bldgVertexGroup.add(mesh);
-    return { mesh, index:i };
+    rim.raycast = ()=>{}; // purement décoratif : ne doit jamais intercepter les clics/hover
+    holder.add(rim);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(BLDG_HANDLE_RADIUS,20,20),
+      new THREE.MeshPhysicalMaterial({ color:BLDG_HANDLE_COLOR, emissive:BLDG_HANDLE_COLOR, emissiveIntensity:0.22, roughness:0.25, metalness:0.05, clearcoat:0.6, clearcoatRoughness:0.25 })
+    );
+    holder.add(mesh);
+    holder.position.set(p.x, 0.3, p.z);
+    bldgVertexGroup.add(holder);
+    return { mesh, holder, index:i };
   });
   refreshBldgHandleColors();
 }
@@ -3126,7 +3138,7 @@ window.addEventListener('pointermove', (ev)=>{
           let target = { x:startP.x+dx, z:startP.z+dz };
           if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
           b.points[idx] = target;
-          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
         });
       } else if(gizmoDrag.type==='scale'){
         const c = gizmoDrag.centroid;
@@ -3137,7 +3149,7 @@ window.addEventListener('pointermove', (ev)=>{
           let target = { x: c.x + (startP.x-c.x)*factor, z: c.z + (startP.z-c.z)*factor };
           if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
           b.points[idx] = target;
-          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
         });
       }
       rebuildMesh(b);
@@ -3161,7 +3173,7 @@ window.addEventListener('pointermove', (ev)=>{
     const vertex = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
     const target = vertex ? vertex : (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
     b.points[idx] = { x: target.x, z: target.z };
-    bldgVertexHandles[idx].mesh.position.set(target.x, 0.3, target.z);
+    bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
     rebuildMesh(b);
     return;
   }
