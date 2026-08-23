@@ -389,6 +389,20 @@
     position:absolute;border:1.5px dashed var(--accent);background:rgba(46,232,255,.12);
     pointer-events:none;z-index:9;display:none;
   }
+  #vertex-select-bar{
+    position:absolute;bottom:22px;left:50%;transform:translateX(-50%);z-index:8;
+    display:none;gap:2px;background:rgba(24,36,48,.95);border:1px solid #2a3946;border-radius:8px;
+    padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #vertex-select-bar.show{display:flex;}
+  #vertex-select-bar .vsel-btn{
+    display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:6px;border:none;
+    background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-size:12.5px;
+    font-weight:600;text-transform:uppercase;letter-spacing:.02em;cursor:pointer;transition:all .15s ease;
+  }
+  #vertex-select-bar .vsel-btn svg{width:15px;height:15px;stroke-width:2;}
+  #vertex-select-bar .vsel-btn:hover{color:var(--paper);}
+  #vertex-select-bar .vsel-btn.active{background:var(--accent);color:#08141a;}
   .ext-handle-rotate{width:20px;height:20px;border-radius:5px;background:#2ee8ff;transform:translate(-50%,-50%) rotate(45deg);}
   #ext-gare-hint{
     position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:8;
@@ -545,7 +559,6 @@
         <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
       </div>
       <div class="tool-sep"></div>
-      <button class="tool-btn ghost" id="btn-box-select" title="Sélectionner plusieurs bâtiments en traçant un carré englobant sur la grille"><i data-lucide="square-dashed"></i><span class="tool-btn-label">Sélection carré</span></button>
       <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
     </div>
     <div id="bldg-edit-window">
@@ -576,6 +589,10 @@
     </div>
     <div id="loading-spinner"><div class="ring"></div></div>
     <div id="box-select-rect"></div>
+    <div id="vertex-select-bar">
+      <button class="vsel-btn active" id="btn-select-point" title="Sélection par sommet : cliquez une poignée pour la (dé)sélectionner"><i data-lucide="mouse-pointer-click"></i><span>Sélection par sommet</span></button>
+      <button class="vsel-btn" id="btn-select-box" title="Sélection carré : glissez un rectangle pour sélectionner plusieurs sommets à la fois"><i data-lucide="square-dashed"></i><span>Sélection carré</span></button>
+    </div>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
       <div class="legend-item"><div class="swatch" style="background:var(--res)"></div>Résidentiel</div>
@@ -2911,7 +2928,7 @@ function ensureBldgHoverOutline(){
   return bldgHoverOutline;
 }
 function toolIsActive(){
-  return drawing || treePlacing || grassPainting || !!editingBuildingId || boxSelectMode;
+  return drawing || treePlacing || grassPainting || !!editingBuildingId;
 }
 function buildingHitAt(ev){
   const rect = renderer.domElement.getBoundingClientRect();
@@ -2948,75 +2965,60 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   }
 });
 renderer.domElement.addEventListener('click', (ev)=>{
-  if(toolIsActive() || boxSelectMode) return;
+  if(toolIsActive()) return;
   const hit = buildingHitAt(ev);
   if(!hit){
     if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
-    if(multiSelectedIds.size) clearMultiSelection();
     return;
   }
-  if(multiSelectedIds.size) clearMultiSelection();
   selectBuilding(hit.id);
   openBldgEditWindow(hit.id);
 });
 
 /* ============================================================
-   SÉLECTION MULTIPLE PAR CARRÉ ENGLOBANT (glisser sur la grille)
+   MODES DE SÉLECTION DES SOMMETS EN ÉDITION DE BÂTIMENT
    ============================================================
-   Un simple rectangle en pixels écran (div #box-select-rect), tracé au
-   clic-glisser pendant que l'outil est actif. Au relâchement, on projette
-   les sommets de chaque bâtiment à l'écran (caméra active : perspective ou
-   orthographique en vue plan) et on sélectionne tout bâtiment dont au moins
-   un sommet tombe dans le rectangle — plus intuitif qu'exiger que le
-   bâtiment entier soit englobé.
+   Deux modes mutuellement exclusifs, actifs uniquement pendant l'édition
+   de la forme d'un bâtiment (editingBuildingId) :
+   - "point" (par défaut) : clic direct sur une poignée pour basculer sa
+     sélection — comportement déjà géré plus bas par pointerup/bldgVertexDrag.
+   - "box" : glisser un rectangle sur l'écran sélectionne toutes les
+     poignées de sommet du bâtiment en cours d'édition dont la position
+     projetée tombe dans ce rectangle.
+   La barre de boutons (#vertex-select-bar) n'est visible que pendant
+   l'édition d'un bâtiment.
    ============================================================ */
-let boxSelectMode = false;
+let vertexSelectMode = 'point'; // 'point' | 'box'
 let boxSelectDragging = false;
 let boxSelectStart = null; // {x,y} en pixels écran, relatif au canvas
-let multiSelectedIds = new Set();
 const boxSelectRectEl = document.getElementById('box-select-rect');
-const btnBoxSelect = document.getElementById('btn-box-select');
-let boxSelectOutlineGroup = new THREE.Group(); worldRoot.add(boxSelectOutlineGroup);
+const btnSelectPoint = document.getElementById('btn-select-point');
+const btnSelectBox = document.getElementById('btn-select-box');
+const vertexSelectBar = document.getElementById('vertex-select-bar');
 const _boxSelProj = new THREE.Vector3();
 
-function rebuildBoxSelectOutlines(){
-  boxSelectOutlineGroup.clear();
-  multiSelectedIds.forEach(id=>{
-    const b = buildings.find(x=>x.id===id);
-    if(!b) return;
-    const flat = [];
-    b.points.forEach(p=> flat.push(p.x, 0.25, p.z));
-    flat.push(b.points[0].x, 0.25, b.points[0].z);
-    const geo = new LineGeometry();
-    geo.setPositions(flat);
-    const mat = new LineMaterial({ color:0x2ee8ff, transparent:true, opacity:1, linewidth:3.5, depthTest:false });
-    mat.resolution.set(window.innerWidth, window.innerHeight);
-    const line = new Line2(geo, mat);
-    line.computeLineDistances();
-    line.renderOrder = 42;
-    boxSelectOutlineGroup.add(line);
-  });
+function refreshVertexSelectBar(){
+  vertexSelectBar.classList.toggle('show', !!editingBuildingId);
 }
-function clearMultiSelection(){
-  multiSelectedIds.clear();
-  boxSelectOutlineGroup.clear();
-}
-function setBoxSelectMode(on){
-  boxSelectMode = on;
-  btnBoxSelect.classList.toggle('active', on);
-  renderer.domElement.style.cursor = on ? 'crosshair' : '';
-  if(on){
-    clearMultiSelection();
-    flashStatus('Tracez un carré englobant sur la grille pour sélectionner plusieurs bâtiments');
-  } else {
+function setVertexSelectMode(mode){
+  vertexSelectMode = mode;
+  btnSelectPoint.classList.toggle('active', mode==='point');
+  btnSelectBox.classList.toggle('active', mode==='box');
+  if(mode==='point'){
     boxSelectDragging = false;
     boxSelectRectEl.style.display = 'none';
     controls.enabled = true;
+    renderer.domElement.style.cursor = '';
+  } else {
+    flashStatus('Tracez un carré sur la grille pour sélectionner plusieurs sommets');
   }
 }
-btnBoxSelect.addEventListener('click', ()=> setBoxSelectMode(!boxSelectMode));
+btnSelectPoint.addEventListener('click', ()=> setVertexSelectMode('point'));
+btnSelectBox.addEventListener('click', ()=> setVertexSelectMode(vertexSelectMode==='box' ? 'point' : 'box'));
+
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if(!boxSelectMode || ev.button!==0) return;
+  if(!editingBuildingId || vertexSelectMode!=='box' || ev.button!==0) return;
+  ev.stopPropagation();
   const rect = renderer.domElement.getBoundingClientRect();
   boxSelectStart = { x: ev.clientX-rect.left, y: ev.clientY-rect.top };
   boxSelectDragging = true;
@@ -3026,7 +3028,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   boxSelectRectEl.style.width = '0px';
   boxSelectRectEl.style.height = '0px';
   boxSelectRectEl.style.display = 'block';
-});
+}, true); // capture : passe AVANT le gestionnaire de glissement des poignées/gizmo
 renderer.domElement.addEventListener('pointermove', (ev)=>{
   if(!boxSelectDragging) return;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -3037,7 +3039,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   boxSelectRectEl.style.top = top+'px';
   boxSelectRectEl.style.width = w+'px';
   boxSelectRectEl.style.height = h+'px';
-});
+}, true);
 window.addEventListener('pointerup', (ev)=>{
   if(!boxSelectDragging) return;
   boxSelectDragging = false;
@@ -3047,22 +3049,19 @@ window.addEventListener('pointerup', (ev)=>{
   const x = ev.clientX-rect.left, y = ev.clientY-rect.top;
   const left = Math.min(x, boxSelectStart.x), top = Math.min(y, boxSelectStart.y);
   const w = Math.abs(x-boxSelectStart.x), h = Math.abs(y-boxSelectStart.y);
-  if(w<4 && h<4) return; // simple clic, pas un vrai carré : on ignore
+  if((w<4 && h<4) || !editingBuildingId){ return; }
   const cam = planViewActive ? orthoCamera : camera;
   const cw = renderer.domElement.clientWidth, ch = renderer.domElement.clientHeight;
   const picked = [];
-  buildings.forEach(b=>{
-    const hit = b.points.some(p=>{
-      _boxSelProj.set(p.x, 0.2, p.z).project(cam);
-      const sx = (_boxSelProj.x*0.5+0.5)*cw, sy = (1-(_boxSelProj.y*0.5+0.5))*ch;
-      return sx>=left && sx<=left+w && sy>=top && sy<=top+h;
-    });
-    if(hit) picked.push(b.id);
+  bldgVertexHandles.forEach(hnd=>{
+    _boxSelProj.setFromMatrixPosition(hnd.holder.matrixWorld).project(cam);
+    const sx = (_boxSelProj.x*0.5+0.5)*cw, sy = (1-(_boxSelProj.y*0.5+0.5))*ch;
+    if(sx>=left && sx<=left+w && sy>=top && sy<=top+h) picked.push(hnd.index);
   });
-  multiSelectedIds = new Set(picked);
-  rebuildBoxSelectOutlines();
-  flashStatus(picked.length ? `${picked.length} bâtiment(s) sélectionné(s)` : 'Aucun bâtiment dans ce carré');
-});
+  bldgSelected = new Set(picked);
+  rebuildBldgSelectionVisuals();
+  flashStatus(picked.length ? `${picked.length} sommet(s) sélectionné(s)` : 'Aucun sommet dans ce carré');
+}, true);
 
 /* ============================================================
    ÉDITION DE LA FORME D'UN BÂTIMENT — sommets déplaçables
@@ -3087,6 +3086,8 @@ function startEditBuildingShape(b){
   rebuildBldgSelectionVisuals();
   rebuildMesh(b);
   renderList();
+  setVertexSelectMode('point');
+  refreshVertexSelectBar();
   flashStatus("Cliquez les sommets pour les sélectionner (plusieurs possibles) · glissez pour déplacer · reclic sur Modifier pour terminer");
 }
 function stopEditBuildingShape(){
@@ -3102,6 +3103,8 @@ function stopEditBuildingShape(){
   gizmoGroup.visible = false;
   controls.enabled = true;
   renderer.domElement.style.cursor = '';
+  setVertexSelectMode('point');
+  refreshVertexSelectBar();
   const b = buildings.find(x=>x.id===id);
   if(b) rebuildMesh(b);
   renderList();
@@ -3248,7 +3251,7 @@ function bldgHandleAt(ev){
   return hits.length ? bldgVertexHandles.findIndex(h=>h.mesh===hits[0].object) : -1;
 }
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
-  if(!editingBuildingId || ev.button!==0) return;
+  if(!editingBuildingId || ev.button!==0 || vertexSelectMode==='box') return;
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
 
@@ -5295,7 +5298,6 @@ function animate(){
   updateCompass();
   updateLabelPositions();
   updateExtGarePlusButtons();
-  updateScreenSizedMarkers();
   if(drawGuideGroup.visible){
     const t = performance.now()/1000;
     drawGuideRing.scale.setScalar((2.6 + Math.sin(t*3.2)*0.35)/2.6);
@@ -5304,8 +5306,8 @@ function animate(){
     const t = performance.now()/1000;
     grassCursorDecal.material.opacity = 0.75 + Math.sin(t*4)*0.15;
   }
-  if(planViewActive){ syncOrthoCameraForPlanView(); renderer.render(scene, orthoCamera); }
-  else renderer.render(scene, camera);
+  if(planViewActive){ syncOrthoCameraForPlanView(); updateScreenSizedMarkers(); renderer.render(scene, orthoCamera); }
+  else { updateScreenSizedMarkers(); renderer.render(scene, camera); }
 }
 animate();
 
