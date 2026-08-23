@@ -611,7 +611,6 @@
     <div id="ext-gare-hint">
       <span id="ext-gare-hint-text">Fais glisser la face A (sphère orange) pour la positionner, la poignée bleue pour l'orienter.</span>
       <button id="ext-gare-valider">Valider la tranche</button>
-      <button id="ext-gare-fusionner" class="ghost" style="display:none;">Fusionner (lissage)</button>
       <button id="ext-gare-suppr-derniere" class="ghost" style="display:none;">Suppr. dernière tranche</button>
       <button id="ext-gare-annuler" class="ghost">Annuler</button>
     </div>
@@ -4417,7 +4416,6 @@ const extGareLayer   = document.getElementById('ext-gare-layer');
 const extGareHint     = document.getElementById('ext-gare-hint');
 const extGareHintText = document.getElementById('ext-gare-hint-text');
 const btnExtValider    = document.getElementById('ext-gare-valider');
-const btnExtFusionner  = document.getElementById('ext-gare-fusionner');
 const btnExtSupprDerniere = document.getElementById('ext-gare-suppr-derniere');
 const btnExtAnnuler    = document.getElementById('ext-gare-annuler');
 
@@ -4428,7 +4426,6 @@ let extToolActive   = false;
 let extEditMode      = false; // true = poignées de toutes les tranches confirmées visibles (édition a posteriori)
 let extHallSlices    = [];  // tranches validées (dans l'ordre de la chaîne)
 let extPendingSlice  = null; // tranche en cours d'édition (déplaçable/orientable), ou null
-let extFusedMesh     = null;
 let extDragSlice     = null; // tranche actuellement déplacée à la souris (pending OU confirmée en mode édition)
 let extDragMode      = null; // 'move' | 'rotate' | null
 let extModuleTemplate = undefined; // undefined = pas encore tenté, null = échec, objet = ok
@@ -4510,7 +4507,7 @@ function extDeformModuleToQuad(slice){
   // fait légèrement rentrer les sommets de bord vers l'intérieur de chaque
   // tranche (de manière indépendante des deux côtés de la jointure), ce qui
   // ouvre une fine fente visible entre deux tranches chaînées.
-  const EPS_Z = Math.max(0.05, Math.abs(spanZ)*0.01);
+  const EPS_Z = Math.max(0.2, Math.abs(spanZ)*0.03);
   const group = new THREE.Group();
   tpl.bakedMeshes.forEach(({geo, material})=>{
     const g = geo.clone();
@@ -4524,7 +4521,7 @@ function extDeformModuleToQuad(slice){
       const xMinAtW = tpl.xC.min + (tpl.xA.min - tpl.xC.min)*w;
       const xMaxAtW = tpl.xC.max + (tpl.xA.max - tpl.xC.max)*w;
       const spanX = (xMaxAtW - xMinAtW) || 1;
-      const EPS_X = Math.max(0.05, Math.abs(spanX)*0.01);
+      const EPS_X = Math.max(0.2, Math.abs(spanX)*0.03);
       let u;
       if(Math.abs(lx-xMinAtW)<=EPS_X) u = 0;
       else if(Math.abs(lx-xMaxAtW)<=EPS_X) u = 1;
@@ -4780,16 +4777,9 @@ function startExtensionGareTool(){
 //  1) rien construit               -> démarre la création de la 1ère tranche
 //  2) construit, affiché en édition -> cache l'extension (sans rien supprimer)
 //  3) construit, caché              -> réaffiche en mode édition (poignées + (+))
-// Si l'extension a déjà été fusionnée, le bouton bascule juste sa visibilité.
 function toggleExtensionGareTool(){
   if(extPendingSlice) return; // création en cours : on passe par Valider/Annuler
-  const hasExtension = extHallSlices.length>0 || extFusedMesh;
-  if(!hasExtension){ startExtensionGareTool(); return; }
-  if(extFusedMesh){
-    extFusedMesh.visible = !extFusedMesh.visible;
-    btnExtensionGare.classList.toggle('active', extFusedMesh.visible);
-    return;
-  }
+  if(!extHallSlices.length){ startExtensionGareTool(); return; }
   if(extEditMode) extHideExtension(); else extShowExtensionForEditing();
 }
 function extHideExtension(){
@@ -4840,7 +4830,6 @@ function extRefreshBar(){
     ? "Fais glisser la sphère orange pour déplacer la face A, la poignée bleue pour l'orienter."
     : "Glisse les poignées pour ajuster une tranche, clique le (+) pour en ajouter une.";
   btnExtValider.style.display = creating ? '' : 'none';
-  btnExtFusionner.style.display = (!creating && !extFusedMesh && extHallSlices.length>0) ? '' : 'none';
   btnExtSupprDerniere.style.display = extHallSlices.length>0 ? '' : 'none';
   btnExtAnnuler.textContent = creating ? 'Annuler' : 'Cacher';
 }
@@ -4903,7 +4892,6 @@ function extExitToolFully(){
   if(extPendingSlice){ scene.remove(extPendingSlice.group); extRemoveHandleEls(extPendingSlice); extPendingSlice=null; }
   extHallSlices.forEach(s=>{ scene.remove(s.group); extRemoveHandleEls(s); });
   extHallSlices = [];
-  if(extFusedMesh){ scene.remove(extFusedMesh); extFusedMesh.geometry.dispose(); extFusedMesh=null; }
   extPlusButtons.forEach(btn=>btn.remove());
   extPlusButtons.clear();
   extGareHint.classList.remove('show');
@@ -4946,38 +4934,6 @@ function updateExtGarePlusButtons(){
   });
 }
 
-/* ---- fusion finale : soudure des sommets proches pour un rendu lisse -- */
-function extFusionnerTranches(){
-  if(extPendingSlice){ flashStatus("Valide la tranche en cours avant de fusionner"); return; }
-  if(extHallSlices.length<1){ flashStatus("Aucune tranche à fusionner"); return; }
-  const geoms = [];
-  const materials = [];
-  extHallSlices.forEach(slice=>{
-    slice.group.traverse(o=>{
-      if(o.isMesh){
-        const g = o.geometry.clone();
-        o.updateWorldMatrix(true,false);
-        g.applyMatrix4(o.matrixWorld);
-        geoms.push(g);
-        materials.push(o.material);
-      }
-    });
-  });
-  if(!geoms.length){ flashStatus("Rien à fusionner"); return; }
-  let merged = geoms.length>1 ? mergeGeometries(geoms, true) : geoms[0];
-  merged = mergeVertices(merged, 5e-3); // 5mm : soude les sommets de jointure sans coller les détails proches
-  merged.computeVertexNormals();
-  const mesh = new THREE.Mesh(merged, materials.length>1 ? materials : materials[0]);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.name = 'ExtGareFusion';
-  scene.add(mesh);
-  extFusedMesh = mesh;
-  extHallSlices.forEach(s=>{ scene.remove(s.group); extRemoveHandleEls(s); extRemovePlusButton(s.id); });
-  extHallSlices = [];
-  extEditMode = false;
-  flashStatus("Extension fusionnée ✓ (sommets soudés, rendu lissé).");
-  extRefreshBar();
-}
 
 /* ---- interactions souris : déplacer / orienter la face A (tranche en
    cours de création OU n'importe quelle tranche confirmée en mode édition).
@@ -5013,7 +4969,6 @@ btnExtValider.addEventListener('click', extConfirmPendingSlice);
 btnExtAnnuler.addEventListener('click', ()=>{
   if(extPendingSlice) extCancelPendingSlice(); else extHideExtension();
 });
-btnExtFusionner.addEventListener('click', extFusionnerTranches);
 btnExtSupprDerniere.addEventListener('click', extDeleteLastSlice);
 
 function animate(){
