@@ -82,12 +82,32 @@
     overflow-y:auto;overflow-x:hidden;
   }
   #toolbar-left .tool-btn{
-    justify-content:center;width:198px;text-align:center;padding:8px 8px;
+    justify-content:center;text-align:center;padding:8px 8px;
   }
   #toolbar-left .tool-btn .tool-btn-label{text-transform:uppercase;letter-spacing:.015em;font-size:12.5px;}
   #toolbar-left .tool-sep{height:1px;background:#2a3946;margin:4px 2px;}
   .tool-btn svg{width:16px;height:16px;flex-shrink:0;stroke-width:2;}
   .tool-btn .tool-btn-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* ---------- Rangée bouton-outil + oeil de visibilité ---------- */
+  .tool-row{display:flex;align-items:stretch;gap:6px;width:198px;}
+  .tool-row .tool-btn{flex:1 1 auto;width:auto;min-width:0;}
+  .eye-btn{
+    flex-shrink:0;width:30px;
+    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
+    border-radius:3px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:all .12s ease;
+  }
+  .eye-btn:hover{border-color:var(--accent);color:#fff;}
+  .eye-btn.off{color:var(--muted);opacity:.55;}
+  .eye-btn svg{width:15px;height:15px;stroke-width:2;flex-shrink:0;}
+  .eye-btn .icon-off{display:none;}
+  .eye-btn.off .icon-on{display:none;}
+  .eye-btn.off .icon-off{display:flex;}
+  @media (max-width: 620px){
+    .tool-row{width:auto;}
+  }
 
   /* ---------- Popout rectangle/polygone : positionné en "fixed" et calculé
      en JS (getBoundingClientRect du bouton), donc totalement hors du
@@ -479,7 +499,6 @@
     <div id="ribbon">
       <div id="brand"><b>PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-extension-gare"><i data-lucide="train-front"></i><span class="tool-btn-label">Ajouter Extension Gare</span></button>
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
       <button class="tool-btn ghost" id="btn-toggle-labels"><i data-lucide="tag"></i><span class="tool-btn-label">Masquer labels</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
@@ -490,18 +509,31 @@
     </div>
     <div id="left-stack">
     <div id="toolbar-left">
-      <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
+      <div class="tool-row">
+        <button class="eye-btn" id="eye-btn-buildings" title="Afficher/masquer les bâtiments"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
+        <button class="tool-btn" id="btn-draw"><i data-lucide="building-2"></i><span class="tool-btn-label">Nouveau bâtiment</span></button>
+      </div>
+      <div class="tool-row">
+        <button class="eye-btn" id="eye-btn-extgare" title="Afficher/masquer l'extension gare"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
+        <button class="tool-btn ghost" id="btn-toggle-extension-gare"><i data-lucide="train-front"></i><span class="tool-btn-label">Extension Gare</span></button>
+      </div>
       <div id="bldg-mini-list">
         <div id="bldg-mini-empty">Aucun bâtiment. Dessinez son emprise au sol.</div>
         <div id="bldg-list"></div>
       </div>
-      <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
+      <div class="tool-row">
+        <button class="eye-btn" id="eye-btn-trees" title="Afficher/masquer les arbres"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
+        <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
+      </div>
       <div id="tree-mini-list">
         <span id="tree-count" style="display:none;"></span>
         <div id="tree-empty-note">Aucun arbre. Cliquez dans le polygone d'implantation pour en planter un ; recliquez sur un arbre pour le retirer.</div>
         <button class="small-action" id="btn-clear-trees" style="display:none;width:100%;align-items:center;gap:5px;justify-content:center;margin:4px 0 2px;"><i data-lucide="trash-2" style="width:12px;height:12px;"></i> Supprimer tous les arbres</button>
       </div>
-      <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
+      <div class="tool-row">
+        <button class="eye-btn" id="eye-btn-grass" title="Afficher/masquer le gazon"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
+        <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
+      </div>
       <div id="brush-row">
         <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
         <button class="brush-btn active" id="brush-medium" title="Pinceau moyen"><i data-lucide="circle" style="width:11px;height:11px;"></i></button>
@@ -612,7 +644,7 @@
       <span id="ext-gare-hint-text">Fais glisser la face A (sphère orange) pour la positionner, la poignée bleue pour l'orienter.</span>
       <button id="ext-gare-valider">Valider la tranche</button>
       <button id="ext-gare-suppr-derniere" class="ghost" style="display:none;">Suppr. dernière tranche</button>
-      <button id="ext-gare-annuler" class="ghost">Annuler</button>
+      <button id="ext-gare-annuler" class="ghost">Terminer</button>
     </div>
     <div id="draw-hint">
       <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
@@ -1423,6 +1455,7 @@ fileGlb.addEventListener('change', (e)=>{
    STATE
    ============================================================ */
 let buildings = [];      // {id,name,points:[{x,z}],floors,bands:[{from,to,usage}],group,selected}
+let buildingsVisibleFlag = true; // oeil "Nouveau bâtiment" — état courant de visibilité
 let idCounter = 1;
 let drawing = false;
 let drawMode = 'polygon'; // 'polygon' | 'rect'
@@ -2224,6 +2257,7 @@ function findIcosphereTemplate(){
 let trees = [];
 let treeIdCounter = 1;
 let treesGroup = new THREE.Group(); worldRoot.add(treesGroup);
+let treesVisibleFlag = true; // oeil "Arbre"
 let treePlacing = false;
 const btnTree = document.getElementById('btn-tree');
 
@@ -2433,6 +2467,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
    limitée par la résolution de la texture, pas par le nombre de faces.
    ============================================================ */
 let grassParts = []; // [{mesh, overlayMesh, canvas, ctx, texture}]
+let grassVisibleFlag = true; // oeil "Gazon"
 let grassBrushRadius = 22; // px, sur un canvas de 1024 — "moyen" par défaut (réduit : l'ancien pinceau peignait un disque bien plus large que ce que le cercle-guide laissait penser)
 
 function setupGrassPaintOverlay(parts){
@@ -2451,6 +2486,7 @@ function setupGrassPaintOverlay(parts){
     // Même géométrie que la pièce du polygone (mêmes UV) posée juste au-dessus,
     // en enfant direct : hérite automatiquement de sa position/échelle/rotation.
     const overlayMesh = new THREE.Mesh(mesh.geometry, mat);
+    overlayMesh.visible = grassVisibleFlag;
     overlayMesh.position.y = 0.02;
     overlayMesh.renderOrder = 1;
     mesh.add(overlayMesh);
@@ -2655,6 +2691,7 @@ function createBuilding(pts, opts={}){
   };
   normalizeBands(b);
   worldRoot.add(b.group);
+  b.group.visible = buildingsVisibleFlag;
   buildings.push(b);
   selectedId = b.id;
   rebuildMesh(b);
@@ -4425,6 +4462,7 @@ const EXT_HEIGHT_DEFAULT = 9;    // m, repli si la hauteur du hall n'est pas mes
 let extToolActive   = false;
 let extEditMode      = false; // true = poignées de toutes les tranches confirmées visibles (édition a posteriori)
 let extHallSlices    = [];  // tranches validées (dans l'ordre de la chaîne)
+let extGareVisibleFlag = true; // oeil "Extension Gare"
 let extPendingSlice  = null; // tranche en cours d'édition (déplaçable/orientable), ou null
 let extDragSlice     = null; // tranche actuellement déplacée à la souris (pending OU confirmée en mode édition)
 let extDragMode      = null; // 'move' | 'rotate' | null
@@ -4507,7 +4545,13 @@ function extDeformModuleToQuad(slice){
   // fait légèrement rentrer les sommets de bord vers l'intérieur de chaque
   // tranche (de manière indépendante des deux côtés de la jointure), ce qui
   // ouvre une fine fente visible entre deux tranches chaînées.
-  const EPS_Z = Math.max(0.02, Math.abs(spanZ)*0.002);
+  // Tolérance de snap élargie : l'ancienne valeur (0.002 × la profondeur)
+  // était trop stricte pour capter les sommets de rive de toiture/bandeau
+  // (légèrement en retrait du plan C/A exact dans le mesh authored), qui
+  // gardaient alors une interpolation linéaire résiduelle au lieu d'être
+  // plaqués pile sur la ligne de jonction — d'où la fine marche visible
+  // entre deux tranches chaînées.
+  const EPS_Z = Math.max(0.08, Math.abs(spanZ)*0.012);
   const group = new THREE.Group();
   tpl.bakedMeshes.forEach(({geo, material})=>{
     const g = geo.clone();
@@ -4521,7 +4565,7 @@ function extDeformModuleToQuad(slice){
       const xMinAtW = tpl.xC.min + (tpl.xA.min - tpl.xC.min)*w;
       const xMaxAtW = tpl.xC.max + (tpl.xA.max - tpl.xC.max)*w;
       const spanX = (xMaxAtW - xMinAtW) || 1;
-      const EPS_X = Math.max(0.02, Math.abs(spanX)*0.002);
+      const EPS_X = Math.max(0.08, Math.abs(spanX)*0.012);
       let u;
       if(Math.abs(lx-xMinAtW)<=EPS_X) u = 0;
       else if(Math.abs(lx-xMaxAtW)<=EPS_X) u = 1;
@@ -4782,11 +4826,16 @@ function toggleExtensionGareTool(){
   if(!extHallSlices.length){ startExtensionGareTool(); return; }
   if(extEditMode) extHideExtension(); else extShowExtensionForEditing();
 }
+// "Terminer" : cache uniquement les guides d'édition (poignées, halos, bouton
+// +), PAS l'extension elle-même — son groupe reste visible pour continuer à
+// s'afficher sur la maquette. Utiliser l'oeil dédié dans la barre d'outils
+// pour masquer/afficher l'extension construite.
 function extHideExtension(){
   extEditMode = false;
   extToolActive = false;
-  extHallSlices.forEach(s=>{ s.group.visible = false; extUpdateHandlePositions(s); });
-  extPlusButtons.forEach(btn=> btn.style.display='none');
+  extHallSlices.forEach(s=> extUpdateHandlePositions(s));
+  extPlusButtons.forEach(btn=> btn.remove());
+  extPlusButtons.clear();
   btnExtensionGare.classList.remove('active');
   extRefreshBar();
 }
@@ -4831,7 +4880,7 @@ function extRefreshBar(){
     : "Glisse les poignées pour ajuster une tranche, clique le (+) pour en ajouter une.";
   btnExtValider.style.display = creating ? '' : 'none';
   btnExtSupprDerniere.style.display = extHallSlices.length>0 ? '' : 'none';
-  btnExtAnnuler.textContent = creating ? 'Annuler' : 'Cacher';
+  btnExtAnnuler.textContent = creating ? 'Annuler' : 'Terminer';
 }
 function extConfirmPendingSlice(){
   if(!extPendingSlice) return;
@@ -4839,6 +4888,7 @@ function extConfirmPendingSlice(){
   slice.confirmed = true;
   extPendingSlice = null;
   extRebuildSliceGeometry(slice);
+  slice.group.visible = extGareVisibleFlag;
   extHallSlices.push(slice);
   extEditMode = true;
   extToolActive = true;
@@ -4970,6 +5020,38 @@ btnExtAnnuler.addEventListener('click', ()=>{
   if(extPendingSlice) extCancelPendingSlice(); else extHideExtension();
 });
 btnExtSupprDerniere.addEventListener('click', extDeleteLastSlice);
+
+/* ============================================================
+   OEILS DE VISIBILITÉ — barre d'outils gauche
+   Chaque bouton "oeil" bascule uniquement l'affichage sur la maquette de
+   la catégorie correspondante (bâtiments dessinés, extension gare, arbres,
+   gazon peint), sans rien supprimer ni désactiver l'outil de création lui-même.
+   ============================================================ */
+function setupEyeToggle(btnId, getVisible, setVisible){
+  const btn = document.getElementById(btnId);
+  if(!btn) return;
+  function refreshIcon(){
+    btn.classList.toggle('off', !getVisible());
+  }
+  btn.addEventListener('click', (ev)=>{
+    ev.preventDefault(); ev.stopPropagation();
+    setVisible(!getVisible());
+    refreshIcon();
+  });
+  refreshIcon();
+}
+setupEyeToggle('eye-btn-buildings',
+  ()=> buildingsVisibleFlag,
+  (v)=>{ buildingsVisibleFlag = v; buildings.forEach(b=> b.group.visible = v); });
+setupEyeToggle('eye-btn-extgare',
+  ()=> extGareVisibleFlag,
+  (v)=>{ extGareVisibleFlag = v; extHallSlices.forEach(s=> s.group.visible = v); });
+setupEyeToggle('eye-btn-trees',
+  ()=> treesVisibleFlag,
+  (v)=>{ treesVisibleFlag = v; treesGroup.visible = v; });
+setupEyeToggle('eye-btn-grass',
+  ()=> grassVisibleFlag,
+  (v)=>{ grassVisibleFlag = v; grassParts.forEach(p=> p.overlayMesh.visible = v); });
 
 function animate(){
   requestAnimationFrame(animate);
