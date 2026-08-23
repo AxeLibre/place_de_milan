@@ -4835,6 +4835,16 @@ function startExtensionGareTool(){
   btnExtensionGare.classList.add('active');
   const edge = extOutwardEdgeFromObject(hallParts, hallFacadeWorldNormal);
   if(!edge){ flashStatus("Impossible de déterminer la façade du hall"); extToolActive=false; return; }
+  // Léger recouvrement (quelques cm) vers l'intérieur du hall : la façade
+  // détectée par enveloppe convexe est une approximation qui peut être
+  // décalée de quelques centimètres du vrai mesh du hall — sans marge, ça
+  // laissait une fine fente visible à la toute première jointure (hall →
+  // tranche 1). En reculant légèrement la face C dans le volume du hall,
+  // les deux se chevauchent au lieu de laisser un interstice.
+  const HALL_OVERLAP = 0.15; // m
+  const n = edge.normal;
+  edge.p1 = { x: edge.p1.x - n.x*HALL_OVERLAP, z: edge.p1.z - n.z*HALL_OVERLAP };
+  edge.p2 = { x: edge.p2.x - n.x*HALL_OVERLAP, z: edge.p2.z - n.z*HALL_OVERLAP };
   extPendingSlice = extCreateSlice(edge, hallFacadeWorldNormal || edge.normal, null);
   extRefreshBar();
 }
