@@ -4507,7 +4507,7 @@ function extDeformModuleToQuad(slice){
   // fait légèrement rentrer les sommets de bord vers l'intérieur de chaque
   // tranche (de manière indépendante des deux côtés de la jointure), ce qui
   // ouvre une fine fente visible entre deux tranches chaînées.
-  const EPS_Z = Math.max(0.2, Math.abs(spanZ)*0.03);
+  const EPS_Z = Math.max(0.02, Math.abs(spanZ)*0.002);
   const group = new THREE.Group();
   tpl.bakedMeshes.forEach(({geo, material})=>{
     const g = geo.clone();
@@ -4521,7 +4521,7 @@ function extDeformModuleToQuad(slice){
       const xMinAtW = tpl.xC.min + (tpl.xA.min - tpl.xC.min)*w;
       const xMaxAtW = tpl.xC.max + (tpl.xA.max - tpl.xC.max)*w;
       const spanX = (xMaxAtW - xMinAtW) || 1;
-      const EPS_X = Math.max(0.2, Math.abs(spanX)*0.03);
+      const EPS_X = Math.max(0.02, Math.abs(spanX)*0.002);
       let u;
       if(Math.abs(lx-xMinAtW)<=EPS_X) u = 0;
       else if(Math.abs(lx-xMaxAtW)<=EPS_X) u = 1;
