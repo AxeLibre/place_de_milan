@@ -2964,14 +2964,16 @@ function rebuildBldgVertexHandles(b){
     const holder = new THREE.Group();
     const rim = new THREE.Mesh(
       new THREE.SphereGeometry(BLDG_HANDLE_RADIUS*1.22, 16, 16),
-      new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.BackSide })
+      new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.BackSide, depthTest:false, transparent:true })
     );
     rim.raycast = ()=>{}; // purement décoratif : ne doit jamais intercepter les clics/hover
+    rim.renderOrder = 60;
     holder.add(rim);
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(BLDG_HANDLE_RADIUS,20,20),
-      new THREE.MeshPhysicalMaterial({ color:BLDG_HANDLE_COLOR, emissive:BLDG_HANDLE_COLOR, emissiveIntensity:0.22, roughness:0.25, metalness:0.05, clearcoat:0.6, clearcoatRoughness:0.25 })
+      new THREE.MeshPhysicalMaterial({ color:BLDG_HANDLE_COLOR, emissive:BLDG_HANDLE_COLOR, emissiveIntensity:0.22, roughness:0.25, metalness:0.05, clearcoat:0.6, clearcoatRoughness:0.25, depthTest:false, transparent:true })
     );
+    mesh.renderOrder = 61;
     holder.add(mesh);
     holder.position.set(p.x, 0.3, p.z);
     bldgVertexGroup.add(holder);
