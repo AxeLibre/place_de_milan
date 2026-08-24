@@ -226,6 +226,39 @@
     margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:18px;
     display:flex;align-items:center;justify-content:space-between;
   }
+  #label-edit-overlay{
+    position:fixed;inset:0;z-index:55;display:none;
+    align-items:center;justify-content:center;
+    background:rgba(9,13,17,.45);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  }
+  #label-edit-overlay.show{display:flex;}
+  #label-edit-modal{
+    width:min(360px, 90vw);background:var(--ink-2);border:1px solid #2a3946;
+    border-radius:10px;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.5);
+    animation:about-pop .16s ease;
+  }
+  #label-edit-modal h2{
+    margin:0 0 14px;font-family:'Space Grotesk',sans-serif;font-size:16px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  #label-edit-modal h2 button{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px;}
+  #label-edit-modal h2 button:hover{color:var(--paper);}
+  #label-edit-input{
+    width:100%;box-sizing:border-box;background:var(--ink);border:1px solid #2a3946;border-radius:7px;
+    color:var(--paper);font-family:'Space Grotesk',sans-serif;font-size:14px;padding:10px 12px;outline:none;
+  }
+  #label-edit-input:focus{border-color:var(--accent);}
+  #label-edit-actions{display:flex;gap:8px;margin-top:16px;align-items:center;}
+  #label-edit-actions button{
+    font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.02em;border:none;border-radius:7px;padding:9px 12px;cursor:pointer;display:flex;
+    align-items:center;gap:5px;transition:filter .15s ease;
+  }
+  #label-edit-actions button svg{width:13px;height:13px;}
+  #label-edit-delete{background:#3a2530;color:#ff8f8f;margin-right:auto;}
+  #label-edit-cancel{background:#1c2a36;color:var(--muted);}
+  #label-edit-save{background:var(--accent);color:#08141a;}
+  #label-edit-actions button:hover{filter:brightness(1.15);}
   #about-modal .about-sub{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px;}
   #about-modal p{font-size:13px;line-height:1.6;color:var(--paper);margin:0 0 12px;}
   #about-modal ul{margin:0 0 14px;padding-left:18px;font-size:12.5px;line-height:1.7;color:var(--paper);}
@@ -257,6 +290,11 @@
   #admin-panel.show{display:block;}
   #admin-panel::-webkit-scrollbar{width:8px;}
   #admin-panel::-webkit-scrollbar-thumb{background:#2a3946;border-radius:4px;}
+  .admin-check-row{
+    display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--paper);
+    font-family:'IBM Plex Mono',monospace;margin-bottom:8px;cursor:pointer;
+  }
+  .admin-check-row input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer;}
 
   .section-title{
     font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;
@@ -443,11 +481,13 @@
   #ext-gare-hint button.ghost{background:transparent;border:1px solid rgba(255,255,255,.35);}
   #label-lines{position:absolute;inset:0;pointer-events:none;z-index:3;width:100%;height:100%;}
   .label-chip{
-    position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;
+    position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:grab;
     background:rgba(21,29,36,0.92);border:1px solid #2a3946;border-radius:3px;padding:4px 8px;
     font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--paper);white-space:nowrap;
+    touch-action:none;user-select:none;
   }
   .label-chip:hover{border-color:var(--accent);}
+  .label-chip.dragging{cursor:grabbing;border-color:var(--accent);opacity:.85;}
 
   /* ---------- Fenêtre de légende flottante (visible seulement si activée) ---------- */
   #legend-window{
@@ -647,10 +687,11 @@
       <button id="btn-admin-panel" class="mini-fab admin-only" title="Circulation & couleurs véhicules (admin)"><i data-lucide="settings"></i></button>
     </div>
     <div id="admin-panel" class="admin-only">
-      <div class="section-title">Circulation</div>
-      <div id="route-empty-note" style="color:var(--muted);font-size:12px;line-height:1.5;font-family:'IBM Plex Mono',monospace;">Aucune voie. Charge un <b style="color:var(--paper)">routes.json</b> exporté de Blender.</div>
-      <button class="small-action" id="btn-load-routes" style="margin-bottom:8px;width:100%;display:flex;align-items:center;gap:5px;justify-content:center;"><i data-lucide="folder-open" style="width:14px;height:14px;"></i> Charger routes.json</button>
-      <div id="route-list" style="display:flex;flex-direction:column;"></div>
+      <div class="section-title">Éléments visibles sur la maquette</div>
+      <label class="admin-check-row"><input type="checkbox" id="chk-vis-vehicles" checked> Véhicules (bus, trams, voitures, TGV)</label>
+      <label class="admin-check-row"><input type="checkbox" id="chk-vis-pedestrians" checked> Piétons</label>
+      <div class="section-title">Couleurs des légendes des nouveaux bâtiments</div>
+      <div id="usage-colors" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px;"></div>
       <div class="section-title">Couleurs véhicules</div>
       <div id="vehicle-colors" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px;"></div>
     </div>
@@ -666,6 +707,17 @@
           <li><b>Exporter / Sauver</b> : générez une image PNG ou sauvegardez votre projet en JSON (boutons en bas à gauche).</li>
         </ul>
         <p style="color:var(--muted);font-size:11.5px;">Maquette 3D et voies importées depuis Blender.</p>
+      </div>
+    </div>
+    <div id="label-edit-overlay">
+      <div id="label-edit-modal">
+        <h2 id="label-edit-title">Label <button id="label-edit-close" title="Fermer"><i data-lucide="x"></i></button></h2>
+        <input id="label-edit-input" type="text" maxlength="80" placeholder="Texte du label…" />
+        <div id="label-edit-actions">
+          <button id="label-edit-delete" title="Supprimer ce label"><i data-lucide="trash-2"></i> Supprimer</button>
+          <button id="label-edit-cancel">Annuler</button>
+          <button id="label-edit-save"><i data-lucide="check"></i> Valider</button>
+        </div>
       </div>
     </div>
     <button id="compass" title="Orienter la caméra vers le Nord (-Z, Blender +Y)">
@@ -4034,7 +4086,7 @@ function addLabel(x, z, text){
   const chip = document.createElement('div');
   chip.className = 'label-chip';
   chip.textContent = text;
-  chip.title = 'Clic droit : supprimer ce label';
+  chip.title = 'Cliquer : modifier · Cliquer-glisser : déplacer';
   labelLayer.appendChild(chip);
 
   const line = document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -4044,9 +4096,42 @@ function addLabel(x, z, text){
   labelLinesSvg.appendChild(line);
 
   const rec = { id, x, z, text, marker, chip, line, anchorX:0, anchorY:0, screenX:0, screenY:0, behind:false };
-  chip.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); removeLabel(id); });
+  wireLabelChipInteractions(rec);
   labels.push(rec);
   updateLabelPositions();
+  return rec;
+}
+// Cliquer-glisser-déposer pour déplacer un label sur le sol, simple clic
+// (sans déplacement) pour ouvrir la modale d'édition de son texte.
+let labelDrag = null; // {rec, moved}
+function wireLabelChipInteractions(rec){
+  rec.chip.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); removeLabel(rec.id); });
+  rec.chip.addEventListener('pointerdown', (ev)=>{
+    if(ev.button!==0) return;
+    ev.stopPropagation();
+    labelDrag = { rec, moved:false };
+    rec.chip.setPointerCapture(ev.pointerId);
+    rec.chip.classList.add('dragging');
+  });
+  rec.chip.addEventListener('pointermove', (ev)=>{
+    if(!labelDrag || labelDrag.rec!==rec) return;
+    labelDrag.moved = true;
+    const pt = groundPointFromEvent(ev);
+    if(!pt) return;
+    let target = pt;
+    if(buildZone.length>=3) target = clampPointToPolygon(pt, buildZone);
+    rec.x = target.x; rec.z = target.z;
+    rec.marker.position.set(rec.x, 0.3, rec.z);
+    updateLabelPositions();
+  });
+  rec.chip.addEventListener('pointerup', (ev)=>{
+    if(!labelDrag || labelDrag.rec!==rec) return;
+    rec.chip.releasePointerCapture(ev.pointerId);
+    rec.chip.classList.remove('dragging');
+    const moved = labelDrag.moved;
+    labelDrag = null;
+    if(!moved) openLabelEditModal(rec);
+  });
 }
 function removeLabel(id){
   const idx = labels.findIndex(l=>l.id===id);
@@ -4118,9 +4203,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   const pt = groundPointFromEvent(ev);
   stopLabelTool();
   if(!pt) return;
-  const text = prompt('Texte du label :', '');
-  if(!text) return;
-  addLabel(pt.x, pt.z, text.trim());
+  openLabelEditModal(null, pt);
 });
 btnToggleLabels.addEventListener('click', ()=>{
   labelsVisible = !labelsVisible;
@@ -4128,6 +4211,55 @@ btnToggleLabels.addEventListener('click', ()=>{
   const lbl = btnToggleLabels.querySelector('.tool-btn-label');
   if(lbl) lbl.textContent = labelsVisible ? 'Masquer labels' : 'Afficher labels';
   updateLabelPositions();
+});
+
+/* ------------------------------------------------------------
+   MODALE D'ÉDITION DE LABEL — remplace window.prompt() par une modale au
+   design du site. Sert aussi bien à la création (rec=null, pos fourni)
+   qu'à l'édition d'un label existant (rec fourni).
+   ------------------------------------------------------------ */
+const labelEditOverlay = document.getElementById('label-edit-overlay');
+const labelEditTitle = document.getElementById('label-edit-title');
+const labelEditInput = document.getElementById('label-edit-input');
+const labelEditDelete = document.getElementById('label-edit-delete');
+let labelEditState = null; // {rec, pos}
+function openLabelEditModal(rec, pos){
+  labelEditState = { rec, pos };
+  labelEditTitle.firstChild.textContent = rec ? 'Modifier le label ' : 'Nouveau label ';
+  labelEditInput.value = rec ? rec.text : '';
+  labelEditDelete.style.display = rec ? '' : 'none';
+  labelEditOverlay.classList.add('show');
+  if(window.lucide) lucide.createIcons();
+  setTimeout(()=>{ labelEditInput.focus(); labelEditInput.select(); }, 30);
+}
+function closeLabelEditModal(){
+  labelEditOverlay.classList.remove('show');
+  labelEditState = null;
+}
+function saveLabelEditModal(){
+  if(!labelEditState) return;
+  const text = labelEditInput.value.trim();
+  const { rec, pos } = labelEditState;
+  if(!text){ closeLabelEditModal(); return; }
+  if(rec){
+    rec.text = text;
+    rec.chip.textContent = text;
+  } else if(pos){
+    addLabel(pos.x, pos.z, text);
+  }
+  closeLabelEditModal();
+}
+document.getElementById('label-edit-save').addEventListener('click', saveLabelEditModal);
+document.getElementById('label-edit-cancel').addEventListener('click', closeLabelEditModal);
+document.getElementById('label-edit-close').addEventListener('click', closeLabelEditModal);
+labelEditDelete.addEventListener('click', ()=>{
+  if(labelEditState && labelEditState.rec) removeLabel(labelEditState.rec.id);
+  closeLabelEditModal();
+});
+labelEditOverlay.addEventListener('click', (e)=>{ if(e.target===labelEditOverlay) closeLabelEditModal(); });
+labelEditInput.addEventListener('keydown', (ev)=>{
+  if(ev.key==='Enter'){ ev.preventDefault(); saveLabelEditModal(); }
+  else if(ev.key==='Escape'){ ev.preventDefault(); closeLabelEditModal(); }
 });
 
 /* ============================================================
@@ -4143,11 +4275,11 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
     link.href = dataUrl;
     link.click();
   };
-  // Les labels (texte + ligne de rappel) vivent en HTML/SVG par-dessus le
-  // canvas WebGL, donc canvas.toDataURL() seul ne les capture pas — on les
-  // redessine à la main sur un canvas hors-écran, aux mêmes coordonnées déjà
-  // calculées par updateLabelPositions(), avant d'exporter.
-  if(!labelsVisible || !labels.length){ download(glDataUrl); return; }
+  // Les labels (texte + ligne de rappel), le filigrane du nom du site/lien
+  // GitHub et la nomenclature des légendes vivent en HTML par-dessus le
+  // canvas WebGL (ou n'existent pas du tout comme calque permanent pour le
+  // filigrane/la légende) : canvas.toDataURL() seul ne les capture pas — on
+  // les redessine à la main sur un canvas hors-écran avant d'exporter.
   const img = new Image();
   img.onload = ()=>{
     const off = document.createElement('canvas');
@@ -4157,29 +4289,107 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
     const rect = renderer.domElement.getBoundingClientRect();
     const scaleX = img.width / (rect.width||img.width);
     const scaleY = img.height / (rect.height||img.height);
-    ctx.font = `${11*scaleY}px 'IBM Plex Mono', monospace`;
-    ctx.textBaseline = 'middle';
-    labels.forEach(l=>{
-      if(l.behind) return;
-      ctx.strokeStyle = 'rgba(224,102,63,0.9)';
-      ctx.setLineDash([4*scaleX,3*scaleX]);
-      ctx.lineWidth = 1.2*scaleX;
-      ctx.beginPath();
-      ctx.moveTo(l.anchorX*scaleX, l.anchorY*scaleY);
-      ctx.lineTo(l.screenX*scaleX, l.screenY*scaleY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      const padX = 8*scaleX, chipH = 22*scaleY;
-      const textW = ctx.measureText(l.text).width;
-      const chipW = textW + padX*2;
-      const chipX = l.screenX*scaleX - chipW/2, chipY = l.screenY*scaleY - chipH/2;
-      ctx.fillStyle = 'rgba(21,29,36,0.92)';
+
+    if(labelsVisible && labels.length){
+      ctx.font = `${11*scaleY}px 'IBM Plex Mono', monospace`;
+      ctx.textBaseline = 'middle';
+      labels.forEach(l=>{
+        if(l.behind) return;
+        ctx.strokeStyle = 'rgba(224,102,63,0.9)';
+        ctx.setLineDash([4*scaleX,3*scaleX]);
+        ctx.lineWidth = 1.2*scaleX;
+        ctx.beginPath();
+        ctx.moveTo(l.anchorX*scaleX, l.anchorY*scaleY);
+        ctx.lineTo(l.screenX*scaleX, l.screenY*scaleY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const padX = 8*scaleX, chipH = 22*scaleY;
+        const textW = ctx.measureText(l.text).width;
+        const chipW = textW + padX*2;
+        const chipX = l.screenX*scaleX - chipW/2, chipY = l.screenY*scaleY - chipH/2;
+        ctx.fillStyle = 'rgba(21,29,36,0.92)';
+        ctx.strokeStyle = '#2a3946'; ctx.lineWidth = 1*scaleX;
+        ctx.fillRect(chipX, chipY, chipW, chipH);
+        ctx.strokeRect(chipX, chipY, chipW, chipH);
+        ctx.fillStyle = '#f4ede4';
+        ctx.fillText(l.text, chipX+padX, l.screenY*scaleY);
+      });
+    }
+
+    // Nomenclature des légendes, en bas à droite, uniquement si "Légendes"
+    // est actif — reprend les mêmes couleurs (USAGE_COLORS, personnalisables
+    // depuis le panneau admin) et libellés que le panneau flottant du site.
+    if(legendEnabled){
+      const pad = 14*scaleX;
+      const rowH = 20*scaleY, sw = 12*scaleX, gap = 8*scaleX;
+      const entries = Object.keys(USAGE_COLORS).map(k=>({ label:USAGE_LABELS[k]||k, hex:'#'+USAGE_COLORS[k].toString(16).padStart(6,'0') }));
+      ctx.font = `600 ${12*scaleY}px 'Space Grotesk', sans-serif`;
+      const titleW = ctx.measureText('LÉGENDE DES USAGES').width;
+      ctx.font = `${11.5*scaleY}px 'IBM Plex Mono', monospace`;
+      const maxLabelW = Math.max(titleW, ...entries.map(e=> sw+gap+ctx.measureText(e.label).width));
+      const boxW = maxLabelW + pad*2;
+      const boxH = pad*2 + 22*scaleY + entries.length*rowH;
+      const boxX = off.width - boxW - 20*scaleX;
+      const boxY = off.height - boxH - 20*scaleY;
+      ctx.fillStyle = 'rgba(24,36,48,0.92)';
       ctx.strokeStyle = '#2a3946'; ctx.lineWidth = 1*scaleX;
-      ctx.fillRect(chipX, chipY, chipW, chipH);
-      ctx.strokeRect(chipX, chipY, chipW, chipH);
+      ctx.beginPath();
+      const r = 8*scaleX;
+      ctx.moveTo(boxX+r, boxY);
+      ctx.arcTo(boxX+boxW, boxY, boxX+boxW, boxY+boxH, r);
+      ctx.arcTo(boxX+boxW, boxY+boxH, boxX, boxY+boxH, r);
+      ctx.arcTo(boxX, boxY+boxH, boxX, boxY, r);
+      ctx.arcTo(boxX, boxY, boxX+boxW, boxY, r);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#f4ede4';
-      ctx.fillText(l.text, chipX+padX, l.screenY*scaleY);
-    });
+      ctx.font = `600 ${12*scaleY}px 'Space Grotesk', sans-serif`;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText('LÉGENDE DES USAGES', boxX+pad, boxY+pad+11*scaleY);
+      ctx.font = `${11.5*scaleY}px 'IBM Plex Mono', monospace`;
+      entries.forEach((e,i)=>{
+        const ry = boxY + pad + 22*scaleY + i*rowH;
+        ctx.fillStyle = e.hex;
+        ctx.fillRect(boxX+pad, ry, sw, sw);
+        ctx.fillStyle = '#f4ede4';
+        ctx.fillText(e.label, boxX+pad+sw+gap, ry+sw-1);
+      });
+    }
+
+    // Filigrane : nom du programme + lien vers le dépôt GitHub, en bas à
+    // gauche — identifie la source de l'image même après partage/export.
+    {
+      const wmPadX = 16*scaleX, wmPadY = 14*scaleY;
+      ctx.font = `700 ${13*scaleY}px 'Space Grotesk', sans-serif`;
+      const title = 'PLACE DE MILAN';
+      ctx.font = `${10.5*scaleY}px 'IBM Plex Mono', monospace`;
+      const url = 'axelibre.github.io/place_de_milan/';
+      ctx.font = `700 ${13*scaleY}px 'Space Grotesk', sans-serif`;
+      const titleW2 = ctx.measureText(title).width;
+      ctx.font = `${10.5*scaleY}px 'IBM Plex Mono', monospace`;
+      const urlW = ctx.measureText(url).width;
+      const wmW = Math.max(titleW2, urlW) + wmPadX*2;
+      const wmH = 20*scaleY + 16*scaleY + wmPadY;
+      const wmX = 16*scaleX, wmY = off.height - wmH - 16*scaleY;
+      ctx.fillStyle = 'rgba(9,13,17,0.55)';
+      ctx.beginPath();
+      const r2 = 7*scaleX;
+      ctx.moveTo(wmX+r2, wmY);
+      ctx.arcTo(wmX+wmW, wmY, wmX+wmW, wmY+wmH, r2);
+      ctx.arcTo(wmX+wmW, wmY+wmH, wmX, wmY+wmH, r2);
+      ctx.arcTo(wmX, wmY+wmH, wmX, wmY, r2);
+      ctx.arcTo(wmX, wmY, wmX+wmW, wmY, r2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#f4ede4';
+      ctx.font = `700 ${13*scaleY}px 'Space Grotesk', sans-serif`;
+      ctx.fillText(title, wmX+wmPadX, wmY+wmPadY+11*scaleY);
+      ctx.fillStyle = '#2ee8ff';
+      ctx.font = `${10.5*scaleY}px 'IBM Plex Mono', monospace`;
+      ctx.fillText(url, wmX+wmPadX, wmY+wmPadY+11*scaleY+16*scaleY);
+    }
+
     download(off.toDataURL('image/png'));
   };
   img.src = glDataUrl;
@@ -4190,8 +4400,16 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
    ============================================================ */
 document.getElementById('btn-save-json').addEventListener('click', ()=>{
   const data = {
-    version: 1,
-    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands }))
+    version: 2,
+    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
+    trees: trees.map(t=>({ x:t.x, z:t.z })),
+    grass: grassParts.map(p=> p.canvas.toDataURL('image/png')),
+    labels: labels.map(l=>({ x:l.x, z:l.z, text:l.text })),
+    extensionGare: extHallSlices.map(s=>({
+      id:s.id, parentId:s.parentId, faceC:s.faceC, center:s.center,
+      angle:s.angle, width:s.width, height:s.height, yBase:s.yBase
+    })),
+    usageColors: Object.fromEntries(Object.entries(USAGE_COLORS).map(([k,v])=>[k, '#'+v.toString(16).padStart(6,'0')]))
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const link = document.createElement('a');
@@ -4236,6 +4454,53 @@ fileLoad.addEventListener('change', (e)=>{
       });
       selectedId = null;
       document.getElementById('bldg-edit-window').classList.remove('show');
+
+      // Couleurs des légendes (avant rebuild des bâtiments, pour qu'ils
+      // adoptent d'emblée la bonne teinte).
+      if(data.usageColors){
+        const cssVarMap = { residentiel:'--res', bureaux:'--bur', commerces:'--com', hotel:'--hot', services:'--ser' };
+        Object.entries(data.usageColors).forEach(([k,hexStr])=>{
+          if(!(k in USAGE_COLORS)) return;
+          USAGE_COLORS[k] = parseInt(hexStr.slice(1),16);
+          if(cssVarMap[k]) document.documentElement.style.setProperty(cssVarMap[k], hexStr);
+        });
+        renderUsageColorControls();
+      }
+
+      // Arbres
+      trees.forEach(t=> treesGroup.remove(t.mesh));
+      trees = []; treeIdCounter = 1;
+      (data.trees||[]).forEach(t=> addTree({x:t.x, y:0, z:t.z}));
+
+      // Labels
+      labels.forEach(l=> removeLabel(l.id));
+      labels = []; labelIdCounter = 1;
+      (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text));
+
+      // Gazon peint (une entrée par fragment de sol, dans le même ordre que
+      // grassParts — reconstitué au chargement du .glb, donc déjà présent).
+      if(data.grass && data.grass.length && grassParts.length){
+        data.grass.forEach((dataUrl, i)=>{
+          const part = grassParts[i];
+          if(!part || !dataUrl) return;
+          const img = new Image();
+          img.onload = ()=>{
+            part.ctx.clearRect(0,0,part.canvas.width,part.canvas.height);
+            part.ctx.drawImage(img, 0, 0, part.canvas.width, part.canvas.height);
+            part.texture.needsUpdate = true;
+          };
+          img.src = dataUrl;
+        });
+      }
+
+      // Extension gare
+      extExitToolFully();
+      if(data.extensionGare && data.extensionGare.length){
+        data.extensionGare.forEach(d=> extHallSlices.push(extRestoreSlice(d)));
+        extToolActive = false; extEditMode = false;
+        btnExtensionGare.classList.remove('active');
+      }
+
       rebuildAll(); renderList();
       if(repairedCount) flashStatus(`${repairedCount} bâtiment(s) recalé(s) sur le polygone d'implantation`);
     }catch(err){ alert("Fichier de projet invalide."); }
@@ -4675,6 +4940,7 @@ function reverseRoute(id){
 }
 function renderRouteList(){
   const list = document.getElementById('route-list');
+  if(!list) return; // panneau "Circulation" retiré de l'UI admin — l'auto-chargement au démarrage reste actif
   const empty = document.getElementById('route-empty-note');
   empty.style.display = routes.length ? 'none' : 'block';
   list.innerHTML = '';
@@ -4732,6 +4998,60 @@ function renderVehicleColorControls(){
 }
 renderVehicleColorControls();
 
+// ---------------- Visibilité véhicules / piétons (panneau admin) ----------------
+let vehiclesVisible = true, pedestriansVisible = true;
+function applyAgentTypeVisibility(){
+  routes.forEach(r=>{
+    r.vehicleGroup.visible = (r.type==='pieton') ? pedestriansVisible : vehiclesVisible;
+  });
+}
+document.getElementById('chk-vis-vehicles').addEventListener('change', (e)=>{
+  vehiclesVisible = e.target.checked;
+  applyAgentTypeVisibility();
+});
+document.getElementById('chk-vis-pedestrians').addEventListener('change', (e)=>{
+  pedestriansVisible = e.target.checked;
+  applyAgentTypeVisibility();
+});
+// createRoute() ajoute un nouveau vehicleGroup à chaque voie créée (import
+// auto ou routes.json) : on lui applique aussitôt l'état de visibilité en
+// cours pour rester cohérent avec les cases à cocher.
+const _createRouteOrig = createRoute;
+createRoute = function(...args){
+  const r = _createRouteOrig(...args);
+  r.vehicleGroup.visible = (r.type==='pieton') ? pedestriansVisible : vehiclesVisible;
+  return r;
+};
+applyAgentTypeVisibility(); // synchronise les voies déjà créées avant ce point (ex. démo piétons)
+
+// ---------------- Couleurs des légendes des nouveaux bâtiments (panneau admin) ----------------
+function renderUsageColorControls(){
+  const container = document.getElementById('usage-colors');
+  container.innerHTML = '';
+  Object.entries(USAGE_COLORS).forEach(([key,hexNum])=>{
+    const row = document.createElement('div');
+    row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px';
+    const label = document.createElement('span');
+    label.textContent = USAGE_LABELS[key] || key; label.style.flex='1'; label.style.fontSize='12px';
+    const input = document.createElement('input');
+    input.type='color';
+    input.value = '#'+hexNum.toString(16).padStart(6,'0');
+    input.style.width='40px'; input.style.height='26px'; input.style.border='1px solid #2a3946';
+    input.style.borderRadius='3px'; input.style.background='none'; input.style.cursor='pointer';
+    input.addEventListener('input', ()=>{
+      const hex = parseInt(input.value.slice(1), 16);
+      USAGE_COLORS[key] = hex;
+      // Répercute sur la légende flottante (variables CSS --res/--bur/…)
+      const cssVarMap = { residentiel:'--res', bureaux:'--bur', commerces:'--com', hotel:'--hot', services:'--ser' };
+      if(cssVarMap[key]) document.documentElement.style.setProperty(cssVarMap[key], input.value);
+      rebuildAll();
+    });
+    row.append(label, input);
+    container.appendChild(row);
+  });
+}
+renderUsageColorControls();
+
 
 // Décalage manuel des voies importées, réglable en direct dans le panneau admin
 // (X/Y/Z). Par défaut à zéro : les coordonnées du routes.json sont prises telles
@@ -4765,18 +5085,25 @@ function importRoutesFromJSON(data, sourceLabel, silent=false){
 }
 
 const fileRoutes = document.getElementById('file-routes');
-document.getElementById('btn-load-routes').addEventListener('click', ()=> fileRoutes.click());
-fileRoutes.addEventListener('change', (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    try{ importRoutesFromJSON(JSON.parse(reader.result), 'routes.json'); }
-    catch(err){ alert("routes.json invalide : "+err.message); }
-  };
-  reader.readAsText(file);
-  fileRoutes.value = '';
-});
+// Le bouton manuel "Charger routes.json" a été retiré du panneau admin (voir
+// section "Éléments visibles" / "Couleurs") ; l'auto-chargement au démarrage
+// (voir plus bas, ROUTES_JSON_URL) reste seul responsable du chargement des
+// voies, donc <input id="file-routes"> et son wiring ne servent plus à rien
+// d'accessible depuis l'UI — laissés en place uniquement si l'input existe
+// encore dans le DOM pour compat, sinon ignorés silencieusement.
+if(fileRoutes){
+  fileRoutes.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{ importRoutesFromJSON(JSON.parse(reader.result), 'routes.json'); }
+      catch(err){ alert("routes.json invalide : "+err.message); }
+    };
+    reader.readAsText(file);
+    fileRoutes.value = '';
+  });
+}
 
 // Charge automatiquement routes.json s'il est présent à côté de index.html,
 // exactement comme place_de_milan.glb — pas besoin de cliquer manuellement.
@@ -5076,6 +5403,33 @@ function extCreateSlice(faceC, referenceOutward, parentSlice){
   // Poignées en overlay DOM (comme le bouton +) : toujours à taille et
   // position fixes à l'écran, jamais occultées ni sous-dimensionnées par la
   // caméra 3D — contrairement aux anciennes sphères/cônes en mesh Three.js.
+  slice.moveHandleEl = extMakeHandleEl('move');
+  slice.rotateHandleEl = extMakeHandleEl('rotate');
+  slice.moveHandleEl.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); extDragSlice=slice; extDragMode='move'; controls.enabled=false; });
+  slice.rotateHandleEl.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); extDragSlice=slice; extDragMode='rotate'; controls.enabled=false; });
+  extRebuildSliceGeometry(slice);
+  extUpdateHandlePositions(slice);
+  return slice;
+}
+// Reconstruit une tranche depuis les données minimales sauvegardées en JSON
+// (faceC, center, angle, width, height, yBase) — tout le reste (faceA, mesh
+// déformé, poignées) est recalculé par extRebuildSliceGeometry, exactement
+// comme pour une tranche créée interactivement.
+function extRestoreSlice(d){
+  const slice = {
+    id: d.id,
+    parentId: d.parentId,
+    faceC: { p1:{...d.faceC.p1}, p2:{...d.faceC.p2} },
+    width: d.width,
+    height: d.height,
+    center: { x:d.center.x, z:d.center.z },
+    angle: d.angle,
+    yBase: d.yBase,
+    confirmed: true,
+    group: new THREE.Group(),
+  };
+  slice.group.name = 'ExtGareTranche';
+  scene.add(slice.group);
   slice.moveHandleEl = extMakeHandleEl('move');
   slice.rotateHandleEl = extMakeHandleEl('rotate');
   slice.moveHandleEl.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); extDragSlice=slice; extDragMode='move'; controls.enabled=false; });
