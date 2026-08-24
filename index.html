@@ -403,6 +403,27 @@
   #vertex-select-bar .vsel-btn svg{width:15px;height:15px;stroke-width:2;}
   #vertex-select-bar .vsel-btn:hover{color:var(--paper);}
   #vertex-select-bar .vsel-btn.active{background:var(--accent);color:#08141a;}
+  #vertex-select-bar .vsel-sep{width:1px;background:#2a3946;margin:2px 4px;}
+  #edit-banner{
+    display:none;align-items:center;gap:12px;margin:8px 12px 0;padding:10px 16px;
+    background:linear-gradient(90deg, rgba(46,232,255,.16), rgba(46,232,255,.05));
+    border:1px solid var(--accent);border-radius:9px;color:var(--paper);
+    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;
+  }
+  #edit-banner.show{display:flex;}
+  #edit-banner svg{width:17px;height:17px;color:var(--accent);flex-shrink:0;}
+  #edit-banner-text{flex:1;}
+  #edit-banner-actions{display:flex;gap:8px;}
+  #edit-banner-actions button{
+    display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;
+    font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.02em;cursor:pointer;transition:filter .15s ease;
+  }
+  #edit-banner-actions button svg{width:13px;height:13px;color:inherit;}
+  #edit-banner-cancel{background:#3a2530;color:#ff8f8f;}
+  #edit-banner-cancel:hover{filter:brightness(1.25);}
+  #edit-banner-done{background:var(--accent);color:#08141a;}
+  #edit-banner-done:hover{filter:brightness(1.1);}
   .ext-handle-rotate{width:20px;height:20px;border-radius:5px;background:#2ee8ff;transform:translate(-50%,-50%) rotate(45deg);}
   #ext-gare-hint{
     position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:8;
@@ -526,6 +547,14 @@
       <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
+    <div id="edit-banner">
+      <i data-lucide="pencil-ruler"></i>
+      <span id="edit-banner-text">Modification du bâtiment en cours</span>
+      <div id="edit-banner-actions">
+        <button id="edit-banner-cancel" title="Annuler les changements de cette session d'édition"><i data-lucide="rotate-ccw"></i>Annuler</button>
+        <button id="edit-banner-done" title="Valider et quitter le mode édition"><i data-lucide="check"></i>Terminer</button>
+      </div>
+    </div>
     <div id="left-stack">
     <div id="toolbar-left">
       <div class="tool-row">
@@ -592,6 +621,9 @@
     <div id="vertex-select-bar">
       <button class="vsel-btn active" id="btn-select-point" title="Sélection par sommet : cliquez une poignée pour la (dé)sélectionner"><i data-lucide="mouse-pointer-click"></i><span>Sélection par sommet</span></button>
       <button class="vsel-btn" id="btn-select-box" title="Sélection carré : glissez un rectangle pour sélectionner plusieurs sommets à la fois"><i data-lucide="square-dashed"></i><span>Sélection carré</span></button>
+      <div class="vsel-sep"></div>
+      <button class="vsel-btn" id="btn-select-all" title="Sélectionner tous les sommets"><i data-lucide="check-check"></i><span>Tout sélectionner</span></button>
+      <button class="vsel-btn" id="btn-select-none" title="Désélectionner tous les sommets"><i data-lucide="x"></i><span>Tout désélectionner</span></button>
     </div>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
@@ -769,7 +801,7 @@ scene.fog = new THREE.Fog(0x101820, 420, 950); // brouillard allégé : commence
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 3000);
 camera.position.set(140, 130, 170);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -942,7 +974,7 @@ groundGroup.add(ground);
 // Grille de sol : reconstruite dynamiquement pour ne jamais dépasser le
 // polygone d'implantation (voir rebuildGrid(), appelée dès que buildZone change).
 const gridGroup = new THREE.Group();
-gridGroup.position.y = 0.02;
+gridGroup.position.y = 0.06;
 groundGroup.add(gridGroup);
 
 // Contour d'îlot de secours (rectangle) — remplacé dès que Polygone_Implantation est chargé.
@@ -1120,9 +1152,13 @@ function rebuildGrid(){
   const step = span/24;        // ~24 mailles sur le plus grand côté, quelle que soit l'échelle
   const sampleStep = step/12;  // finesse de la découpe dedans/dehors
   const positions = [];
+  // Légère surélévation au-dessus du sol (0 exact aurait le même Z que le sol,
+  // provoquant un scintillement d'entrelacement de profondeur — "z-fighting" —
+  // qui clignote au moindre déplacement de caméra).
+  const GRID_Y = 0.03;
   const pushRun=(a,b,fixedIsX,fixedVal)=>{
-    if(fixedIsX) positions.push(fixedVal,0,a, fixedVal,0,b);
-    else positions.push(a,0,fixedVal, b,0,fixedVal);
+    if(fixedIsX) positions.push(fixedVal,GRID_Y,a, fixedVal,GRID_Y,b);
+    else positions.push(a,GRID_Y,fixedVal, b,GRID_Y,fixedVal);
   };
   // lignes verticales (X fixe, on balaie Z)
   for(let x=Math.ceil(minX/step)*step; x<=maxX; x+=step){
@@ -1151,7 +1187,7 @@ function rebuildGrid(){
   if(!positions.length) return;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
-  const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({color:0x2a3946}));
+  const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({color:0x2a3946, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1}));
   gridGroup.add(lines);
 }
 rebuildGrid(); // grille initiale sur le contour de secours, avant chargement de la maquette
@@ -1400,7 +1436,7 @@ function buildDemoSite(){
   createRoute([{x:-70,y:0.15,z:34},{x:0,y:0.15,z:34},{x:60,y:0.15,z:34}], 'bus', 'Bus — ligne C');
   createRoute([{x:-50,y:0.15,z:-38},{x:34,y:0.15,z:-38},{x:44,y:0.15,z:0},{x:26,y:0.15,z:30},{x:-40,y:0.15,z:26},{x:-50,y:0.15,z:-10},{x:-50,y:0.15,z:-38}], 'voiture', 'Voirie — boucle place');
   createRoute([{x:-30,y:0.15,z:-55},{x:-10,y:0.15,z:-40},{x:5,y:0.15,z:-10},{x:0,y:0.15,z:15}], 'pieton', 'Piétons — parvis gare');
-  selectedId = null; rebuildAll(); renderList();
+  selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); rebuildAll(); renderList();
 }
 
 // Bascule le matériau visible du polygone d'implantation entre son rendu
@@ -1501,6 +1537,8 @@ worldRoot.add(drawMarkers);
 const SCREEN_SIZED_MARKER_PX = 13; // rayon écran cible (~26px de diamètre, comme .ext-handle-move)
 let screenSizedMarkers = [];
 const _ssmTmpPos = new THREE.Vector3();
+const _ssmP1 = new THREE.Vector3(), _ssmP2 = new THREE.Vector3();
+const _ssmW1 = new THREE.Vector3(), _ssmW2 = new THREE.Vector3();
 function registerScreenSizedMarker(obj){ screenSizedMarkers.push(obj); return obj; }
 function unregisterScreenSizedMarkersOf(group){
   screenSizedMarkers = screenSizedMarkers.filter(o=> o.parent !== group);
@@ -1508,21 +1546,24 @@ function unregisterScreenSizedMarkersOf(group){
 function updateScreenSizedMarkers(){
   if(!screenSizedMarkers.length) return;
   const cam = planViewActive ? orthoCamera : camera;
+  const w = renderer.domElement.clientWidth || renderer.domElement.width || 1;
   const h = renderer.domElement.clientHeight || renderer.domElement.height || 1;
   for(const obj of screenSizedMarkers){
     if(!obj.parent) continue;
-    let worldRadius;
-    if(cam.isOrthographicCamera){
-      const worldHeight = (cam.top - cam.bottom) / cam.zoom;
-      worldRadius = SCREEN_SIZED_MARKER_PX * (worldHeight / h);
-    } else {
-      obj.getWorldPosition(_ssmTmpPos);
-      const dist = _ssmTmpPos.distanceTo(cam.position);
-      const vFov = cam.fov * Math.PI/180;
-      const worldHeightAtDist = 2*Math.tan(vFov/2)*dist;
-      worldRadius = SCREEN_SIZED_MARKER_PX * (worldHeightAtDist / h);
-    }
-    obj.scale.setScalar(worldRadius);
+    obj.getWorldPosition(_ssmTmpPos);
+    // Méthode générique et fiable (fonctionne identiquement en perspective ET
+    // en orthographique, sans dépendre d'une formule trigonométrique liée au
+    // FOV qui peut se tromper de repère) : on projette le point en espace
+    // écran normalisé (NDC), on le décale d'un nombre de pixels donné, on
+    // dé-projette, et on mesure la distance monde correspondante. C'est
+    // exactement "combien d'unités-monde pour N pixels écran à cet endroit".
+    _ssmP1.copy(_ssmTmpPos).project(cam);
+    _ssmP2.copy(_ssmP1);
+    _ssmP2.x += (SCREEN_SIZED_MARKER_PX / w) * 2;
+    _ssmW1.copy(_ssmP1).unproject(cam);
+    _ssmW2.copy(_ssmP2).unproject(cam);
+    const worldRadius = _ssmW1.distanceTo(_ssmW2);
+    obj.scale.setScalar(worldRadius || 0.01);
   }
 }
 
@@ -1676,6 +1717,7 @@ function startDraw(mode){
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+  if(editingBuildingId) stopEditBuildingShape();
   drawMode = mode || 'polygon';
   drawing = true; drawPoints = [];
   clearMarkers();
@@ -2337,6 +2379,7 @@ function startTreeTool(){
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+  if(editingBuildingId) stopEditBuildingShape();
   treePlacing = true;
   btnTree.classList.add('active'); btnTree.querySelector('.tool-btn-label').textContent = 'Cliquez le polygone…';
   drawHint.classList.add('show');
@@ -2629,6 +2672,7 @@ function startGrassTool(){
   if(treePlacing) stopTreeTool();
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+  if(editingBuildingId) stopEditBuildingShape();
   grassPainting = true;
   btnGrass.classList.add('active'); btnGrass.querySelector('.tool-btn-label').textContent = 'Glissez pour peindre…';
   drawHint.classList.add('show');
@@ -2895,7 +2939,7 @@ function deleteBuilding(id){
   if(editingBuildingId===id) stopEditBuildingShape();
   worldRoot.remove(b.group);
   buildings = buildings.filter(x=>x.id!==id);
-  if(selectedId===id) selectedId = null;
+  if(selectedId===id){ selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); }
   renderList();
 }
 
@@ -2968,7 +3012,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   if(toolIsActive()) return;
   const hit = buildingHitAt(ev);
   if(!hit){
-    if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
+    if(selectedId !== null){ selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); rebuildAll(); renderList(); }
     return;
   }
   selectBuilding(hit.id);
@@ -3015,6 +3059,16 @@ function setVertexSelectMode(mode){
 }
 btnSelectPoint.addEventListener('click', ()=> setVertexSelectMode('point'));
 btnSelectBox.addEventListener('click', ()=> setVertexSelectMode(vertexSelectMode==='box' ? 'point' : 'box'));
+document.getElementById('btn-select-all').addEventListener('click', ()=>{
+  if(!editingBuildingId) return;
+  bldgSelected = new Set(bldgVertexHandles.map(h=>h.index));
+  rebuildBldgSelectionVisuals();
+});
+document.getElementById('btn-select-none').addEventListener('click', ()=>{
+  if(!editingBuildingId) return;
+  bldgSelected.clear();
+  rebuildBldgSelectionVisuals();
+});
 
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!editingBuildingId || vertexSelectMode!=='box' || ev.button!==0) return;
@@ -3078,9 +3132,42 @@ let bldgVertexHandles = []; // [{mesh, index}]
 let bldgSelectionRingGroup = new THREE.Group(); worldRoot.add(bldgSelectionRingGroup);
 let bldgSelected = new Set(); // indices des sommets sélectionnés
 
+let bldgEditSnapshot = null; // {id, points, floors, bands} capturé à l'ouverture, pour "Annuler"
+const editBannerEl = document.getElementById('edit-banner');
+const editBannerText = document.getElementById('edit-banner-text');
+function refreshEditBanner(){
+  const b = editingBuildingId ? buildings.find(x=>x.id===editingBuildingId) : null;
+  if(b){
+    editBannerText.textContent = `Modification du bâtiment « ${b.name} » en cours`;
+    editBannerEl.classList.add('show');
+  } else {
+    editBannerEl.classList.remove('show');
+  }
+}
+document.getElementById('edit-banner-done').addEventListener('click', ()=> stopEditBuildingShape());
+document.getElementById('edit-banner-cancel').addEventListener('click', ()=>{
+  if(bldgEditSnapshot && editingBuildingId===bldgEditSnapshot.id){
+    const b = buildings.find(x=>x.id===bldgEditSnapshot.id);
+    if(b){
+      b.points = bldgEditSnapshot.points.map(p=>({x:p.x,z:p.z}));
+      b.floors = bldgEditSnapshot.floors;
+      b.bands = JSON.parse(JSON.stringify(bldgEditSnapshot.bands));
+      rebuildMesh(b);
+      renderList();
+    }
+  }
+  stopEditBuildingShape();
+  flashStatus('Modifications annulées');
+});
 function startEditBuildingShape(b){
   if(editingBuildingId && editingBuildingId!==b.id) stopEditBuildingShape();
+  if(drawing) cancelDraw();
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   editingBuildingId = b.id;
+  bldgEditSnapshot = { id:b.id, points: b.points.map(p=>({x:p.x,z:p.z})), floors:b.floors, bands: JSON.parse(JSON.stringify(b.bands||[])) };
   bldgSelected.clear();
   rebuildBldgVertexHandles(b);
   rebuildBldgSelectionVisuals();
@@ -3088,11 +3175,13 @@ function startEditBuildingShape(b){
   renderList();
   setVertexSelectMode('point');
   refreshVertexSelectBar();
+  refreshEditBanner();
   flashStatus("Cliquez les sommets pour les sélectionner (plusieurs possibles) · glissez pour déplacer · reclic sur Modifier pour terminer");
 }
 function stopEditBuildingShape(){
   const id = editingBuildingId;
   editingBuildingId = null;
+  bldgEditSnapshot = null;
   bldgVertexGroup.clear();
   bldgVertexHandles = [];
   bldgVertexHover = null;
@@ -3105,6 +3194,7 @@ function stopEditBuildingShape(){
   renderer.domElement.style.cursor = '';
   setVertexSelectMode('point');
   refreshVertexSelectBar();
+  refreshEditBanner();
   const b = buildings.find(x=>x.id===id);
   if(b) rebuildMesh(b);
   renderList();
@@ -3756,6 +3846,38 @@ function positionSunForHour(hourDecimal){
 // Applique réellement le mode (soleil à une heure donnée OU nuit) — appelé
 // via setLightingMode() ci-dessous, qui affiche le spinner pendant l'appel
 // pour ne pas donner l'impression d'un blocage/bug (voir plus bas).
+/* ------------------------------------------------------------
+   CIEL EN DÉGRADÉ selon l'heure d'éclairage — léger et rapide :
+   un minuscule canvas 2×128 rempli d'un dégradé CSS, converti en texture
+   Three.js, régénéré uniquement au changement d'éclairage (pas par frame).
+   ------------------------------------------------------------ */
+const SKY_GRADIENTS = {
+  lever:      ['#31456b', '#f3a56a'], // aube : bleu profond en haut, orangé bas
+  matin:      ['#5f9fd4', '#eef7fb'], // matin clair
+  midi:       ['#3f8fd1', '#eaf6ff'], // bleu franc / blanc quasi-zénithal
+  apresmidi:  ['#4d8fc2', '#f4e2c6'], // légèrement doré vers le bas
+  coucher:    ['#2c3760', '#ff9662'], // rose/orange de coucher de soleil
+  nuit:       ['#040810', '#0f1b30'], // bleu nuit très sombre
+};
+const skyCanvas = document.createElement('canvas');
+skyCanvas.width = 2; skyCanvas.height = 128;
+const skyCtx = skyCanvas.getContext('2d');
+const skyTexture = new THREE.CanvasTexture(skyCanvas);
+skyTexture.colorSpace = THREE.SRGBColorSpace;
+function updateSkyGradient(key){
+  const [top, bottom] = SKY_GRADIENTS[key] || SKY_GRADIENTS.midi;
+  const g = skyCtx.createLinearGradient(0,0,0,skyCanvas.height);
+  g.addColorStop(0, top);
+  g.addColorStop(0.55, bottom);
+  g.addColorStop(1, bottom);
+  skyCtx.fillStyle = g;
+  skyCtx.fillRect(0,0,skyCanvas.width, skyCanvas.height);
+  skyTexture.needsUpdate = true;
+  scene.background = skyTexture;
+  // Le brouillard adopte une teinte proche de l'horizon (bas du dégradé) pour
+  // que la maquette se fonde dans le ciel plutôt que dans un gris neutre.
+  scene.fog.color.copy(new THREE.Color(top).lerp(new THREE.Color(bottom), 0.6));
+}
 function applyLightingModeNow(mode){
   lightingMode = mode;
   isNight = (mode === 'nuit');
@@ -3765,8 +3887,7 @@ function applyLightingModeNow(mode){
     hemiLight.color.setHex(0x2c405f);
     scene.environment = nightEnvTexture;
     renderer.toneMappingExposure = 1.0;
-    scene.background.setHex(0x0b1220);
-    scene.fog.color.setHex(0x0b1220);
+    updateSkyGradient('nuit');
     siteLights.forEach(l=> l.visible = true);
   } else {
     sun.visible = true;
@@ -3774,8 +3895,7 @@ function applyLightingModeNow(mode){
     positionSunForHour(cfg.hour);
     scene.environment = dayEnvTexture;
     renderer.toneMappingExposure = 0.85;
-    scene.background.setHex(0x101820);
-    scene.fog.color.setHex(0x101820);
+    updateSkyGradient(mode);
     siteLights.forEach(l=> l.visible = false);
   }
   applyVehicleLightState();
@@ -3961,6 +4081,7 @@ btnLabel.addEventListener('click', ()=>{
     if(treePlacing) stopTreeTool();
     if(grassPainting) stopGrassTool();
     if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+    if(editingBuildingId) stopEditBuildingShape();
   }
   labelPlacing = !labelPlacing;
   btnLabel.classList.toggle('active', labelPlacing);
@@ -4091,6 +4212,7 @@ fileLoad.addEventListener('change', (e)=>{
         createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands});
       });
       selectedId = null;
+      document.getElementById('bldg-edit-window').classList.remove('show');
       rebuildAll(); renderList();
       if(repairedCount) flashStatus(`${repairedCount} bâtiment(s) recalé(s) sur le polygone d'implantation`);
     }catch(err){ alert("Fichier de projet invalide."); }
@@ -5027,6 +5149,7 @@ function startExtensionGareTool(){
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
+  if(editingBuildingId) stopEditBuildingShape();
   const hallParts = extHallParts();
   if(!hallParts.length){ flashStatus("Hall de gare introuvable dans la maquette chargée"); return; }
   extToolActive = true;
@@ -5073,6 +5196,7 @@ function extShowExtensionForEditing(){
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
+  if(editingBuildingId) stopEditBuildingShape();
   extEditMode = true;
   extToolActive = true;
   btnExtensionGare.classList.add('active');
