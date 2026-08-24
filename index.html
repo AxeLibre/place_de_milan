@@ -405,9 +405,14 @@
   #vertex-select-bar .vsel-btn.active{background:var(--accent);color:#08141a;}
   #vertex-select-bar .vsel-sep{width:1px;background:#2a3946;margin:2px 4px;}
   #edit-banner{
-    display:none;align-items:center;gap:12px;margin:8px 12px 0;padding:10px 16px;
+    display:none;align-items:center;gap:12px;
+    position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:6;
+    width:min(560px, calc(100vw - 32px));
+    padding:10px 16px;
     background:linear-gradient(90deg, rgba(46,232,255,.16), rgba(46,232,255,.05));
+    background-color:#101820ee;
     border:1px solid var(--accent);border-radius:9px;color:var(--paper);
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
     font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;
   }
   #edit-banner.show{display:flex;}
@@ -518,6 +523,7 @@
     #ribbon{padding:8px 10px;gap:8px;}
     #status-line{display:none;}
     #compass{top:64px;right:8px;width:84px;height:84px;}
+    #edit-banner{top:56px;width:calc(100vw - 16px);flex-wrap:wrap;}
   }
   @media (max-width: 620px){
     #left-stack{bottom:auto;top:8px;left:8px;right:8px;width:auto;max-height:60vh;}
@@ -3262,13 +3268,13 @@ let gizmoMove, gizmoScale;
   gizmoMove.position.y = 0.6;
   gizmoMove.userData.gizmoType = 'move';
   const moveCore = new THREE.Mesh(
-    new THREE.SphereGeometry(0.9,16,16),
+    new THREE.SphereGeometry(1,16,16),
     new THREE.MeshStandardMaterial({ color:NEON_BLUE, emissive:NEON_BLUE, emissiveIntensity:0.5 })
   );
   moveCore.position.y = 1.4;
   moveCore.userData.gizmoType = 'move';
   gizmoScale = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.9,0),
+    new THREE.OctahedronGeometry(1,0),
     new THREE.MeshStandardMaterial({ color:0xffffff, emissive:NEON_BLUE, emissiveIntensity:0.6 })
   );
   gizmoScale.userData.gizmoType = 'scale';
@@ -3281,6 +3287,9 @@ let gizmoMove, gizmoScale;
   gizmoGroup.visible = false;
   gizmoGroup.userData.link = link;
   gizmoGroup.userData.moveCore = moveCore;
+  // Taille écran constante, comme les poignées de sommet — même méthode.
+  registerScreenSizedMarker(moveCore);
+  registerScreenSizedMarker(gizmoScale);
 })();
 const GIZMO_SCALE_OFFSET = 6;
 function remapSelectionByProximity(coords, points, epsilon=0.75){
