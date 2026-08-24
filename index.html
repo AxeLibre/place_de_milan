@@ -3040,34 +3040,37 @@ function buildingTotalFloorArea(b){
 function offsetPolygonInwardXZ(pts, dist){
   const n = pts.length;
   if(n<3) return pts.slice();
-  // Aire signée pour déterminer le sens de parcours (CW/CCW dans le plan XZ
-  // tel qu'utilisé ici) afin que le décalage aille bien vers l'intérieur.
-  let signedArea = 0;
-  for(let i=0;i<n;i++){
-    const p1=pts[i], p2=pts[(i+1)%n];
-    signedArea += p1.x*p2.z - p2.x*p1.z;
+  function offsetWithSign(sign){
+    const out = [];
+    for(let i=0;i<n;i++){
+      const prev = pts[(i-1+n)%n], cur = pts[i], next = pts[(i+1)%n];
+      const e1 = {x:cur.x-prev.x, z:cur.z-prev.z};
+      const e2 = {x:next.x-cur.x, z:next.z-cur.z};
+      const l1 = Math.hypot(e1.x,e1.z)||1, l2 = Math.hypot(e2.x,e2.z)||1;
+      const n1 = {x:sign*(-e1.z/l1), z:sign*(e1.x/l1)};
+      const n2 = {x:sign*(-e2.z/l2), z:sign*(e2.x/l2)};
+      let bis = {x:n1.x+n2.x, z:n1.z+n2.z};
+      const bl = Math.hypot(bis.x,bis.z);
+      if(bl < 1e-6){ out.push({x:cur.x+n1.x*dist, z:cur.z+n1.z*dist}); continue; }
+      bis.x/=bl; bis.z/=bl;
+      const cosHalf = Math.max(0.15, (n1.x*bis.x+n1.z*bis.z));
+      const push = dist/cosHalf;
+      out.push({x:cur.x+bis.x*push, z:cur.z+bis.z*push});
+    }
+    return out;
   }
-  const sign = signedArea < 0 ? 1 : -1;
-  const out = [];
-  for(let i=0;i<n;i++){
-    const prev = pts[(i-1+n)%n], cur = pts[i], next = pts[(i+1)%n];
-    const e1 = {x:cur.x-prev.x, z:cur.z-prev.z};
-    const e2 = {x:next.x-cur.x, z:next.z-cur.z};
-    const l1 = Math.hypot(e1.x,e1.z)||1, l2 = Math.hypot(e2.x,e2.z)||1;
-    // normales (perpendiculaires) de chaque arête, orientées vers l'intérieur
-    const n1 = {x:sign*(-e1.z/l1), z:sign*(e1.x/l1)};
-    const n2 = {x:sign*(-e2.z/l2), z:sign*(e2.x/l2)};
-    let bis = {x:n1.x+n2.x, z:n1.z+n2.z};
-    const bl = Math.hypot(bis.x,bis.z);
-    if(bl < 1e-6){ out.push({x:cur.x+n1.x*dist, z:cur.z+n1.z*dist}); continue; }
-    bis.x/=bl; bis.z/=bl;
-    // longueur du décalage le long de la bissectrice pour obtenir un retrait
-    // perpendiculaire de `dist` sur chaque arête
-    const cosHalf = Math.max(0.15, (n1.x*bis.x+n1.z*bis.z));
-    const push = dist/cosHalf;
-    out.push({x:cur.x+bis.x*push, z:cur.z+bis.z*push});
-  }
-  return out;
+  // On ne suppose pas le sens de parcours (CW/CCW) du contour tracé par
+  // l'utilisateur : on calcule le décalage dans les deux sens et on retient
+  // celui qui RÉDUIT effectivement la surface (c'est la définition même
+  // d'un retrait vers l'intérieur) — évite le bug où un contour tracé dans
+  // l'autre sens produisait un décalage vers l'extérieur, invalidant
+  // l'incrustation "gazon" (toiture entièrement couleur BATIMENTS).
+  const outerArea = polygonAreaXZ(pts);
+  const candA = offsetWithSign(1);
+  const candB = offsetWithSign(-1);
+  const areaA = polygonAreaXZ(candA);
+  const areaB = polygonAreaXZ(candB);
+  return areaA <= areaB ? candA : candB;
 }
 
 function rebuildMesh(b){
