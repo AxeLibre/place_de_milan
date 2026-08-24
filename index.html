@@ -268,6 +268,24 @@
   }
   #about-close:hover{color:var(--paper);background:#0b1116;}
 
+  /* ---------- Welcome modal ---------- */
+  #welcome-modal-overlay{position:fixed;inset:0;background:rgba(6,9,12,.72);backdrop-filter:blur(3px);z-index:500;display:flex;align-items:center;justify-content:center;}
+  #welcome-modal-overlay.hidden{display:none;}
+  #welcome-modal{width:min(640px,92vw);max-height:86vh;background:#10161c;border:1px solid #2a3946;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  #welcome-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid #2a3946;font-size:15px;}
+  #welcome-modal-head b{font-weight:600;}
+  #welcome-modal-close{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;}
+  #welcome-modal-close:hover{color:var(--paper);}
+  #welcome-modal-body{overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px;}
+  .welcome-step{display:flex;gap:12px;align-items:flex-start;}
+  .welcome-step img{width:88px;height:66px;object-fit:cover;border-radius:6px;border:1px solid #2a3946;flex:none;background:#0b1116;}
+  .welcome-step b{display:block;font-size:13px;margin-bottom:3px;color:var(--paper);}
+  .welcome-step p{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted);}
+  #welcome-modal-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-top:1px solid #2a3946;}
+  #welcome-modal-foot label{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;}
+  #welcome-modal-start{background:#5b8ab0;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;cursor:pointer;}
+  #welcome-modal-start:hover{filter:brightness(1.1);}
+
   /* ---------- Draw hint ---------- */
   #draw-hint{
     position:absolute;bottom:22px;left:50%;transform:translateX(-50%);
@@ -579,6 +597,40 @@
 </style>
 </head>
 <body>
+<div id="welcome-modal-overlay">
+  <div id="welcome-modal">
+    <div id="welcome-modal-head">
+      <b>Bienvenue sur l'atelier volumétrique — Place de Milan</b>
+      <button id="welcome-modal-close" title="Fermer"><i data-lucide="x"></i></button>
+    </div>
+    <div id="welcome-modal-body">
+      <div class="welcome-step">
+        <img src="public/help-dessiner.png" alt="" onerror="this.style.display='none'">
+        <div><b>1. Dessinez un bâtiment</b><p>Cliquez sur « Nouveau bâtiment », puis tracez son emprise au sol (polygone ou rectangle) directement sur la place — la surface en m² s'affiche en direct pendant le tracé.</p></div>
+      </div>
+      <div class="welcome-step">
+        <img src="public/help-etages.png" alt="" onerror="this.style.display='none'">
+        <div><b>2. Réglez le nombre d'étages et les usages</b><p>Dans le menu du bâtiment, ajustez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche. La hauteur de chaque étage s'adapte automatiquement à son usage.</p></div>
+      </div>
+      <div class="welcome-step">
+        <img src="public/help-surfaces.png" alt="" onerror="this.style.display='none'">
+        <div><b>3. Lisez les surfaces</b><p>Le menu du bâtiment affiche l'emprise au sol et la surface potentielle totale (emprise × nombre d'étages), toujours à jour.</p></div>
+      </div>
+      <div class="welcome-step">
+        <img src="public/help-eclairage.png" alt="" onerror="this.style.display='none'">
+        <div><b>4. Explorez jour/nuit et vue plan</b><p>Le panneau « Éclairage » permet de faire varier la position du soleil ou de passer en mode Nuit (plus gourmand en ressources). Le bouton « Vue plan » bascule en vue orthographique du dessus.</p></div>
+      </div>
+      <div class="welcome-step">
+        <img src="public/help-outils.png" alt="" onerror="this.style.display='none'">
+        <div><b>5. Habillez la place</b><p>Plantez des arbres, peignez du gazon, ajoutez des labels, et affichez le zonage PLU pour situer vos projets dans le contexte réglementaire.</p></div>
+      </div>
+    </div>
+    <div id="welcome-modal-foot">
+      <label><input type="checkbox" id="welcome-dont-show"> Ne plus afficher au démarrage</label>
+      <button id="welcome-modal-start">Commencer</button>
+    </div>
+  </div>
+</div>
 <div id="app">
   <div id="viewport">
     <div id="ribbon">
@@ -591,6 +643,7 @@
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
       <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
       <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
+      <button class="tool-btn ghost" id="btn-help" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
       <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
     <div id="edit-banner">
@@ -661,6 +714,7 @@
       <div id="sun-jour-label">JOUR</div>
       <div id="sun-sep"></div>
       <button class="sun-btn sun-btn-night" id="sun-btn-night" title="Mode nuit"><i data-lucide="moon"></i><span>NUIT</span></button>
+      <div id="night-warning" style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:9.5px;line-height:1.3;color:#e0a24a;text-align:center;max-width:150px;">⚠️ Le mode Nuit est gourmand en RAM, CPU &amp; GPU.</div>
     </div>
     <div id="loading-spinner"><div class="ring"></div></div>
     <div id="box-select-rect"></div>
@@ -762,6 +816,7 @@
     </div>
     <div id="draw-hint">
       <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
+      <span id="draw-hint-area" style="display:none;"></span>
       <span id="draw-hint-enter"><kbd>Entrée</kbd> valider</span>
       <span><kbd>Échap</kbd> annuler</span>
     </div>
@@ -792,7 +847,22 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 /* ============================================================
    CONFIG
    ============================================================ */
-const FLOOR_HEIGHT = 3.0; // metres
+const FLOOR_HEIGHT = 3.0; // metres — fallback générique
+// Hauteur d'étage réelle selon l'usage (mètres) : résidentiel 3m, hôtel 3.5m,
+// bureaux/commerces/services 4m — utilisée pour empiler les tranches à leur
+// vraie hauteur plutôt qu'une hauteur unique.
+const FLOOR_HEIGHTS = {
+  residentiel: 3.0,
+  hotel:       3.5,
+  bureaux:     4.0,
+  commerces:   4.0,
+  services:    4.0
+};
+function floorHeightFor(usage){ return FLOOR_HEIGHTS[usage] || FLOOR_HEIGHT; }
+// Couleurs de toiture — extraites des matériaux "BATIMENTS" et "gazon" du
+// .glb au chargement (voir onSiteLoaded) ; replis par défaut si absents.
+let roofRimColor = 0x8a8f96;   // couleur du matériau "BATIMENTS"
+let roofInsetColor = 0x6b9c4f; // couleur du matériau "gazon"
 const USAGE_COLORS = {
   residentiel: 0xe0a24a,
   bureaux:     0x5b8ab0,
@@ -1394,6 +1464,10 @@ function onSiteLoaded(){
   extensionGareMesh = findByNameCI(siteRoot, 'Extension_Gare');
   if(extensionGareMesh) extensionGareMesh.visible = false; // masquée par défaut — bouton "Ajouter Extension Gare"
   glassMaterial = findMaterialByName(siteRoot, 'glass');
+  const bldgMatRef = findMaterialByName(siteRoot, 'BATIMENTS');
+  if(bldgMatRef && bldgMatRef.color) roofRimColor = bldgMatRef.color.getHex();
+  const gazonMatRef = findMaterialByName(siteRoot, 'gazon');
+  if(gazonMatRef && gazonMatRef.color) roofInsetColor = gazonMatRef.color.getHex();
   fixProceduralMaterials(); // avant tout le reste : le gabarit d'arbre doit récupérer le matériau déjà corrigé
   if(polyParts.length){
     polyParts.forEach(p=>{ p.visible = true; p.receiveShadow = true; });
@@ -1746,6 +1820,7 @@ const btnModePoly = document.getElementById('btn-mode-poly');
 const drawHint = document.getElementById('draw-hint');
 const drawHintText = document.getElementById('draw-hint-text');
 const drawHintEnter = document.getElementById('draw-hint-enter');
+const drawHintArea = document.getElementById('draw-hint-area');
 const bldgMiniList = document.getElementById('bldg-mini-list');
 let drawMenuOpen = false;
 
@@ -1823,6 +1898,15 @@ function refreshPreview(){
   // tracé — visible même grille désactivée, pour bien signaler "en travaux".
   previewHazard = makeHazardStripeOutline(drawPoints, 0.5);
   worldRoot.add(previewHazard);
+  // Surface au sol en direct pendant le tracé — dès que le contour a de quoi
+  // former un polygone (3 sommets minimum).
+  if(drawPoints.length>=3 && drawHintArea){
+    const liveArea = polygonAreaXZ(drawPoints);
+    drawHintArea.textContent = `${liveArea.toFixed(0)} m² au sol`;
+    drawHintArea.style.display = '';
+  } else if(drawHintArea){
+    drawHintArea.style.display = 'none';
+  }
 }
 // Point le plus proche de `pt` sur le segment [a,b].
 function closestPointOnSegment(pt, a, b){
@@ -2874,9 +2958,116 @@ function createBuilding(pts, opts={}){
   openBldgEditWindow(b.id);
 }
 
+// Toiture des nouveaux bâtiments : rebord extérieur (2m de large) coloré
+// comme le matériau "BATIMENTS" du .glb, incrustation intérieure colorée
+// "gazon" légèrement en contrebas pour l'effet d'incrustation.
+function buildRoofCap(points, topY, editing){
+  const group = new THREE.Group();
+  const outer2D = points.map(p=>new THREE.Vector2(p.x, -p.z));
+  const inset = offsetPolygonInwardXZ(points, 2);
+  const insetArea = polygonAreaXZ(inset);
+  const outerArea = polygonAreaXZ(points);
+  const hasInset = inset.length>=3 && insetArea > 0.5 && insetArea < outerArea;
+
+  const rimMat = new THREE.MeshStandardMaterial({ color: roofRimColor, roughness:0.85, metalness:0.05, transparent: editing, opacity: editing ? 0.25 : 1.0 });
+  if(hasInset){
+    const rimShape = new THREE.Shape(outer2D);
+    rimShape.holes.push(new THREE.Path(inset.map(p=>new THREE.Vector2(p.x, -p.z))));
+    const rimGeo = new THREE.ShapeGeometry(rimShape);
+    rimGeo.rotateX(-Math.PI/2);
+    const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+    rimMesh.position.y = topY + 0.005;
+    rimMesh.receiveShadow = true;
+    group.add(rimMesh);
+
+    const insetShape = new THREE.Shape(inset.map(p=>new THREE.Vector2(p.x, -p.z)));
+    const insetGeo = new THREE.ShapeGeometry(insetShape);
+    insetGeo.rotateX(-Math.PI/2);
+    const insetMat = new THREE.MeshStandardMaterial({ color: roofInsetColor, roughness:0.9, metalness:0.0, transparent: editing, opacity: editing ? 0.25 : 1.0 });
+    const insetMesh = new THREE.Mesh(insetGeo, insetMat);
+    insetMesh.position.y = topY - 0.03; // léger retrait = effet d'incrustation
+    insetMesh.receiveShadow = true;
+    group.add(insetMesh);
+  } else {
+    // Emprise trop petite pour un rebord de 2m : toiture pleine couleur "BATIMENTS".
+    const fullShape = new THREE.Shape(outer2D);
+    const fullGeo = new THREE.ShapeGeometry(fullShape);
+    fullGeo.rotateX(-Math.PI/2);
+    const fullMesh = new THREE.Mesh(fullGeo, rimMat);
+    fullMesh.position.y = topY + 0.005;
+    fullMesh.receiveShadow = true;
+    group.add(fullMesh);
+  }
+  return group;
+}
 function usageAtFloor(b, floor){
   const band = b.bands.find(bd=>floor>=bd.from && floor<=bd.to);
   return band ? band.usage : 'bureaux';
+}
+// Hauteur cumulée en bas de l'étage `floor` (1-indexé) — chaque étage a sa
+// propre hauteur selon son usage (voir FLOOR_HEIGHTS), donc les étages ne
+// sont plus simplement à (f-1)*FLOOR_HEIGHT.
+function floorOffsetY(b, floor){
+  let y = 0;
+  for(let f=1; f<floor; f++) y += floorHeightFor(usageAtFloor(b, f));
+  return y;
+}
+function buildingTotalHeight(b){
+  let h = 0;
+  for(let f=1; f<=b.floors; f++) h += floorHeightFor(usageAtFloor(b, f));
+  return h;
+}
+// Surface au sol de l'emprise (formule du lacet / shoelace) en m².
+function polygonAreaXZ(pts){
+  if(!pts || pts.length<3) return 0;
+  let a = 0;
+  for(let i=0;i<pts.length;i++){
+    const p1 = pts[i], p2 = pts[(i+1)%pts.length];
+    a += p1.x*p2.z - p2.x*p1.z;
+  }
+  return Math.abs(a)/2;
+}
+// Surface potentielle totale = surface au sol × nb d'étages (approximation
+// standard pour une emprise constante sur toute la hauteur du bâtiment).
+function buildingTotalFloorArea(b){
+  return polygonAreaXZ(b.points) * b.floors;
+}
+// Décale chaque sommet d'un polygone fermé vers l'intérieur d'une distance
+// `dist` (mètres), via une jointure "miter" simple sur les bissectrices des
+// arêtes adjacentes. Suffisant pour des emprises convexes/quasi-convexes
+// typiques d'un bâtiment ; pas un offset robuste type Clipper mais évite
+// toute dépendance externe.
+function offsetPolygonInwardXZ(pts, dist){
+  const n = pts.length;
+  if(n<3) return pts.slice();
+  // Aire signée pour déterminer le sens de parcours (CW/CCW dans le plan XZ
+  // tel qu'utilisé ici) afin que le décalage aille bien vers l'intérieur.
+  let signedArea = 0;
+  for(let i=0;i<n;i++){
+    const p1=pts[i], p2=pts[(i+1)%n];
+    signedArea += p1.x*p2.z - p2.x*p1.z;
+  }
+  const sign = signedArea < 0 ? 1 : -1;
+  const out = [];
+  for(let i=0;i<n;i++){
+    const prev = pts[(i-1+n)%n], cur = pts[i], next = pts[(i+1)%n];
+    const e1 = {x:cur.x-prev.x, z:cur.z-prev.z};
+    const e2 = {x:next.x-cur.x, z:next.z-cur.z};
+    const l1 = Math.hypot(e1.x,e1.z)||1, l2 = Math.hypot(e2.x,e2.z)||1;
+    // normales (perpendiculaires) de chaque arête, orientées vers l'intérieur
+    const n1 = {x:sign*(-e1.z/l1), z:sign*(e1.x/l1)};
+    const n2 = {x:sign*(-e2.z/l2), z:sign*(e2.x/l2)};
+    let bis = {x:n1.x+n2.x, z:n1.z+n2.z};
+    const bl = Math.hypot(bis.x,bis.z);
+    if(bl < 1e-6){ out.push({x:cur.x+n1.x*dist, z:cur.z+n1.z*dist}); continue; }
+    bis.x/=bl; bis.z/=bl;
+    // longueur du décalage le long de la bissectrice pour obtenir un retrait
+    // perpendiculaire de `dist` sur chaque arête
+    const cosHalf = Math.max(0.15, (n1.x*bis.x+n1.z*bis.z));
+    const push = dist/cosHalf;
+    out.push({x:cur.x+bis.x*push, z:cur.z+bis.z*push});
+  }
+  return out;
 }
 
 function rebuildMesh(b){
@@ -2888,9 +3079,11 @@ function rebuildMesh(b){
   const editing = editingBuildingId === b.id;
 
   if(legendEnabled){
+    let yCursor = 0;
     for(let f=1; f<=b.floors; f++){
       const usage = usageAtFloor(b, f);
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_HEIGHT, bevelEnabled:false, curveSegments:1 });
+      const h = floorHeightFor(usage);
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled:false, curveSegments:1 });
       geo.rotateX(-Math.PI/2);
       const mat = new THREE.MeshStandardMaterial({
         color: USAGE_COLORS[usage],
@@ -2898,7 +3091,7 @@ function rebuildMesh(b){
         transparent: editing, opacity: editing ? 0.25 : 1.0
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.y = (f-1)*FLOOR_HEIGHT;
+      mesh.position.y = yCursor;
       mesh.castShadow = !editing; mesh.receiveShadow = true;
       b.group.add(mesh);
 
@@ -2907,12 +3100,14 @@ function rebuildMesh(b){
       const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.35 }));
       line.position.y = mesh.position.y;
       b.group.add(line);
+      yCursor += h;
     }
+    b.group.add(buildRoofCap(b.points, yCursor, editing));
   } else {
     // Légende désactivée + matériau "glass" : un seul volume plein hauteur,
     // sans les lignes de division par étage — seul le contour extérieur
     // (silhouette) reste visible, pour juger des masses sans distraction.
-    const totalHeight = b.floors*FLOOR_HEIGHT;
+    const totalHeight = buildingTotalHeight(b);
     const geo = new THREE.ExtrudeGeometry(shape, { depth: totalHeight, bevelEnabled:false, curveSegments:1 });
     geo.rotateX(-Math.PI/2);
     const mat = glassMaterialFor(editing);
@@ -2925,6 +3120,7 @@ function rebuildMesh(b){
     const edges = new THREE.EdgesGeometry(geo, 25);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.4 }));
     b.group.add(line);
+    b.group.add(buildRoofCap(b.points, totalHeight, editing));
   }
 
   // selection halo — surélevé et depthTest désactivé pour éviter tout
@@ -3635,10 +3831,19 @@ function renderBldgEditWindow(b){
   const nameInput = document.getElementById('bew-name');
   nameInput.value = b.name;
   nameInput.oninput = ()=>{ b.name = nameInput.value; renderRouteListNoop(); };
-  document.getElementById('bew-meta').textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${(b.floors*FLOOR_HEIGHT).toFixed(0)} m`;
+  const groundArea = polygonAreaXZ(b.points);
+  document.getElementById('bew-meta').textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${buildingTotalHeight(b).toFixed(1)} m`;
 
   const body = document.getElementById('bew-content');
   body.innerHTML = '';
+
+  // Surfaces — emprise au sol et surface potentielle totale (emprise × nb
+  // d'étages), affichées en tête du panneau de sorte à toujours refléter le
+  // nombre d'étages courant.
+  const areaField = document.createElement('div');
+  areaField.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;';
+  areaField.innerHTML = `<span>Emprise au sol : <b style="color:var(--fg)">${groundArea.toFixed(0)} m²</b></span><span>Potentiel total : <b style="color:var(--fg)">${buildingTotalFloorArea(b).toFixed(0)} m²</b></span>`;
+  body.appendChild(areaField);
 
   // Nombre d'étages — stepper +/- avec icônes plutôt qu'un simple champ nu.
   const floorsField = document.createElement('div');
@@ -3761,7 +3966,7 @@ function renderRouteListNoop(){ /* nom modifié : rafraîchit juste la pastille 
 function focusOn(b){
   const cx = b.points.reduce((s,p)=>s+p.x,0)/b.points.length;
   const cz = b.points.reduce((s,p)=>s+p.z,0)/b.points.length;
-  const h = b.floors*FLOOR_HEIGHT;
+  const h = buildingTotalHeight(b);
   controls.target.set(cx, h/2, cz);
   const dist = Math.max(40, h*2.2);
   camera.position.set(cx+dist*0.7, h*0.9+dist*0.5, cz+dist*0.7);
@@ -5836,6 +6041,28 @@ Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB()]).then(()=>{
     tryAutoLoadRoutes();
   });
 });
+
+/* ---------- Modale d'accueil ---------- */
+(function(){
+  const overlay = document.getElementById('welcome-modal-overlay');
+  const closeBtn = document.getElementById('welcome-modal-close');
+  const startBtn = document.getElementById('welcome-modal-start');
+  const dontShow = document.getElementById('welcome-dont-show');
+  const helpBtn = document.getElementById('btn-help');
+  const STORAGE_KEY = 'placeDeMilan_hideWelcome';
+  function openWelcome(){ overlay.classList.remove('hidden'); if(window.lucide) lucide.createIcons(); }
+  function closeWelcome(){
+    overlay.classList.add('hidden');
+    if(dontShow.checked){ try{ localStorage.setItem(STORAGE_KEY,'1'); }catch(e){} }
+  }
+  closeBtn.addEventListener('click', closeWelcome);
+  startBtn.addEventListener('click', closeWelcome);
+  overlay.addEventListener('click', (ev)=>{ if(ev.target===overlay) closeWelcome(); });
+  helpBtn.addEventListener('click', openWelcome);
+  let hide = false;
+  try{ hide = localStorage.getItem(STORAGE_KEY)==='1'; }catch(e){}
+  if(hide) overlay.classList.add('hidden'); else openWelcome();
+})();
 </script>
 </body>
 </html>
