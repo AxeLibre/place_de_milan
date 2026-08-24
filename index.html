@@ -3229,7 +3229,11 @@ function rebuildBldgVertexHandles(b){
     );
     mesh.renderOrder = 61;
     holder.add(mesh);
-    holder.position.set(p.x, 0.3, p.z);
+    // Placées au niveau du toit (comme les autres boules oranges, qui
+    // flottent au-dessus de la maquette) plutôt qu'au sol, où elles se
+    // retrouvaient enterrées dans le volume du bâtiment dès qu'il a de la
+    // hauteur.
+    holder.position.set(p.x, b.floors*FLOOR_HEIGHT + 0.3, p.z);
     bldgVertexGroup.add(holder);
     registerScreenSizedMarker(holder);
     return { mesh, holder, index:i };
@@ -3398,7 +3402,7 @@ window.addEventListener('pointermove', (ev)=>{
           let target = { x:startP.x+dx, z:startP.z+dz };
           if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
           b.points[idx] = target;
-          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, b.floors*FLOOR_HEIGHT + 0.3, target.z);
         });
       } else if(gizmoDrag.type==='scale'){
         const c = gizmoDrag.centroid;
@@ -3409,7 +3413,7 @@ window.addEventListener('pointermove', (ev)=>{
           let target = { x: c.x + (startP.x-c.x)*factor, z: c.z + (startP.z-c.z)*factor };
           if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
           b.points[idx] = target;
-          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, b.floors*FLOOR_HEIGHT + 0.3, target.z);
         });
       }
       rebuildMesh(b);
@@ -3433,7 +3437,7 @@ window.addEventListener('pointermove', (ev)=>{
     const vertex = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
     const target = vertex ? vertex : (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
     b.points[idx] = { x: target.x, z: target.z };
-    bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
+    bldgVertexHandles[idx].holder.position.set(target.x, b.floors*FLOOR_HEIGHT + 0.3, target.z);
     rebuildMesh(b);
     return;
   }
@@ -3592,6 +3596,7 @@ function renderBldgEditWindow(b){
     b.floors = v; floorsInput.value = v;
     normalizeBands(b);
     rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+    if(editingBuildingId===b.id) rebuildBldgVertexHandles(b);
     if(window.lucide) lucide.createIcons();
   }
   minus.addEventListener('click', ()=> setFloors(b.floors-1));
