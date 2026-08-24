@@ -2985,7 +2985,14 @@ function buildRoofCap(points, topY, editing){
     insetGeo.rotateX(-Math.PI/2);
     const insetMat = new THREE.MeshStandardMaterial({ color: roofInsetColor, roughness:0.9, metalness:0.0, transparent: editing, opacity: editing ? 0.25 : 1.0 });
     const insetMesh = new THREE.Mesh(insetGeo, insetMat);
-    insetMesh.position.y = topY - 0.03; // léger retrait = effet d'incrustation
+    // Le sommet de l'extrusion du dernier étage a déjà sa propre face
+    // supérieure (couleur d'usage) exactement à topY : si l'incrustation est
+    // placée EN DESSOUS (topY - x), elle est invisible, cachée par ce
+    // volume plein — d'où le bug où le centre du toit restait couleur
+    // d'usage au lieu de "gazon". On la place donc légèrement AU-DESSUS,
+    // comme le rebord, avec un tout petit décalage pour éviter le
+    // z-fighting entre les deux faces du dessus.
+    insetMesh.position.y = topY + 0.01;
     insetMesh.receiveShadow = true;
     group.add(insetMesh);
   } else {
