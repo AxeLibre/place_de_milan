@@ -3428,15 +3428,161 @@ function makeHazardStripeOutline(points, height=0.5){
 
 function rebuildAll(){ buildings.forEach(rebuildMesh); }
 
-function deleteBuilding(id){
+function deleteBuilding(id, opts={}){
   const b = buildings.find(x=>x.id===id);
   if(!b) return;
   if(editingBuildingId===id) stopEditBuildingShape();
-  worldRoot.remove(b.group);
   buildings = buildings.filter(x=>x.id!==id);
   if(selectedId===id){ selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); }
   renderList();
   updateLegendTotals();
+  if(opts.silent){
+    // Retrait immédiat, sans animation — utilisé pour les remises à zéro
+    // programmatiques (chargement d'un projet, rechargement de depart.json…)
+    // où l'effet de démolition n'a pas de sens.
+    worldRoot.remove(b.group);
+    disposeObject3D(b.group);
+    return;
+  }
+  animateBuildingDemolition(b);
+}
+
+// Libère géométries/matériaux d'un groupe THREE avant de l'oublier, pour ne
+// pas fuir de mémoire GPU au fil des suppressions successives.
+function disposeObject3D(root){
+  root.traverse(obj=>{
+    if(obj.geometry) obj.geometry.dispose();
+    if(obj.material){
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m=>{ if(m.map) m.map.dispose(); m.dispose(); });
+    }
+  });
+}
+
+/* ------------------------------------------------------------
+   DÉMOLITION — effet lowpoly : le bâtiment plonge progressivement sous le
+   niveau du sol (avec une légère bascule aléatoire pour casser la rigidité
+   d'une chute parfaitement verticale) pendant qu'un nuage de petits débris
+   anguleux (tétraèdres/cubes, dans l'esprit lowpoly du reste de la scène)
+   jaillit de sa base au niveau du plan et retombe. Purement cosmétique : le
+   bâtiment est déjà retiré des données (buildings[]) au moment de l'appel,
+   cette fonction ne fait qu'accompagner visuellement sa disparition avant de
+   nettoyer la scène.
+   ------------------------------------------------------------ */
+const demolitions = [];
+const DEMOLITION_DURATION = 1.15; // secondes
+const DUST_COLORS = [0xC9B8A0, 0xB7A489, 0x9C8F7C, 0xDCCFB8];
+
+function easeInCubic(t){ return t*t*t; }
+function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
+
+function buildingFootprintInfo(b){
+  const pts = b.points;
+  let cx=0, cz=0;
+  pts.forEach(p=>{ cx+=p.x; cz+=p.z; });
+  cx/=pts.length; cz/=pts.length;
+  let maxR = 0.01;
+  pts.forEach(p=>{ maxR = Math.max(maxR, Math.hypot(p.x-cx, p.z-cz)); });
+  return { pts, cx, cz, maxR };
+}
+
+function spawnDemolitionDust(pts, cx, cz){
+  const group = new THREE.Group();
+  const n = Math.max(16, Math.min(34, Math.round(polygonAreaXZ(pts)/6)+14));
+  const particles = [];
+  for(let i=0;i<n;i++){
+    // Réparties le long du contour du bâtiment (pas seulement au centre) :
+    // la poussière doit sembler jaillir de sa base au niveau du plan.
+    const edgeIdx = Math.floor(Math.random()*pts.length);
+    const a = pts[edgeIdx], c = pts[(edgeIdx+1)%pts.length];
+    const t = Math.random();
+    const px = a.x + (c.x-a.x)*t + (Math.random()-0.5)*0.6;
+    const pz = a.z + (c.z-a.z)*t + (Math.random()-0.5)*0.6;
+    const size = 0.22 + Math.random()*0.42;
+    const geo = Math.random()<0.5
+      ? new THREE.TetrahedronGeometry(size, 0)
+      : new THREE.BoxGeometry(size, size, size);
+    const mat = new THREE.MeshLambertMaterial({
+      color: DUST_COLORS[Math.floor(Math.random()*DUST_COLORS.length)],
+      transparent:true, opacity:0.95
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(px, 0.1, pz);
+    mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    group.add(mesh);
+    const outward = Math.hypot(px-cx, pz-cz) || 1;
+    particles.push({
+      mesh,
+      vx: ((px-cx)/outward) * (0.6+Math.random()*1.4),
+      vz: ((pz-cz)/outward) * (0.6+Math.random()*1.4),
+      vy: 1.6 + Math.random()*2.4,
+      spin: (Math.random()-0.5)*6,
+      spinAxis: new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize(),
+      delay: Math.random()*0.18 // petit décalage pour un jaillissement moins synchronisé
+    });
+  }
+  worldRoot.add(group);
+  return { group, particles };
+}
+
+function animateBuildingDemolition(b){
+  const { pts, cx, cz, maxR } = buildingFootprintInfo(b);
+  const sinkDepth = Math.max(6, buildingTotalHeight(b)+2);
+  const dust = spawnDemolitionDust(pts, cx, cz);
+  const tiltX = (Math.random()-0.5) * 0.16;
+  const tiltZ = (Math.random()-0.5) * 0.16;
+  const baseRotY = b.group.rotation.y;
+  demolitions.push({
+    group: b.group,
+    dust,
+    t: 0,
+    duration: DEMOLITION_DURATION,
+    sinkDepth,
+    tiltX, tiltZ,
+    startY: b.group.position.y
+  });
+}
+
+function updateDemolitions(dt){
+  if(!demolitions.length) return;
+  for(let i=demolitions.length-1; i>=0; i--){
+    const d = demolitions[i];
+    d.t += dt;
+    const p = Math.min(1, d.t / d.duration);
+
+    // Le bâtiment plonge de plus en plus vite (accélération façon chute),
+    // avec une légère bascule pour un effondrement moins mécanique.
+    const sinkP = easeInCubic(p);
+    d.group.position.y = d.startY - sinkP * d.sinkDepth;
+    d.group.rotation.x = d.tiltX * sinkP;
+    d.group.rotation.z = d.tiltZ * sinkP;
+    const s = Math.max(0.001, 1 - sinkP*0.06); // très légère compression visuelle
+    d.group.scale.set(s, 1, s);
+
+    // Poussière : jaillit puis retombe sous l'effet d'une petite gravité,
+    // en s'estompant progressivement (fondu + rétrécissement).
+    d.dust.particles.forEach(pt=>{
+      const lt = Math.max(0, Math.min(1, (d.t - pt.delay)/(d.duration-pt.delay)));
+      if(lt<=0) return;
+      const fall = easeOutCubic(Math.min(1, lt*1.3));
+      pt.mesh.position.x += pt.vx*dt*(1-lt*0.5);
+      pt.mesh.position.z += pt.vz*dt*(1-lt*0.5);
+      pt.vy -= 9*dt; // gravité
+      pt.mesh.position.y = Math.max(0.05, pt.mesh.position.y + pt.vy*dt);
+      pt.mesh.rotateOnAxis(pt.spinAxis, pt.spin*dt);
+      const fade = 1 - easeOutCubic(lt);
+      pt.mesh.material.opacity = 0.95*fade;
+      pt.mesh.scale.setScalar(0.4+0.6*fade);
+    });
+
+    if(p>=1){
+      worldRoot.remove(d.group);
+      disposeObject3D(d.group);
+      worldRoot.remove(d.dust.group);
+      disposeObject3D(d.dust.group);
+      demolitions.splice(i,1);
+    }
+  }
 }
 
 function selectBuilding(id){
@@ -6409,6 +6555,7 @@ function animate(){
   const dt = Math.min(clock.getDelta(), 0.1);
   controls.update();
   if(!simulationPaused) tickAgents(dt);
+  updateDemolitions(dt);
   updateCompass();
   updateLabelPositions();
   updateDrawAreaLabel();
