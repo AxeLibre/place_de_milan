@@ -2647,7 +2647,6 @@ function convexCornerIndices(pts){
   }
   return out;
 }
-const ROOF_SPHERE_SCALE = 1; // réduit la taille des boules "sphère" (jugées trop grosses à l'échelle 1)
 function buildRoofCornerSpheres(points, topY){
   if(!roofSphereTemplate) findRoofSphereTemplate();
   const group = new THREE.Group();
@@ -2655,7 +2654,6 @@ function buildRoofCornerSpheres(points, topY){
   idx.forEach(i=>{
     const p = points[i];
     const s = roofSphereTemplate.clone(true);
-    s.scale.multiplyScalar(ROOF_SPHERE_SCALE);
     s.position.set(p.x, topY + 0.3, p.z);
     group.add(s);
   });
@@ -3279,7 +3277,10 @@ function rebuildMesh(b){
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.4 }));
     b.group.add(line);
     b.group.add(buildRoofCap(b.points, totalHeight, editing));
-    b.group.add(buildRoofCornerSpheres(b.points, totalHeight));
+    const ROOF_SPHERE_MIN_HEIGHT = 60; // repères sphériques réservés aux bâtiments de plus de 60m
+    if(totalHeight > ROOF_SPHERE_MIN_HEIGHT){
+      b.group.add(buildRoofCornerSpheres(b.points, totalHeight));
+    }
   }
 
   // selection halo — surélevé et depthTest désactivé pour éviter tout
@@ -3306,7 +3307,10 @@ function rebuildMesh(b){
 // (chaque étage compte sa propre emprise au sol pour l'usage de sa tranche),
 // affichée dans le panneau "Légende des usages" + le total tous usages.
 const USAGE_LEGEND_IDS = { residentiel:'legend-m2-residentiel', bureaux:'legend-m2-bureaux', commerces:'legend-m2-commerces', hotel:'legend-m2-hotel', services:'legend-m2-services' };
-function updateLegendTotals(){
+// Calcule les m² par usage cumulés sur tous les bâtiments — factorisé pour
+// être réutilisé à la fois par le panneau flottant (updateLegendTotals) et
+// par la nomenclature dessinée sur la capture d'écran exportée.
+function computeUsageTotals(){
   const totals = { residentiel:0, bureaux:0, commerces:0, hotel:0, services:0 };
   buildings.forEach(b=>{
     const groundArea = polygonAreaXZ(b.points);
@@ -3316,8 +3320,12 @@ function updateLegendTotals(){
     });
   });
   let grandTotal = 0;
+  Object.values(totals).forEach(v=> grandTotal += v);
+  return { totals, grandTotal };
+}
+function updateLegendTotals(){
+  const { totals, grandTotal } = computeUsageTotals();
   Object.entries(totals).forEach(([usage,val])=>{
-    grandTotal += val;
     const el = document.getElementById(USAGE_LEGEND_IDS[usage]);
     if(el) el.textContent = `${val.toFixed(0)} m²`;
   });
@@ -4524,7 +4532,8 @@ function wireLabelChipInteractions(rec){
     const pt = groundPointFromEvent(ev);
     if(!pt) return;
     let target = pt;
-    if(buildZone.length>=3) target = clampPointToPolygon(pt, buildZone);
+    const isAdmin = document.body.classList.contains('is-admin');
+    if(!isAdmin && buildZone.length>=3) target = clampPointToPolygon(pt, buildZone);
     rec.x = target.x; rec.z = target.z;
     rec.marker.position.set(rec.x, 0.3, rec.z);
     updateLabelPositions();
@@ -4586,6 +4595,7 @@ function updateLabelPositions(){
 function stopLabelTool(){
   labelPlacing = false;
   btnLabel.classList.remove('active');
+  labelPlacementIndicator.visible = false;
 }
 btnLabel.addEventListener('click', ()=>{
   if(!labelPlacing){
@@ -4606,9 +4616,38 @@ window.addEventListener('keydown', (ev)=>{
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!labelPlacing) return;
   const pt = groundPointFromEvent(ev);
-  stopLabelTool();
   if(!pt) return;
+  const isAdmin = document.body.classList.contains('is-admin');
+  if(!isAdmin && buildZone.length>=3 && !pointInPolygon(pt, buildZone)){
+    flashStatus('Hors du périmètre d\'implantation — posez le label à l\'intérieur');
+    return;
+  }
+  stopLabelTool();
   openLabelEditModal(null, pt);
+});
+
+/* ------------------------------------------------------------
+   Repère au sol pendant la pose d'un label — suit le curseur, bleu si le
+   point est dans le périmètre d'implantation (pose autorisée), rouge sinon
+   (pose refusée, sauf en mode admin où la contrainte est levée).
+   ------------------------------------------------------------ */
+const labelPlacementIndicator = new THREE.Mesh(
+  new THREE.RingGeometry(0.55, 0.75, 24),
+  new THREE.MeshBasicMaterial({ color:0x4da3ff, transparent:true, opacity:0.9, side:THREE.DoubleSide, depthTest:false })
+);
+labelPlacementIndicator.rotation.x = -Math.PI/2;
+labelPlacementIndicator.visible = false;
+labelPlacementIndicator.renderOrder = 999;
+worldRoot.add(labelPlacementIndicator);
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!labelPlacing){ labelPlacementIndicator.visible = false; return; }
+  const pt = groundPointFromEvent(ev);
+  if(!pt){ labelPlacementIndicator.visible = false; return; }
+  const isAdmin = document.body.classList.contains('is-admin');
+  const ok = isAdmin || buildZone.length<3 || pointInPolygon(pt, buildZone);
+  labelPlacementIndicator.material.color.setHex(ok ? 0x4da3ff : 0xe0473f);
+  labelPlacementIndicator.position.set(pt.x, 0.05, pt.z);
+  labelPlacementIndicator.visible = true;
 });
 
 /* ------------------------------------------------------------
@@ -4718,15 +4757,26 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
     // est actif — reprend les mêmes couleurs (USAGE_COLORS, personnalisables
     // depuis le panneau admin) et libellés que le panneau flottant du site.
     if(legendEnabled){
+      const { totals: usageTotals, grandTotal } = computeUsageTotals();
       const pad = 14*scaleX;
       const rowH = 20*scaleY, sw = 12*scaleX, gap = 8*scaleX;
-      const entries = Object.keys(USAGE_COLORS).map(k=>({ label:USAGE_LABELS[k]||k, hex:'#'+USAGE_COLORS[k].toString(16).padStart(6,'0') }));
+      const entries = Object.keys(USAGE_COLORS).map(k=>({
+        label:USAGE_LABELS[k]||k,
+        hex:'#'+USAGE_COLORS[k].toString(16).padStart(6,'0'),
+        m2: `${(usageTotals[k]||0).toFixed(0)} m²`
+      }));
       ctx.font = `600 ${12*scaleY}px 'Space Grotesk', sans-serif`;
       const titleW = ctx.measureText('LÉGENDE DES USAGES').width;
       ctx.font = `${11.5*scaleY}px 'IBM Plex Mono', monospace`;
-      const maxLabelW = Math.max(titleW, ...entries.map(e=> sw+gap+ctx.measureText(e.label).width));
-      const boxW = maxLabelW + pad*2;
-      const boxH = pad*2 + 22*scaleY + entries.length*rowH;
+      const m2GapMin = 18*scaleX;
+      const maxLabelW = Math.max(titleW, ...entries.map(e=> sw+gap+ctx.measureText(e.label).width+m2GapMin+ctx.measureText(e.m2).width));
+      const totalLabelW = ctx.measureText('Total opération').width;
+      ctx.font = `700 ${11.5*scaleY}px 'IBM Plex Mono', monospace`;
+      const totalM2 = `${grandTotal.toFixed(0)} m²`;
+      const totalRowW = totalLabelW + m2GapMin + ctx.measureText(totalM2).width;
+      const boxW = Math.max(maxLabelW, totalRowW) + pad*2;
+      const totalRowH = 24*scaleY;
+      const boxH = pad*2 + 22*scaleY + entries.length*rowH + totalRowH;
       const boxX = off.width - boxW - 20*scaleX;
       const boxY = off.height - boxH - 20*scaleY;
       ctx.fillStyle = 'rgba(24,36,48,0.92)';
@@ -4750,8 +4800,26 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
         ctx.fillStyle = e.hex;
         ctx.fillRect(boxX+pad, ry, sw, sw);
         ctx.fillStyle = '#f4ede4';
+        ctx.textAlign = 'left';
         ctx.fillText(e.label, boxX+pad+sw+gap, ry+sw-1);
+        ctx.textAlign = 'right';
+        ctx.fillText(e.m2, boxX+boxW-pad, ry+sw-1);
+        ctx.textAlign = 'left';
       });
+      // Ligne "Total opération" en bas de la nomenclature, séparée par un filet.
+      const totalY = boxY + pad + 22*scaleY + entries.length*rowH;
+      ctx.strokeStyle = '#2a3946'; ctx.lineWidth = 1*scaleX;
+      ctx.beginPath();
+      ctx.moveTo(boxX+pad, totalY+4*scaleY);
+      ctx.lineTo(boxX+boxW-pad, totalY+4*scaleY);
+      ctx.stroke();
+      ctx.font = `700 ${11.5*scaleY}px 'IBM Plex Mono', monospace`;
+      ctx.fillStyle = '#f4ede4';
+      ctx.textAlign = 'left';
+      ctx.fillText('Total opération', boxX+pad, totalY+18*scaleY);
+      ctx.textAlign = 'right';
+      ctx.fillText(totalM2, boxX+boxW-pad, totalY+18*scaleY);
+      ctx.textAlign = 'left';
     }
 
     // Filigrane : nom du programme + lien vers le dépôt GitHub, en bas à
