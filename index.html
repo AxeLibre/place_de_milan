@@ -1216,6 +1216,20 @@ let polygonParts = [];    // toutes les pièces "polygone_implantation" (pour le
 let plzMaterialPLU = null, plzMaterialNormal = null, showingPLU = false;
 let glassMaterial = null; // matériau "glass" du .glb, réutilisé pour les nouveaux bâtiments
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
+// Zone de pose des labels : contrairement à buildZone (polygone d'implantation,
+// réservé aux nouveaux bâtiments et bien plus petit que la maquette), les labels
+// doivent pouvoir être posés n'importe où sur la maquette visible — on utilise
+// donc l'étendue du plan de sol invisible (raycast), qui couvre tout le site.
+const LABEL_ZONE_HALF = GROUND_SIZE/2;
+function pointInLabelZone(pt){
+  return Math.abs(pt.x) <= LABEL_ZONE_HALF && Math.abs(pt.z) <= LABEL_ZONE_HALF;
+}
+function clampPointToLabelZone(pt){
+  return {
+    x: Math.max(-LABEL_ZONE_HALF, Math.min(LABEL_ZONE_HALF, pt.x)),
+    z: Math.max(-LABEL_ZONE_HALF, Math.min(LABEL_ZONE_HALF, pt.z))
+  };
+}
 
 function clearSite(){
   siteRoot.clear();
@@ -4533,7 +4547,7 @@ function wireLabelChipInteractions(rec){
     if(!pt) return;
     let target = pt;
     const isAdmin = document.body.classList.contains('is-admin');
-    if(!isAdmin && buildZone.length>=3) target = clampPointToPolygon(pt, buildZone);
+    if(!isAdmin) target = clampPointToLabelZone(pt);
     rec.x = target.x; rec.z = target.z;
     rec.marker.position.set(rec.x, 0.3, rec.z);
     updateLabelPositions();
@@ -4618,7 +4632,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
   const isAdmin = document.body.classList.contains('is-admin');
-  if(!isAdmin && buildZone.length>=3 && !pointInPolygon(pt, buildZone)){
+  if(!isAdmin && !pointInLabelZone(pt)){
     flashStatus('Hors du périmètre d\'implantation — posez le label à l\'intérieur');
     return;
   }
@@ -4644,7 +4658,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   const pt = groundPointFromEvent(ev);
   if(!pt){ labelPlacementIndicator.visible = false; return; }
   const isAdmin = document.body.classList.contains('is-admin');
-  const ok = isAdmin || buildZone.length<3 || pointInPolygon(pt, buildZone);
+  const ok = isAdmin || pointInLabelZone(pt);
   labelPlacementIndicator.material.color.setHex(ok ? 0x4da3ff : 0xe0473f);
   labelPlacementIndicator.position.set(pt.x, 0.05, pt.z);
   labelPlacementIndicator.visible = true;
