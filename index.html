@@ -546,6 +546,8 @@
   }
   .label-chip:hover{border-color:var(--accent);}
   .label-chip.dragging{cursor:grabbing;border-color:var(--accent);opacity:.85;}
+  .label-chip.locked{cursor:default;border-style:dashed;opacity:.85;}
+  .label-chip.locked:hover{border-color:#8a8f96;}
 
   /* ---------- Fenêtre de légende flottante (visible seulement si activée) ---------- */
   #legend-window{
@@ -1687,6 +1689,7 @@ function loadSiteFromGLB(url, onFail){
     // le diagnostic reste disponible dans la console pour le débogage.
     console.info(`[Place de Milan] Maquette chargée (${url})${corrected ? ' — rotation Z-up→Y-up appliquée automatiquement' : ''}. ${report}`);
     tryAutoLoadRoutes(); // toujours après la maquette : évite que son résultat soit écrasé par l'import auto (souvent infructueux) des Route_* du .glb
+    tryAutoLoadDepart(); // idem : a besoin de buildZone (Polygone_Implantation) déjà en place
   }, undefined, (err)=>{
     console.warn("Chargement du .glb impossible :", url, err);
     if(onFail) onFail(err); else alert("Impossible de charger le .glb (voir la console).");
@@ -3103,28 +3106,36 @@ function createBuilding(pts, opts={}){
     floors: opts.floors || 6,
     bands: opts.bands || defaultBands(opts.floors || 6),
     group: new THREE.Group(),
-    open: true
+    open: true,
+    // Bâtiments de départ (chargés depuis depart.json, état actuel réel de la
+    // place) : toiture forcée en couleur "BATIMENTS" pleine, jamais de rebord
+    // + incrustation "gazon" — pour ne pas laisser croire à un usage déjà
+    // décidé sur des bâtiments existants qui pourraient rester en l'état.
+    noRoofInset: !!opts.noRoofInset
   };
   normalizeBands(b);
   worldRoot.add(b.group);
   b.group.visible = buildingsVisibleFlag;
   buildings.push(b);
-  selectedId = b.id;
   rebuildMesh(b);
-  renderList();
-  openBldgEditWindow(b.id);
+  if(!opts.silent){
+    selectedId = b.id;
+    renderList();
+    openBldgEditWindow(b.id);
+  }
+  return b;
 }
 
 // Toiture des nouveaux bâtiments : rebord extérieur (2m de large) coloré
 // comme le matériau "BATIMENTS" du .glb, incrustation intérieure colorée
 // "gazon" légèrement en contrebas pour l'effet d'incrustation.
-function buildRoofCap(points, topY, editing){
+function buildRoofCap(points, topY, editing, noInset){
   const group = new THREE.Group();
   const outer2D = points.map(p=>new THREE.Vector2(p.x, -p.z));
-  const inset = offsetPolygonInwardXZ(points, 2);
-  const insetArea = polygonAreaXZ(inset);
+  const inset = noInset ? [] : offsetPolygonInwardXZ(points, 2);
+  const insetArea = noInset ? 0 : polygonAreaXZ(inset);
   const outerArea = polygonAreaXZ(points);
-  const hasInset = inset.length>=3 && insetArea > 0.5 && insetArea < outerArea;
+  const hasInset = !noInset && inset.length>=3 && insetArea > 0.5 && insetArea < outerArea;
 
   const rimMat = new THREE.MeshStandardMaterial({ color: roofRimColor, roughness:0.85, metalness:0.05, transparent: editing, opacity: editing ? 0.25 : 1.0 });
   if(hasInset){
@@ -3289,7 +3300,7 @@ function rebuildMesh(b){
     const edges = new THREE.EdgesGeometry(geo, 25);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.4 }));
     b.group.add(line);
-    b.group.add(buildRoofCap(b.points, totalHeight, editing));
+    b.group.add(buildRoofCap(b.points, totalHeight, editing, b.noRoofInset));
     const ROOF_SPHERE_MIN_HEIGHT = 60; // repères sphériques réservés aux bâtiments de plus de 60m
     if(totalHeight > ROOF_SPHERE_MIN_HEIGHT){
       b.group.add(buildRoofCornerSpheres(b.points, totalHeight));
@@ -4500,28 +4511,30 @@ const labelLayer = document.getElementById('label-layer');
 const labelLinesSvg = document.getElementById('label-lines');
 const btnLabel = document.getElementById('btn-label');
 
-function addLabel(x, z, text){
+function addLabel(x, z, text, opts={}){
   const id = labelIdCounter++;
+  const locked = !!opts.locked;
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(0.5,12,12),
-    new THREE.MeshBasicMaterial({color:0xe0663f})
+    new THREE.MeshBasicMaterial({color: locked ? 0x8a8f96 : 0xe0663f})
   );
   marker.position.set(x, 0.3, z);
   labelGroup.add(marker);
 
   const chip = document.createElement('div');
   chip.className = 'label-chip';
+  if(locked) chip.classList.add('locked');
   chip.textContent = text;
-  chip.title = 'Cliquer : modifier · Cliquer-glisser : déplacer';
+  chip.title = locked ? 'Label existant (non modifiable) — masquable via l\'œil du panneau' : 'Cliquer : modifier · Cliquer-glisser : déplacer';
   labelLayer.appendChild(chip);
 
   const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-  line.setAttribute('stroke', '#e0663f');
+  line.setAttribute('stroke', locked ? '#8a8f96' : '#e0663f');
   line.setAttribute('stroke-width', '1.2');
   line.setAttribute('stroke-dasharray', '3,2');
   labelLinesSvg.appendChild(line);
 
-  const rec = { id, x, z, text, marker, chip, line, anchorX:0, anchorY:0, screenX:0, screenY:0, behind:false };
+  const rec = { id, x, z, text, marker, chip, line, anchorX:0, anchorY:0, screenX:0, screenY:0, behind:false, locked };
   wireLabelChipInteractions(rec);
   labels.push(rec);
   updateLabelPositions();
@@ -4531,6 +4544,7 @@ function addLabel(x, z, text){
 // (sans déplacement) pour ouvrir la modale d'édition de son texte.
 let labelDrag = null; // {rec, moved}
 function wireLabelChipInteractions(rec){
+  if(rec.locked) return; // labels de départ (ADMIN) : ni déplaçables, ni éditables, ni supprimables — seul l'œil global les masque.
   rec.chip.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); removeLabel(rec.id); });
   rec.chip.addEventListener('pointerdown', (ev)=>{
     if(ev.button!==0) return;
@@ -4888,7 +4902,7 @@ document.getElementById('btn-save-json').addEventListener('click', ()=>{
     buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
     trees: trees.map(t=>({ x:t.x, z:t.z })),
     grass: grassParts.map(p=> p.canvas.toDataURL('image/png')),
-    labels: labels.map(l=>({ x:l.x, z:l.z, text:l.text })),
+    labels: labels.filter(l=>!l.locked).map(l=>({ x:l.x, z:l.z, text:l.text })),
     extensionGare: extHallSlices.map(s=>({
       id:s.id, parentId:s.parentId, faceC:s.faceC, center:s.center,
       angle:s.angle, width:s.width, height:s.height, yBase:s.yBase
@@ -4956,9 +4970,11 @@ fileLoad.addEventListener('change', (e)=>{
       trees = []; treeIdCounter = 1;
       (data.trees||[]).forEach(t=> addTree({x:t.x, y:0, z:t.z}));
 
-      // Labels
-      labels.forEach(l=> removeLabel(l.id));
-      labels = []; labelIdCounter = 1;
+      // Labels (les labels ADMIN verrouillés, issus de depart.json, ne sont
+      // pas inclus dans les sauvegardes de projet — on ne touche donc qu'aux
+      // labels normaux ici, pour ne pas les faire disparaître au chargement).
+      labels.filter(l=>!l.locked).forEach(l=> removeLabel(l.id));
+      labels = labels.filter(l=>l.locked);
       (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text));
 
       // Gazon peint (une entrée par fragment de sol, dans le même ordre que
@@ -5602,6 +5618,47 @@ function tryAutoLoadRoutes(){
     importRoutesFromJSON(data, `${ROUTES_JSON_URL} (auto)`, true);
   }).catch(()=>{
     // silencieux : routes.json est optionnel, l'utilisateur peut toujours le charger à la main
+  });
+}
+
+/* ============================================================
+   DEPART.JSON — état de départ de la simulation : reproduit l'existant
+   réel de la place de Milan (bâtiments actuels, arbres, labels de repérage
+   hors polygone), pour partir des lieux tels qu'ils sont aujourd'hui plutôt
+   que d'une page blanche qui présumerait déjà d'une démolition ou d'un
+   parti-pris urbain. Optionnel : silencieux si absent.
+   - buildings : bâtiments existants, DANS le polygone d'implantation —
+     modifiables et supprimables comme n'importe quel bâtiment dessiné à la
+     main, seule contrainte : toiture forcée en couleur "BATIMENTS" pleine
+     (pas de "gazon"), voir createBuilding({noRoofInset:true}).
+   - trees : arbres existants, supprimables normalement (mêmes addTree/
+     removeTree que les arbres plantés à la main).
+   - labels : labels ADMIN, typiquement HORS polygone d'implantation
+     (repérage de rues, quartiers...), non déplaçables/éditables/
+     supprimables — seul le bouton "œil" du panneau Label peut les masquer
+     (voir addLabel({locked:true}) et wireLabelChipInteractions).
+   ============================================================ */
+const DEPART_JSON_URL = './depart.json';
+function tryAutoLoadDepart(){
+  fetch(DEPART_JSON_URL).then(r=>{
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }).then(data=>{
+    let repairedCount = 0;
+    (data.buildings||[]).forEach(b=>{
+      let pts = b.points;
+      if(buildZone.length>=3 && !polygonFullyInsideZone(pts, buildZone)){
+        pts = repairBuildingPoints(pts, buildZone);
+        repairedCount++;
+      }
+      createBuilding(pts, { name:b.name, floors:b.floors, bands:b.bands, noRoofInset:true, silent:true });
+    });
+    (data.trees||[]).forEach(t=> addTree({x:t.x, y:0, z:t.z}));
+    (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text, { locked:true }));
+    if(data.buildings && data.buildings.length){ rebuildAll(); renderList(); }
+    console.info(`[Place de Milan] État de départ chargé (${DEPART_JSON_URL}) : ${(data.buildings||[]).length} bâtiment(s)${repairedCount?` (${repairedCount} recalé(s) sur le polygone)`:''}, ${(data.trees||[]).length} arbre(s), ${(data.labels||[]).length} label(s) admin.`);
+  }).catch(()=>{
+    // silencieux : depart.json est optionnel, l'absence du fichier ne doit pas bloquer la page
   });
 }
 
@@ -6324,6 +6381,7 @@ Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB()]).then(()=>{
     `);
     buildDemoSite();
     tryAutoLoadRoutes();
+    tryAutoLoadDepart();
   });
 });
 
