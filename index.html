@@ -3470,11 +3470,13 @@ function disposeObject3D(root){
    nettoyer la scène.
    ------------------------------------------------------------ */
 const demolitions = [];
-const DEMOLITION_DURATION = 1.15; // secondes
+const DEMOLITION_DURATION = 1.35; // secondes
 const DUST_COLORS = [0xC9B8A0, 0xB7A489, 0x9C8F7C, 0xDCCFB8];
+const PUFF_COLORS = [0xD8CBB4, 0xC7B89E, 0xBDAF97];
 
 function easeInCubic(t){ return t*t*t; }
 function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
+function easeOutQuad(t){ return 1-(1-t)*(1-t); }
 
 function buildingFootprintInfo(b){
   const pts = b.points;
@@ -3486,52 +3488,99 @@ function buildingFootprintInfo(b){
   return { pts, cx, cz, maxR };
 }
 
-function spawnDemolitionDust(pts, cx, cz){
+// Deux familles de particules, superposées, pour que l'effet se voie même
+// caméra éloignée : de gros "nuages" de poussière (icosaèdres facettés à
+// basse résolution, dans l'esprit lowpoly, qui gonflent et s'estompent comme
+// un nuage de poussière au sol) + des gravats plus petits et anguleux
+// (tétraèdres/cubes) qui volètent et retombent par-dessus. Matériau
+// MeshBasicMaterial partout : l'effet doit rester bien visible quelle que
+// soit la lumière ambiante (y compris en mode nuit).
+function spawnDemolitionDust(pts, cx, cz, maxR){
   const group = new THREE.Group();
-  const n = Math.max(16, Math.min(34, Math.round(polygonAreaXZ(pts)/6)+14));
-  const particles = [];
-  for(let i=0;i<n;i++){
-    // Réparties le long du contour du bâtiment (pas seulement au centre) :
-    // la poussière doit sembler jaillir de sa base au niveau du plan.
+  group.renderOrder = 20;
+
+  const basePoints = [];
+  const edgeCount = Math.max(10, Math.min(22, Math.round(polygonAreaXZ(pts)/8)+8));
+  for(let i=0;i<edgeCount;i++){
     const edgeIdx = Math.floor(Math.random()*pts.length);
     const a = pts[edgeIdx], c = pts[(edgeIdx+1)%pts.length];
     const t = Math.random();
-    const px = a.x + (c.x-a.x)*t + (Math.random()-0.5)*0.6;
-    const pz = a.z + (c.z-a.z)*t + (Math.random()-0.5)*0.6;
-    const size = 0.22 + Math.random()*0.42;
+    basePoints.push({
+      x: a.x + (c.x-a.x)*t + (Math.random()-0.5)*0.8,
+      z: a.z + (c.z-a.z)*t + (Math.random()-0.5)*0.8
+    });
+  }
+
+  // --- Nuages de poussière (gros volumes, lisibles de loin) ---
+  const puffScale = Math.max(1, Math.min(2.6, maxR/8));
+  const puffs = [];
+  const puffCount = Math.max(8, Math.min(16, basePoints.length));
+  for(let i=0;i<puffCount;i++){
+    const bp = basePoints[Math.floor(Math.random()*basePoints.length)];
+    const radius = (1.1 + Math.random()*1.3) * puffScale;
+    const geo = new THREE.IcosahedronGeometry(radius, 0);
+    const mat = new THREE.MeshBasicMaterial({
+      color: PUFF_COLORS[Math.floor(Math.random()*PUFF_COLORS.length)],
+      transparent:true, opacity:0, depthWrite:false
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(bp.x, 0.3, bp.z);
+    mesh.scale.setScalar(0.25);
+    mesh.renderOrder = 21;
+    group.add(mesh);
+    const outward = Math.hypot(bp.x-cx, bp.z-cz) || 1;
+    puffs.push({
+      mesh, baseRadius: radius,
+      vx: ((bp.x-cx)/outward) * (0.35+Math.random()*0.7),
+      vz: ((bp.z-cz)/outward) * (0.35+Math.random()*0.7),
+      vy: 0.5 + Math.random()*0.9,
+      maxOpacity: 0.5 + Math.random()*0.25,
+      delay: Math.random()*0.15
+    });
+  }
+
+  // --- Gravats (petits débris anguleux qui giclent puis retombent) ---
+  const debris = [];
+  const debrisCount = Math.max(14, Math.min(30, basePoints.length*1.4));
+  for(let i=0;i<debrisCount;i++){
+    const bp = basePoints[Math.floor(Math.random()*basePoints.length)];
+    const px = bp.x + (Math.random()-0.5)*0.5;
+    const pz = bp.z + (Math.random()-0.5)*0.5;
+    const size = (0.35 + Math.random()*0.55) * Math.max(1, Math.min(1.8, puffScale));
     const geo = Math.random()<0.5
       ? new THREE.TetrahedronGeometry(size, 0)
       : new THREE.BoxGeometry(size, size, size);
-    const mat = new THREE.MeshLambertMaterial({
+    const mat = new THREE.MeshBasicMaterial({
       color: DUST_COLORS[Math.floor(Math.random()*DUST_COLORS.length)],
-      transparent:true, opacity:0.95
+      transparent:true, opacity:1
     });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(px, 0.1, pz);
+    mesh.position.set(px, 0.15, pz);
     mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    mesh.renderOrder = 22;
     group.add(mesh);
     const outward = Math.hypot(px-cx, pz-cz) || 1;
-    particles.push({
+    debris.push({
       mesh,
-      vx: ((px-cx)/outward) * (0.6+Math.random()*1.4),
-      vz: ((pz-cz)/outward) * (0.6+Math.random()*1.4),
-      vy: 1.6 + Math.random()*2.4,
-      spin: (Math.random()-0.5)*6,
+      vx: ((px-cx)/outward) * (1.2+Math.random()*2.2),
+      vz: ((pz-cz)/outward) * (1.2+Math.random()*2.2),
+      vy: 2.6 + Math.random()*3.4,
+      spin: (Math.random()-0.5)*8,
       spinAxis: new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize(),
-      delay: Math.random()*0.18 // petit décalage pour un jaillissement moins synchronisé
+      delay: Math.random()*0.15
     });
   }
+
   worldRoot.add(group);
-  return { group, particles };
+  return { group, puffs, debris };
 }
 
 function animateBuildingDemolition(b){
   const { pts, cx, cz, maxR } = buildingFootprintInfo(b);
   const sinkDepth = Math.max(6, buildingTotalHeight(b)+2);
-  const dust = spawnDemolitionDust(pts, cx, cz);
+  const dust = spawnDemolitionDust(pts, cx, cz, maxR);
   const tiltX = (Math.random()-0.5) * 0.16;
   const tiltZ = (Math.random()-0.5) * 0.16;
-  const baseRotY = b.group.rotation.y;
   demolitions.push({
     group: b.group,
     dust,
@@ -3559,19 +3608,34 @@ function updateDemolitions(dt){
     const s = Math.max(0.001, 1 - sinkP*0.06); // très légère compression visuelle
     d.group.scale.set(s, 1, s);
 
-    // Poussière : jaillit puis retombe sous l'effet d'une petite gravité,
-    // en s'estompant progressivement (fondu + rétrécissement).
-    d.dust.particles.forEach(pt=>{
+    // Nuages de poussière : gonflent rapidement puis s'estompent en dérivant
+    // légèrement vers l'extérieur et vers le haut — c'est cette partie qui
+    // doit rester lisible même caméra éloignée.
+    d.dust.puffs.forEach(pf=>{
+      const lt = Math.max(0, Math.min(1, (d.t - pf.delay)/(d.duration-pf.delay)));
+      if(lt<=0) return;
+      const grow = easeOutQuad(Math.min(1, lt*1.6));
+      pf.mesh.scale.setScalar(0.25 + grow*1.15);
+      pf.mesh.position.x += pf.vx*dt;
+      pf.mesh.position.z += pf.vz*dt;
+      pf.mesh.position.y += pf.vy*dt*(1-lt*0.6);
+      const fadeIn = Math.min(1, lt*4);
+      const fadeOut = 1 - easeOutCubic(Math.max(0, (lt-0.35)/0.65));
+      pf.mesh.material.opacity = pf.maxOpacity * fadeIn * fadeOut;
+    });
+
+    // Gravats : jaillissent puis retombent sous l'effet d'une petite
+    // gravité, en s'estompant progressivement (fondu + rétrécissement).
+    d.dust.debris.forEach(pt=>{
       const lt = Math.max(0, Math.min(1, (d.t - pt.delay)/(d.duration-pt.delay)));
       if(lt<=0) return;
-      const fall = easeOutCubic(Math.min(1, lt*1.3));
       pt.mesh.position.x += pt.vx*dt*(1-lt*0.5);
       pt.mesh.position.z += pt.vz*dt*(1-lt*0.5);
       pt.vy -= 9*dt; // gravité
       pt.mesh.position.y = Math.max(0.05, pt.mesh.position.y + pt.vy*dt);
       pt.mesh.rotateOnAxis(pt.spinAxis, pt.spin*dt);
       const fade = 1 - easeOutCubic(lt);
-      pt.mesh.material.opacity = 0.95*fade;
+      pt.mesh.material.opacity = fade;
       pt.mesh.scale.setScalar(0.4+0.6*fade);
     });
 
