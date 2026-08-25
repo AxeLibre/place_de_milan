@@ -2647,7 +2647,7 @@ function convexCornerIndices(pts){
   }
   return out;
 }
-const ROOF_SPHERE_SCALE = 0.55; // réduit la taille des boules "sphère" (jugées trop grosses à l'échelle 1)
+const ROOF_SPHERE_SCALE = 1; // réduit la taille des boules "sphère" (jugées trop grosses à l'échelle 1)
 function buildRoofCornerSpheres(points, topY){
   if(!roofSphereTemplate) findRoofSphereTemplate();
   const group = new THREE.Group();
