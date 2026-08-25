@@ -2647,6 +2647,7 @@ function convexCornerIndices(pts){
   }
   return out;
 }
+const ROOF_SPHERE_SCALE = 0.55; // réduit la taille des boules "sphère" (jugées trop grosses à l'échelle 1)
 function buildRoofCornerSpheres(points, topY){
   if(!roofSphereTemplate) findRoofSphereTemplate();
   const group = new THREE.Group();
@@ -2654,6 +2655,7 @@ function buildRoofCornerSpheres(points, topY){
   idx.forEach(i=>{
     const p = points[i];
     const s = roofSphereTemplate.clone(true);
+    s.scale.multiplyScalar(ROOF_SPHERE_SCALE);
     s.position.set(p.x, topY + 0.3, p.z);
     group.add(s);
   });
@@ -3256,10 +3258,9 @@ function rebuildMesh(b){
       b.group.add(line);
       yCursor += h;
     }
-    // Toiture "BATIMENTS + incrustation gazon" réservée au mode légendes
-    // désactivées (matériau verre) — quand les légendes sont actives, le toit
-    // garde simplement la couleur d'usage du dernier étage, sans rebord.
-    b.group.add(buildRoofCornerSpheres(b.points, yCursor));
+    // Toiture : quand les légendes sont actives, le toit garde simplement
+    // la couleur d'usage du dernier étage, sans rebord ni repères sphériques
+    // (ceux-ci ne doivent apparaître qu'en mode "légendes désactivées").
   } else {
     // Légende désactivée + matériau "glass" : un seul volume plein hauteur,
     // sans les lignes de division par étage — seul le contour extérieur
