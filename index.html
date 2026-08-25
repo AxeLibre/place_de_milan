@@ -67,8 +67,14 @@
   .tool-btn.ghost svg{ filter:drop-shadow(0 1px 3px rgba(0,0,0,.85)); }
 
   #status-line{
-    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
-    margin-left:auto;text-align:right;max-width:280px;
+    position:absolute;top:70px;right:18px;z-index:5;
+    font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;
+    color:#eafeff;letter-spacing:.01em;text-align:right;max-width:320px;
+    background:rgba(16,24,32,.72);border:1px solid rgba(46,232,255,.35);
+    border-radius:6px;padding:7px 12px;
+    text-shadow:0 1px 4px rgba(0,0,0,.85);
+    box-shadow:0 0 14px rgba(46,232,255,.15);
+    pointer-events:none;
   }
   #status-line b{color:var(--accent);text-shadow:var(--accent-glow);}
 
@@ -690,15 +696,15 @@
     <div id="ribbon">
       <div id="brand"><b>LYON PART-DIEU | PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
+      <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
-      <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
       <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
       <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
       <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
-      <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     </div>
+    <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     <div id="edit-banner">
       <i data-lucide="pencil-ruler"></i>
       <span id="edit-banner-text">Modification du bâtiment en cours</span>
@@ -942,7 +948,7 @@ const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
 // Légende des usages : quand désactivée, tous les bâtiments sont affichés avec
 // un matériau "verre" neutre (façade vitrée) plutôt que la couleur par usage —
 // pratique pour juger des volumes/masses sans être distrait par les couleurs.
-let legendEnabled = true;
+let legendEnabled = false;
 function glassMaterialFor(editing){
   // Réutilise le VRAI matériau "glass" de la maquette (.glb) quand il est
   // disponible, plutôt qu'un matériau générique recréé à la main — mêmes
@@ -1178,7 +1184,7 @@ const ilotOutline = new THREE.Line(
 ilotOutline.computeLineDistances();
 groundGroup.add(ilotOutline);
 
-let gridVisible = true;
+let gridVisible = false;
 
 /* ============================================================
    MAQUETTE BLENDER — polygone d'implantation / hall de gare / quartier
@@ -1331,53 +1337,70 @@ function updateBuildZoneVisual(){
 // chaque ligne (horizontale/verticale) est échantillonnée finement et découpée en
 // segments "dedans / dehors" via un test point-in-polygon (fonctionne aussi pour
 // une emprise concave, pas seulement un rectangle).
+// Mailles en nombre entier de mètres (1 / 5 / 10 m, indépendant de l'échelle de
+// l'îlot), avec un système d'imbrication façon grille Blender : les lignes de 1m
+// sont fines et discrètes, celles de 5m intermédiaires, celles de 10m les plus
+// marquées — chaque niveau supérieur "absorbe" les lignes qu'il partage avec le
+// niveau inférieur pour éviter toute surimpression.
 function rebuildGrid(){
   gridGroup.clear();
   if(buildZone.length<3) return;
   const xs = buildZone.map(p=>p.x), zs = buildZone.map(p=>p.z);
   const minX=Math.min(...xs), maxX=Math.max(...xs), minZ=Math.min(...zs), maxZ=Math.max(...zs);
-  const span = Math.max(maxX-minX, maxZ-minZ);
-  if(span<=0) return;
-  const step = span/24;        // ~24 mailles sur le plus grand côté, quelle que soit l'échelle
-  const sampleStep = step/12;  // finesse de la découpe dedans/dehors
-  const positions = [];
+  if(maxX-minX<=0 && maxZ-minZ<=0) return;
   // Légère surélévation au-dessus du sol (0 exact aurait le même Z que le sol,
   // provoquant un scintillement d'entrelacement de profondeur — "z-fighting" —
   // qui clignote au moindre déplacement de caméra).
   const GRID_Y = 0.03;
-  const pushRun=(a,b,fixedIsX,fixedVal)=>{
+  const SAMPLE_STEP = 0.25; // finesse fixe de la découpe dedans/dehors, indépendante du pas de maille
+  const pushRun=(positions,a,b,fixedIsX,fixedVal)=>{
     if(fixedIsX) positions.push(fixedVal,GRID_Y,a, fixedVal,GRID_Y,b);
     else positions.push(a,GRID_Y,fixedVal, b,GRID_Y,fixedVal);
   };
-  // lignes verticales (X fixe, on balaie Z)
-  for(let x=Math.ceil(minX/step)*step; x<=maxX; x+=step){
-    let runStart=null, prevZ=null;
-    for(let z=minZ; z<=maxZ+sampleStep; z+=sampleStep){
-      const zc = Math.min(z,maxZ);
-      const inside = pointInPolygon({x,z:zc}, buildZone);
-      if(inside && runStart===null) runStart=zc;
-      if(!inside && runStart!==null){ pushRun(runStart, prevZ, true, x); runStart=null; }
-      prevZ = zc;
+  function buildLevel(step, filter){
+    const positions = [];
+    for(let x=Math.ceil(minX/step)*step; x<=maxX+1e-6; x+=step){
+      const xr = Math.round(x/step)*step; // évite la dérive en virgule flottante
+      if(!filter(xr)) continue;
+      let runStart=null, prevZ=null;
+      for(let z=minZ; z<=maxZ+SAMPLE_STEP; z+=SAMPLE_STEP){
+        const zc = Math.min(z,maxZ);
+        const inside = pointInPolygon({x:xr,z:zc}, buildZone);
+        if(inside && runStart===null) runStart=zc;
+        if(!inside && runStart!==null){ pushRun(positions, runStart, prevZ, true, xr); runStart=null; }
+        prevZ = zc;
+      }
+      if(runStart!==null) pushRun(positions, runStart, maxZ, true, xr);
     }
-    if(runStart!==null) pushRun(runStart, maxZ, true, x);
-  }
-  // lignes horizontales (Z fixe, on balaie X)
-  for(let z=Math.ceil(minZ/step)*step; z<=maxZ; z+=step){
-    let runStart=null, prevX=null;
-    for(let x=minX; x<=maxX+sampleStep; x+=sampleStep){
-      const xc = Math.min(x,maxX);
-      const inside = pointInPolygon({x:xc,z}, buildZone);
-      if(inside && runStart===null) runStart=xc;
-      if(!inside && runStart!==null){ pushRun(runStart, prevX, false, z); runStart=null; }
-      prevX = xc;
+    for(let z=Math.ceil(minZ/step)*step; z<=maxZ+1e-6; z+=step){
+      const zr = Math.round(z/step)*step;
+      if(!filter(zr)) continue;
+      let runStart=null, prevX=null;
+      for(let x=minX; x<=maxX+SAMPLE_STEP; x+=SAMPLE_STEP){
+        const xc = Math.min(x,maxX);
+        const inside = pointInPolygon({x:xc,z:zr}, buildZone);
+        if(inside && runStart===null) runStart=xc;
+        if(!inside && runStart!==null){ pushRun(positions, runStart, prevX, false, zr); runStart=null; }
+        prevX = xc;
+      }
+      if(runStart!==null) pushRun(positions, runStart, maxX, false, zr);
     }
-    if(runStart!==null) pushRun(runStart, maxX, false, z);
+    return positions;
   }
-  if(!positions.length) return;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
-  const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({color:0x2a3946, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1}));
-  gridGroup.add(lines);
+  const near = (v,m)=> Math.abs(v - Math.round(v/m)*m) < 1e-6;
+  const levels = [
+    { step:1,  color:0x263441, opacity:0.30, filter:v=>!near(v,5) },   // mailles fines
+    { step:5,  color:0x33475a, opacity:0.55, filter:v=>!near(v,10) },  // mailles intermédiaires
+    { step:10, color:0x4d6478, opacity:0.95, filter:()=>true }         // mailles principales
+  ];
+  levels.forEach(lvl=>{
+    const positions = buildLevel(lvl.step, lvl.filter);
+    if(!positions.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+    const mat = new THREE.LineBasicMaterial({ color:lvl.color, transparent:true, opacity:lvl.opacity, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1 });
+    gridGroup.add(new THREE.LineSegments(geo, mat));
+  });
 }
 rebuildGrid(); // grille initiale sur le contour de secours, avant chargement de la maquette
 
@@ -4213,8 +4236,9 @@ function focusOn(b){
    ============================================================ */
 const btnToggleLegend = document.getElementById('btn-toggle-legend');
 const legendWindow = document.getElementById('legend-window');
-btnToggleLegend.classList.add('active');
-legendWindow.classList.add('show');
+btnToggleLegend.classList.toggle('active', legendEnabled);
+legendWindow.classList.toggle('show', legendEnabled);
+document.querySelectorAll('.legend-item').forEach(el=> el.style.opacity = legendEnabled ? '1' : '.35');
 btnToggleLegend.addEventListener('click', ()=>{
   legendEnabled = !legendEnabled;
   btnToggleLegend.classList.toggle('active', legendEnabled);
@@ -4246,7 +4270,9 @@ window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && aboutOverlay.cl
 if(window.lucide) lucide.createIcons();
 
 const btnToggleGrid = document.getElementById('btn-toggle-grid');
-btnToggleGrid.classList.add('active');
+btnToggleGrid.classList.toggle('active', gridVisible);
+gridGroup.visible = gridVisible;
+ilotOutline.visible = gridVisible;
 btnToggleGrid.addEventListener('click', ()=>{
   gridVisible = !gridVisible;
   gridGroup.visible = gridVisible;
