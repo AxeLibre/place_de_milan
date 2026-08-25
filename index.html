@@ -276,11 +276,28 @@
   #welcome-modal-head b{font-weight:600;}
   #welcome-modal-close{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;}
   #welcome-modal-close:hover{color:var(--paper);}
-  #welcome-modal-body{overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px;}
-  .welcome-step{display:flex;gap:12px;align-items:flex-start;}
-  .welcome-step img{width:88px;height:66px;object-fit:cover;border-radius:6px;border:1px solid #2a3946;flex:none;background:#0b1116;}
-  .welcome-step b{display:block;font-size:13px;margin-bottom:3px;color:var(--paper);}
-  .welcome-step p{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted);}
+  #welcome-modal-body{
+    display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  #welcome-modal-body::-webkit-scrollbar{display:none;}
+  .welcome-step{
+    flex:0 0 100%;scroll-snap-align:start;display:flex;flex-direction:column;gap:14px;
+    padding:18px 22px 22px;box-sizing:border-box;max-height:60vh;overflow-y:auto;
+  }
+  .welcome-step img{
+    width:100%;height:280px;object-fit:cover;border-radius:8px;border:1px solid #2a3946;
+    background:#0b1116;flex:none;
+  }
+  .welcome-step b{display:block;font-size:15px;margin-bottom:6px;color:var(--paper);}
+  .welcome-step p{margin:0;font-size:13px;line-height:1.55;color:var(--muted);}
+  #welcome-dots{display:flex;align-items:center;justify-content:center;gap:9px;padding:14px 0 4px;}
+  .welcome-dot{
+    width:9px;height:9px;border-radius:50%;background:#2a3946;border:none;padding:0;cursor:pointer;
+    transition:background .2s, box-shadow .2s, transform .2s;
+  }
+  .welcome-dot:hover{background:#3d4f5f;}
+  .welcome-dot.active{background:#5b8ab0;box-shadow:0 0 8px 2px rgba(91,138,176,.75);transform:scale(1.2);}
   #welcome-modal-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-top:1px solid #2a3946;}
   #welcome-modal-foot label{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;}
   #welcome-modal-start{background:#5b8ab0;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;cursor:pointer;}
@@ -619,22 +636,27 @@
         <div><b>1. Dessinez un bâtiment</b><p>Cliquez sur « Nouveau bâtiment », puis tracez son emprise au sol (polygone ou rectangle) directement sur la place — la surface en m² s'affiche en direct au centre du tracé.</p></div>
       </div>
       <div class="welcome-step">
+        <img src="public/help-extension-gare.png" alt="" onerror="this.style.display='none'">
+        <div><b>2. Personnalisez l'extension du hall de gare</b><p>L'outil « Extension gare » permet de prolonger le hall existant par des tranches chaînables, dont vous pouvez déformer et ajuster librement la forme (quadrilatère) pour dessiner l'extension de votre choix.</p></div>
+      </div>
+      <div class="welcome-step">
         <img src="public/help-etages.png" alt="" onerror="this.style.display='none'">
-        <div><b>2. Réglez les étages et les usages</b><p>Dans le menu du bâtiment (qui reste modifiable à tout moment, même après création), ajustez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche. La hauteur de chaque étage s'adapte automatiquement à son usage, et le menu affiche en direct l'emprise au sol et la surface potentielle totale.</p></div>
+        <div><b>3. Réglez les étages et les usages</b><p>Dans le menu du bâtiment (qui reste modifiable à tout moment, même après création), ajustez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche. La hauteur de chaque étage s'adapte automatiquement à son usage, et le menu affiche en direct l'emprise au sol et la surface potentielle totale.</p></div>
       </div>
       <div class="welcome-step">
         <img src="public/help-outils.png" alt="" onerror="this.style.display='none'">
-        <div><b>3. Habillez la place</b><p>Plantez des arbres, peignez du gazon, ajoutez des labels, et affichez le zonage PLU pour situer vos projets dans le contexte réglementaire actuel.</p></div>
+        <div><b>4. Habillez la place</b><p>Plantez des arbres, peignez du gazon, ajoutez des labels, et affichez le zonage PLU pour situer vos projets dans le contexte réglementaire actuel.</p></div>
       </div>
       <div class="welcome-step">
         <img src="public/help-eclairage.png" alt="" onerror="this.style.display='none'">
-        <div><b>4. Explorez jour/nuit et vue plan</b><p>Le panneau « Éclairage » permet de faire varier la position du soleil ou de passer en mode Nuit (plus gourmand en ressources). Le bouton « Vue plan » bascule en vue orthographique du dessus.</p></div>
+        <div><b>5. Explorez jour/nuit et vue plan</b><p>Le panneau « Éclairage » permet de faire varier la position du soleil ou de passer en mode Nuit (plus gourmand en ressources). Le bouton « Vue plan » bascule en vue orthographique du dessus.</p></div>
       </div>
       <div class="welcome-step">
         <img src="public/help-sauvegarde.png" alt="" onerror="this.style.display='none'">
-        <div><b>5. Sauvegardez votre projet et exportez une image</b><p>Le bouton disquette enregistre votre projet (bâtiments, arbres, gazon, labels…) dans un fichier que vous pourrez recharger plus tard avec le bouton dossier. Le bouton appareil photo exporte une capture d'écran PNG de la vue actuelle — c'est l'aboutissement de votre travail.</p></div>
+        <div><b>6. Sauvegardez votre projet et exportez une image</b><p>Le bouton disquette enregistre votre projet (bâtiments, arbres, gazon, labels…) dans un fichier que vous pourrez recharger plus tard avec le bouton dossier. Le bouton appareil photo exporte une capture d'écran PNG de la vue actuelle — c'est l'aboutissement de votre travail.</p></div>
       </div>
     </div>
+    <div id="welcome-dots"></div>
     <div id="welcome-modal-foot">
       <label><input type="checkbox" id="welcome-dont-show"> Ne plus afficher au démarrage</label>
       <button id="welcome-modal-start">Commencer</button>
@@ -6093,8 +6115,38 @@ Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB()]).then(()=>{
   const startBtn = document.getElementById('welcome-modal-start');
   const dontShow = document.getElementById('welcome-dont-show');
   const helpBtn = document.getElementById('btn-open-welcome');
+  const body = document.getElementById('welcome-modal-body');
+  const dotsWrap = document.getElementById('welcome-dots');
+  const slides = Array.from(body.querySelectorAll('.welcome-step'));
   const STORAGE_KEY = 'placeDeMilan_hideWelcome';
-  function openWelcome(){ overlay.classList.remove('hidden'); if(window.lucide) lucide.createIcons(); }
+
+  // Points de navigation (une petite boule par étape) — cliquable, et celle
+  // du point affiché s'allume en bleu.
+  slides.forEach((_, i)=>{
+    const dot = document.createElement('button');
+    dot.className = 'welcome-dot' + (i===0 ? ' active' : '');
+    dot.type = 'button';
+    dot.title = `Étape ${i+1}`;
+    dot.addEventListener('click', ()=>{
+      slides[i].scrollIntoView({ behavior:'smooth', inline:'start', block:'nearest' });
+    });
+    dotsWrap.appendChild(dot);
+  });
+  const dots = Array.from(dotsWrap.children);
+  function syncActiveDot(){
+    const idx = Math.round(body.scrollLeft / (body.clientWidth || 1));
+    dots.forEach((d,i)=> d.classList.toggle('active', i===idx));
+  }
+  body.addEventListener('scroll', ()=>{
+    clearTimeout(body._scrollTimer);
+    body._scrollTimer = setTimeout(syncActiveDot, 60);
+  });
+
+  function openWelcome(){
+    overlay.classList.remove('hidden');
+    if(window.lucide) lucide.createIcons();
+    body.scrollLeft = 0; syncActiveDot();
+  }
   function closeWelcome(){
     overlay.classList.add('hidden');
     if(dontShow.checked){ try{ localStorage.setItem(STORAGE_KEY,'1'); }catch(e){} }
