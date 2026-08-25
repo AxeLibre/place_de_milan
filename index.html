@@ -689,7 +689,6 @@
       <div id="brand"><b>LYON PART-DIEU | PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-labels"><i data-lucide="tag"></i><span class="tool-btn-label">Masquer labels</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
@@ -739,7 +738,10 @@
         <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
       </div>
       <div class="tool-sep"></div>
-      <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
+      <div class="tool-row">
+        <button class="eye-btn" id="eye-btn-labels" title="Afficher/masquer les labels"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
+        <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
+      </div>
     </div>
     <div id="bldg-edit-window">
       <div class="bew-head">
@@ -4475,7 +4477,6 @@ const labelGroup = new THREE.Group(); worldRoot.add(labelGroup);
 const labelLayer = document.getElementById('label-layer');
 const labelLinesSvg = document.getElementById('label-lines');
 const btnLabel = document.getElementById('btn-label');
-const btnToggleLabels = document.getElementById('btn-toggle-labels');
 
 function addLabel(x, z, text){
   const id = labelIdCounter++;
@@ -4607,13 +4608,6 @@ renderer.domElement.addEventListener('click', (ev)=>{
   stopLabelTool();
   if(!pt) return;
   openLabelEditModal(null, pt);
-});
-btnToggleLabels.addEventListener('click', ()=>{
-  labelsVisible = !labelsVisible;
-  labelGroup.visible = labelsVisible;
-  const lbl = btnToggleLabels.querySelector('.tool-btn-label');
-  if(lbl) lbl.textContent = labelsVisible ? 'Masquer labels' : 'Afficher labels';
-  updateLabelPositions();
 });
 
 /* ------------------------------------------------------------
@@ -6195,6 +6189,9 @@ setupEyeToggle('eye-btn-trees',
 setupEyeToggle('eye-btn-grass',
   ()=> grassVisibleFlag,
   (v)=>{ grassVisibleFlag = v; grassParts.forEach(p=> p.overlayMesh.visible = v); });
+setupEyeToggle('eye-btn-labels',
+  ()=> labelsVisible,
+  (v)=>{ labelsVisible = v; labelGroup.visible = v; updateLabelPositions(); });
 
 function animate(){
   requestAnimationFrame(animate);
