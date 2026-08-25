@@ -1216,20 +1216,6 @@ let polygonParts = [];    // toutes les pièces "polygone_implantation" (pour le
 let plzMaterialPLU = null, plzMaterialNormal = null, showingPLU = false;
 let glassMaterial = null; // matériau "glass" du .glb, réutilisé pour les nouveaux bâtiments
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
-// Zone de pose des labels : contrairement à buildZone (polygone d'implantation,
-// réservé aux nouveaux bâtiments et bien plus petit que la maquette), les labels
-// doivent pouvoir être posés n'importe où sur la maquette visible — on utilise
-// donc l'étendue du plan de sol invisible (raycast), qui couvre tout le site.
-const LABEL_ZONE_HALF = GROUND_SIZE/2;
-function pointInLabelZone(pt){
-  return Math.abs(pt.x) <= LABEL_ZONE_HALF && Math.abs(pt.z) <= LABEL_ZONE_HALF;
-}
-function clampPointToLabelZone(pt){
-  return {
-    x: Math.max(-LABEL_ZONE_HALF, Math.min(LABEL_ZONE_HALF, pt.x)),
-    z: Math.max(-LABEL_ZONE_HALF, Math.min(LABEL_ZONE_HALF, pt.z))
-  };
-}
 
 function clearSite(){
   siteRoot.clear();
@@ -2776,6 +2762,19 @@ function treeGroundHit(rc){
   if(hallMesh) hallMesh.traverse(o=>{ if(o.isMesh) groundTargets.push(o); });
   groundTargets.push(ground);
   return rc.intersectObjects(groundTargets, true)[0] || null;
+}
+// Raycast sur les mêmes cibles que treeGroundHit (surfaces réelles de la
+// maquette : gazon, quartier, hall, sol) à partir d'un événement souris —
+// réutilisé par la pose de labels pour obtenir un point au sol fidèle à ce
+// qui est visuellement cliqué, y compris caméra inclinée (contrairement au
+// simple plan invisible utilisé par groundPointFromEvent).
+function siteGroundHitFromEvent(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = treeGroundHit(raycaster);
+  return hit ? hit.point : null;
 }
 
 // Survol en mode "Arbre" :
@@ -4543,11 +4542,11 @@ function wireLabelChipInteractions(rec){
   rec.chip.addEventListener('pointermove', (ev)=>{
     if(!labelDrag || labelDrag.rec!==rec) return;
     labelDrag.moved = true;
-    const pt = groundPointFromEvent(ev);
+    const pt = siteGroundHitFromEvent(ev);
     if(!pt) return;
     let target = pt;
     const isAdmin = document.body.classList.contains('is-admin');
-    if(!isAdmin) target = clampPointToLabelZone(pt);
+    if(!isAdmin && buildZone.length>=3) target = clampPointToPolygon(pt, buildZone);
     rec.x = target.x; rec.z = target.z;
     rec.marker.position.set(rec.x, 0.3, rec.z);
     updateLabelPositions();
@@ -4609,7 +4608,7 @@ function updateLabelPositions(){
 function stopLabelTool(){
   labelPlacing = false;
   btnLabel.classList.remove('active');
-  labelPlacementIndicator.visible = false;
+  if(labelPlantHalo) labelPlantHalo.visible = false;
 }
 btnLabel.addEventListener('click', ()=>{
   if(!labelPlacing){
@@ -4629,11 +4628,11 @@ window.addEventListener('keydown', (ev)=>{
 });
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!labelPlacing) return;
-  const pt = groundPointFromEvent(ev);
-  if(!pt) return;
+  const pt = siteGroundHitFromEvent(ev);
+  if(!pt){ flashStatus("Cliquez sur la maquette pour poser un label"); return; }
   const isAdmin = document.body.classList.contains('is-admin');
-  if(!isAdmin && !pointInLabelZone(pt)){
-    flashStatus('Hors du périmètre d\'implantation — posez le label à l\'intérieur');
+  if(!isAdmin && buildZone.length>=3 && !pointInPolygon({x:pt.x, z:pt.z}, buildZone)){
+    flashStatus("Les labels ne peuvent être posés que dans le polygone d'implantation");
     return;
   }
   stopLabelTool();
@@ -4641,27 +4640,32 @@ renderer.domElement.addEventListener('click', (ev)=>{
 });
 
 /* ------------------------------------------------------------
-   Repère au sol pendant la pose d'un label — suit le curseur, bleu si le
-   point est dans le périmètre d'implantation (pose autorisée), rouge sinon
+   Repère au sol pendant la pose d'un label — même mécanisme que le halo de
+   plantation des arbres (ensureTreePlantHalo) : suit le curseur, bleu si le
+   point est dans le polygone d'implantation (pose autorisée), rouge sinon
    (pose refusée, sauf en mode admin où la contrainte est levée).
    ------------------------------------------------------------ */
-const labelPlacementIndicator = new THREE.Mesh(
-  new THREE.RingGeometry(0.55, 0.75, 24),
-  new THREE.MeshBasicMaterial({ color:0x4da3ff, transparent:true, opacity:0.9, side:THREE.DoubleSide, depthTest:false })
-);
-labelPlacementIndicator.rotation.x = -Math.PI/2;
-labelPlacementIndicator.visible = false;
-labelPlacementIndicator.renderOrder = 999;
-worldRoot.add(labelPlacementIndicator);
+const LABEL_PLANT_COLOR = NEON_BLUE_CSS;
+const LABEL_BLOCKED_COLOR = '224,71,63';
+let labelPlantHalo = null;
+function ensureLabelPlantHalo(){
+  if(labelPlantHalo) return labelPlantHalo;
+  labelPlantHalo = makeCircleDecal(1.4, LABEL_PLANT_COLOR, 'fill');
+  labelPlantHalo.position.y = 0.05;
+  labelPlantHalo.visible = false;
+  worldRoot.add(labelPlantHalo);
+  return labelPlantHalo;
+}
 renderer.domElement.addEventListener('pointermove', (ev)=>{
-  if(!labelPlacing){ labelPlacementIndicator.visible = false; return; }
-  const pt = groundPointFromEvent(ev);
-  if(!pt){ labelPlacementIndicator.visible = false; return; }
+  if(!labelPlacing){ if(labelPlantHalo) labelPlantHalo.visible = false; return; }
+  ensureLabelPlantHalo();
+  const pt = siteGroundHitFromEvent(ev);
+  if(!pt){ labelPlantHalo.visible = false; return; }
   const isAdmin = document.body.classList.contains('is-admin');
-  const ok = isAdmin || pointInLabelZone(pt);
-  labelPlacementIndicator.material.color.setHex(ok ? 0x4da3ff : 0xe0473f);
-  labelPlacementIndicator.position.set(pt.x, 0.05, pt.z);
-  labelPlacementIndicator.visible = true;
+  const ok = isAdmin || buildZone.length<3 || pointInPolygon({x:pt.x, z:pt.z}, buildZone);
+  labelPlantHalo.material.color.set(ok ? `rgb(${LABEL_PLANT_COLOR})` : `rgb(${LABEL_BLOCKED_COLOR})`);
+  labelPlantHalo.position.set(pt.x, (pt.y||0)+0.05, pt.z);
+  labelPlantHalo.visible = true;
 });
 
 /* ------------------------------------------------------------
