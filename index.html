@@ -67,7 +67,7 @@
   .tool-btn.ghost svg{ filter:drop-shadow(0 1px 3px rgba(0,0,0,.85)); }
 
   #status-line{
-    position:absolute;top:70px;right:18px;z-index:5;
+    position:absolute;top:70px;right:132px;z-index:5;
     font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;
     color:#eafeff;letter-spacing:.01em;text-align:right;max-width:320px;
     background:rgba(16,24,32,.72);border:1px solid rgba(46,232,255,.35);
@@ -554,6 +554,9 @@
   .label-chip.dragging{cursor:grabbing;border-color:var(--accent);opacity:.85;}
   .label-chip.locked{cursor:default;border-style:dashed;opacity:.85;}
   .label-chip.locked:hover{border-color:#8a8f96;}
+  body.is-admin .label-chip.locked{cursor:grab;opacity:1;}
+  body.is-admin .label-chip.locked:hover{border-color:var(--accent);}
+  body.is-admin .label-chip.locked.dragging{cursor:grabbing;}
 
   /* ---------- Fenêtre de légende flottante (visible seulement si activée) ---------- */
   #legend-window{
@@ -802,6 +805,7 @@
       <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i></button>
       <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
       <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
+      <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><i data-lucide="map-pin"></i></button>
       <button id="btn-admin-panel" class="mini-fab admin-only" title="Circulation & options (admin)"><i data-lucide="settings"></i></button>
     </div>
     <div id="admin-panel" class="admin-only">
@@ -4551,7 +4555,10 @@ function addLabel(x, z, text, opts={}){
   chip.className = 'label-chip';
   if(locked) chip.classList.add('locked');
   chip.textContent = text;
-  chip.title = locked ? 'Label existant (non modifiable) — masquable via l\'œil du panneau' : 'Cliquer : modifier · Cliquer-glisser : déplacer';
+  const isAdminNow = document.body.classList.contains('is-admin');
+  chip.title = locked
+    ? (isAdminNow ? 'Label ADMIN (depart.json) — Cliquer : modifier · Cliquer-glisser : déplacer · Clic droit : supprimer · pensez à "Enregistrer depart.json"' : 'Label existant (non modifiable) — masquable via l\'œil du panneau')
+    : 'Cliquer : modifier · Cliquer-glisser : déplacer';
   labelLayer.appendChild(chip);
 
   const line = document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -4570,8 +4577,17 @@ function addLabel(x, z, text, opts={}){
 // (sans déplacement) pour ouvrir la modale d'édition de son texte.
 let labelDrag = null; // {rec, moved}
 function wireLabelChipInteractions(rec){
-  if(rec.locked) return; // labels de départ (ADMIN) : ni déplaçables, ni éditables, ni supprimables — seul l'œil global les masque.
-  rec.chip.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); removeLabel(rec.id); });
+  // Labels de départ (depart.json, rec.locked=true) : verrouillés pour les
+  // visiteurs (ni déplaçables, ni éditables, ni supprimables — seul l'œil
+  // global les masque), mais l'ADMIN doit pouvoir les modifier et les
+  // réenregistrer (bouton "Enregistrer depart.json"), sinon toute correction
+  // serait perdue au prochain remplacement du fichier depart.json.
+  if(rec.locked && !document.body.classList.contains('is-admin')) return;
+  rec.chip.addEventListener('contextmenu', (ev)=>{
+    ev.preventDefault();
+    if(rec.locked && !document.body.classList.contains('is-admin')) return;
+    removeLabel(rec.id);
+  });
   rec.chip.addEventListener('pointerdown', (ev)=>{
     if(ev.button!==0) return;
     ev.stopPropagation();
@@ -4720,7 +4736,7 @@ const labelEditDelete = document.getElementById('label-edit-delete');
 let labelEditState = null; // {rec, pos}
 function openLabelEditModal(rec, pos){
   labelEditState = { rec, pos };
-  labelEditTitle.firstChild.textContent = rec ? 'Modifier le label ' : 'Nouveau label ';
+  labelEditTitle.firstChild.textContent = rec ? (rec.locked ? 'Modifier le label ADMIN ' : 'Modifier le label ') : 'Nouveau label ';
   labelEditInput.value = rec ? rec.text : '';
   labelEditDelete.style.display = rec ? '' : 'none';
   labelEditOverlay.classList.add('show');
@@ -4941,6 +4957,31 @@ document.getElementById('btn-save-json').addEventListener('click', ()=>{
   link.href = URL.createObjectURL(blob);
   link.click();
 });
+
+// ADMIN — Enregistrer depart.json : contrairement à l'export projet
+// ci-dessus (qui exclut volontairement les labels verrouillés puisqu'ils ne
+// sont pas censés être modifiés par un visiteur), cet export reprend TOUT
+// l'état de départ actuellement chargé — bâtiments, arbres et labels, y
+// compris les labels ADMIN verrouillés — pour que les corrections faites en
+// admin (déplacement/texte/suppression d'un label ADMIN, ajout d'un
+// nouveau) puissent être réenregistrées dans depart.json et ne soient pas
+// écrasées au prochain chargement du fichier.
+const btnSaveDepart = document.getElementById('btn-save-depart');
+if(btnSaveDepart){
+  btnSaveDepart.addEventListener('click', ()=>{
+    const departData = {
+      buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
+      trees: trees.map(t=>({ x:t.x, z:t.z })),
+      labels: labels.map(l=>({ x:l.x, z:l.z, text:l.text }))
+    };
+    const blob = new Blob([JSON.stringify(departData,null,2)], {type:'application/json'});
+    const link = document.createElement('a');
+    link.download = 'depart.json';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    flashStatus('depart.json généré — remplacez le fichier sur le serveur pour appliquer les changements');
+  });
+}
 
 // Répare une emprise chargée depuis un ancien projet JSON (sauvegardé avant
 // la validation de contour complet) qui peut contenir une arête sortant d'un
