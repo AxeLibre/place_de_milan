@@ -3509,7 +3509,7 @@ function spawnCraneForBuilding(b){
 
   return {
     group, flecheSwing, towerStack,
-    boomAngle: 0, boomTarget: (Math.random()*2-1)*Math.PI/2, boomChangeTimer: 1+Math.random()*2,
+    boomPhase: Math.random()*Math.PI*2, boomFreq: 1.7 + Math.random()*0.6, // rad/s — va-et-vient net et visible sur les 3s de construction
     disappearing:false, disappearT:0
   };
 }
@@ -3561,6 +3561,8 @@ function startBuildingConstruction(b){
 // achevés sont pleins, l'étage en cours "pousse" depuis sa base (scale.y)
 // — indépendant du mode légende/vitrage, fixé une fois la construction finie
 // par un rebuildMesh() normal.
+const CONSTRUCTION_COLOR = 0x9aa0a6; // gris béton — couleur du bâtiment tant qu'il est en cours de construction
+
 function renderConstructionFrame(b){
   b.group.clear();
   const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,-p.z)));
@@ -3574,7 +3576,7 @@ function renderConstructionFrame(b){
     if(f>floorsDone && !(f===floorsDone+1 && partial>0)) break;
     const geo = new THREE.ExtrudeGeometry(shape, { depth:h, bevelEnabled:false, curveSegments:1 });
     geo.rotateX(-Math.PI/2);
-    const mat = new THREE.MeshStandardMaterial({ color: USAGE_COLORS[usage], roughness:0.75, metalness:0.05 });
+    const mat = new THREE.MeshStandardMaterial({ color: CONSTRUCTION_COLOR, roughness:0.9, metalness:0.05 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.y = yCursor;
     if(f===floorsDone+1){ mesh.scale.y = Math.max(0.02, partial); }
@@ -3607,16 +3609,13 @@ function updateConstructions(dt){
     if(!c.crane || !c.crane.disappearing){
       rebuildMesh(b); // -> renderConstructionFrame() tant que b.constructing
       if(c.crane){
-        const topY = currentBuiltHeight(b) + 4; // "toujours quelques mètres plus haut"
+        const topY = currentBuiltHeight(b) + 20; // "toujours quelques mètres plus haut"
         c.crane.flecheSwing.position.y = topY;
-        c.crane.boomChangeTimer -= dt;
-        if(c.crane.boomChangeTimer<=0){
-          c.crane.boomTarget = (Math.random()*2-1)*Math.PI/2; // entre -90° et +90°
-          c.crane.boomChangeTimer = 1.5 + Math.random()*2.5;
-        }
-        const angDiff = c.crane.boomTarget - c.crane.boomAngle;
-        c.crane.boomAngle += angDiff * Math.min(1, dt*0.6);
-        c.crane.flecheSwing.rotation.y = c.crane.boomAngle;
+        // Va-et-vient continu et net entre -90° et +90° (sinusoïde), bien
+        // visible sur la courte durée de la construction — l'ancienne
+        // version (cible aléatoire + lissage lent) tournait trop peu pour
+        // être perceptible en 3 secondes.
+        c.crane.flecheSwing.rotation.y = Math.sin(c.t*c.crane.boomFreq + c.crane.boomPhase) * (Math.PI/2);
         rebuildTowerStack(c.crane, topY);
       }
     }
