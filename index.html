@@ -282,6 +282,20 @@
   /* ---------- Welcome modal ---------- */
   #welcome-modal-overlay{position:fixed;inset:0;background:rgba(6,9,12,.72);backdrop-filter:blur(3px);z-index:500;display:flex;align-items:center;justify-content:center;}
   #welcome-modal-overlay.hidden{display:none;}
+  #floors-modal-overlay{position:fixed;inset:0;background:rgba(6,9,12,.72);backdrop-filter:blur(3px);z-index:520;display:flex;align-items:center;justify-content:center;}
+  #floors-modal-overlay.hidden{display:none;}
+  #floors-modal{width:min(300px,92vw);background:#10161c;border:1px solid #2a3946;border-radius:10px;padding:18px 20px 20px;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  #floors-modal h3{margin:0 0 4px;font-size:14px;font-weight:600;}
+  #floors-modal p{margin:0 0 14px;font-size:11.5px;color:var(--muted);line-height:1.5;}
+  #floors-modal .stepper{margin-top:0;}
+  #floors-modal .stepper input{font-size:16px;text-align:center;width:64px;}
+  #floors-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+  #floors-modal-actions button{
+    font-family:inherit;font-size:12px;padding:7px 14px;border-radius:6px;border:1px solid #2a3946;
+    background:#151d24;color:var(--paper);cursor:pointer;
+  }
+  #floors-modal-validate{background:var(--accent);color:#08141a;border-color:var(--accent);font-weight:600;}
+  #floors-modal-actions button:hover{filter:brightness(1.15);}
   #welcome-modal{width:min(640px,92vw);max-height:86vh;background:#10161c;border:1px solid #2a3946;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);}
   #welcome-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid #2a3946;font-size:15px;}
   #welcome-modal-head b{font-weight:600;}
@@ -694,6 +708,21 @@
     </div>
   </div>
 </div>
+<div id="floors-modal-overlay" class="hidden">
+  <div id="floors-modal">
+    <h3>Nombre d'étages</h3>
+    <p>Choisissez le nombre d'étages du bâtiment avant sa construction (modifiable ensuite à tout moment).</p>
+    <div class="stepper">
+      <button id="floors-modal-minus"><i data-lucide="minus"></i></button>
+      <input type="number" id="floors-modal-input" min="1" max="60" value="6">
+      <button id="floors-modal-plus"><i data-lucide="plus"></i></button>
+    </div>
+    <div id="floors-modal-actions">
+      <button id="floors-modal-cancel">Annuler</button>
+      <button id="floors-modal-validate">Construire</button>
+    </div>
+  </div>
+</div>
 <div id="app">
   <div id="viewport">
     <div id="ribbon">
@@ -1000,6 +1029,7 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 3000);
 camera.position.set(140, 130, 170);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
+renderer.localClippingEnabled = true; // requis pour la disparition "haut vers bas" de la grue de chantier
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -2462,8 +2492,45 @@ function finishDraw(){
   finalPoints = cleanPolygonPoints(finalPoints) || finalPoints;
   finalPoints = simplifyClosedPolygon(finalPoints) || finalPoints;
   if(finalPoints.length<3){ cancelDraw(); return; }
-  createBuilding(finalPoints);
   cancelDraw();
+  askFloorsThenBuild(finalPoints);
+}
+
+/* ------------------------------------------------------------
+   Modale "nombre d'étages" affichée juste après le tracé d'un nouveau
+   bâtiment : plus de construction directe à 6 étages par défaut, l'usager
+   choisit le nombre d'étages désiré avant que la construction (animée)
+   ne démarre.
+   ------------------------------------------------------------ */
+const floorsModalOverlay = document.getElementById('floors-modal-overlay');
+const floorsModalInput = document.getElementById('floors-modal-input');
+function askFloorsThenBuild(finalPoints){
+  floorsModalInput.value = 6;
+  floorsModalOverlay.classList.remove('hidden');
+  if(window.lucide) lucide.createIcons();
+  function clampVal(){ return Math.max(1, Math.min(60, parseInt(floorsModalInput.value)||6)); }
+  function cleanup(){
+    floorsModalOverlay.classList.add('hidden');
+    document.getElementById('floors-modal-minus').removeEventListener('click', onMinus);
+    document.getElementById('floors-modal-plus').removeEventListener('click', onPlus);
+    document.getElementById('floors-modal-validate').removeEventListener('click', onValidate);
+    document.getElementById('floors-modal-cancel').removeEventListener('click', onCancel);
+  }
+  function onMinus(){ floorsModalInput.value = clampVal()-1<1?1:clampVal()-1; }
+  function onPlus(){ floorsModalInput.value = clampVal()+1>60?60:clampVal()+1; }
+  function onValidate(){
+    const floors = clampVal();
+    cleanup();
+    const b = createBuilding(finalPoints, { floors, silent:true });
+    selectedId = b.id;
+    renderList();
+    startBuildingConstruction(b);
+  }
+  function onCancel(){ cleanup(); }
+  document.getElementById('floors-modal-minus').addEventListener('click', onMinus);
+  document.getElementById('floors-modal-plus').addEventListener('click', onPlus);
+  document.getElementById('floors-modal-validate').addEventListener('click', onValidate);
+  document.getElementById('floors-modal-cancel').addEventListener('click', onCancel);
 }
 
 btnDraw.addEventListener('click', ()=>{
@@ -3276,6 +3343,7 @@ function offsetPolygonInwardXZ(pts, dist){
 }
 
 function rebuildMesh(b){
+  if(b.constructing){ renderConstructionFrame(b); return; }
   b.group.clear();
   // Note: THREE.ExtrudeGeometry + rotateX(-90°) to lay the shape flat mirrors
   // the shape's local Y axis into world Z. We negate Z here so the built
@@ -3343,6 +3411,7 @@ function rebuildMesh(b){
     outlinePts.push(outlinePts[0].clone());
     const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:NEON_BLUE, depthTest:false, transparent:true}));
     halo.renderOrder = 39;
+    halo.name = 'selectionHalo';
     b.group.add(halo);
   }
 
@@ -3354,6 +3423,226 @@ function rebuildMesh(b){
   }
   updateLegendTotals();
 }
+
+/* ============================================================
+   CONSTRUCTION ANIMÉE + GRUE DE CHANTIER (grue.glb)
+   ============================================================
+   Un nouveau bâtiment ne surgit plus d'un coup : il se construit étage par
+   étage à partir du bas, sur une durée totale fixe de 3 secondes, pendant
+   qu'une grue (chargée depuis grue.glb) l'accompagne le long de sa façade
+   la plus large.
+   ------------------------------------------------------------ */
+const CONSTRUCTION_DURATION = 3.0; // secondes, quel que soit le nombre d'étages
+const CRANE_DISAPPEAR_DURATION = 1.0; // secondes
+const CRANE_GLB_URL = './grue.glb';
+let craneTemplates = null; // {base, fleche, mat} -> THREE.Object3D (gabarits, jamais ajoutés à la scène)
+let craneMatHeight = 8.0; // hauteur d'un segment de mât — recalculée depuis la bbox au chargement
+const activeConstructions = []; // {b, t, duration, crane}
+
+function loadCraneFromGLB(){
+  return new Promise((resolve)=>{
+    gltfLoader.load(CRANE_GLB_URL, (gltf)=>{
+      const scene = gltf.scene;
+      const base = findByNameCI(scene, 'grue_base');
+      const fleche = findByNameCI(scene, 'grue_fleche');
+      const mat = findByNameCI(scene, 'grue_tour') || findByNameCI(scene, 'grue_mat');
+      craneTemplates = { base, fleche, mat };
+      if(mat){
+        const box = new THREE.Box3().setFromObject(mat);
+        if(isFinite(box.min.y) && isFinite(box.max.y) && box.max.y>box.min.y){
+          craneMatHeight = box.max.y - box.min.y;
+        }
+      }
+      resolve();
+    }, undefined, ()=>{ craneTemplates = null; resolve(); }); // fichier optionnel
+  });
+}
+
+// Retourne le milieu, la longueur, et la normale sortante (vers l'extérieur
+// du polygone) de la façade la plus large du bâtiment — c'est le long de
+// cette face que la grue vient se poster.
+function widestFacade(b){
+  const pts = b.points;
+  let cx=0, cz=0; pts.forEach(p=>{cx+=p.x; cz+=p.z;}); cx/=pts.length; cz/=pts.length;
+  let best = null;
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], c = pts[(i+1)%pts.length];
+    const len = Math.hypot(c.x-a.x, c.z-a.z);
+    if(!best || len>best.len){
+      const mx=(a.x+c.x)/2, mz=(a.z+c.z)/2;
+      let nx = -(c.z-a.z), nz = (c.x-a.x); // normale perpendiculaire au segment
+      const nlen = Math.hypot(nx,nz)||1; nx/=nlen; nz/=nlen;
+      // s'assurer que la normale pointe vers l'EXTÉRIEUR (loin du centroïde)
+      if((nx*(mx-cx)+nz*(mz-cz))<0){ nx=-nx; nz=-nz; }
+      best = { len, mx, mz, nx, nz };
+    }
+  }
+  return best;
+}
+
+function spawnCraneForBuilding(b){
+  if(!craneTemplates || !craneTemplates.base || !craneTemplates.fleche || !craneTemplates.mat) return null;
+  const facade = widestFacade(b);
+  const standoff = 4; // mètres — recul de la grue par rapport à la façade
+  const group = new THREE.Group();
+  group.position.set(facade.mx + facade.nx*standoff, 0, facade.mz + facade.nz*standoff);
+  // La flèche pointe vers +X sur le modèle ; on oriente donc le rig pour que
+  // +X local pointe vers la façade (direction opposée à la normale sortante,
+  // qui elle pointe loin du bâtiment). En rotation Y three.js, l'axe local
+  // +X est envoyé vers le monde (cosθ, -sinθ) : on résout donc
+  // cosθ=-nx, sinθ=nz.
+  group.rotation.y = Math.atan2(facade.nz, -facade.nx);
+  worldRoot.add(group);
+
+  const baseClone = craneTemplates.base.clone(true);
+  cloneMaterialsDeep(baseClone);
+  group.add(baseClone);
+
+  const flecheSwing = new THREE.Group();
+  const flecheClone = craneTemplates.fleche.clone(true);
+  cloneMaterialsDeep(flecheClone);
+  flecheSwing.add(flecheClone);
+  group.add(flecheSwing);
+
+  const towerStack = new THREE.Group();
+  group.add(towerStack);
+
+  return {
+    group, flecheSwing, towerStack,
+    boomAngle: 0, boomTarget: (Math.random()*2-1)*Math.PI/2, boomChangeTimer: 1+Math.random()*2,
+    disappearing:false, disappearT:0
+  };
+}
+
+function cloneMaterialsDeep(root){
+  root.traverse(o=>{
+    if(o.isMesh && o.material){
+      o.material = Array.isArray(o.material) ? o.material.map(m=>m.clone()) : o.material.clone();
+    }
+  });
+}
+
+function setCraneClip(crane, clipY){
+  const plane = clipY==null ? null : new THREE.Plane(new THREE.Vector3(0,-1,0), clipY);
+  crane.group.traverse(o=>{
+    if(o.isMesh && o.material){
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m=>{ m.clippingPlanes = plane ? [plane] : null; m.clipShadows = !!plane; });
+    }
+  });
+}
+
+// Empile des clones du segment de mât depuis `topY` (juste sous la flèche)
+// jusqu'au sol, avec un décalage égal à la hauteur du segment, en s'arrêtant
+// dès qu'un clone atteint le niveau du sol (où se trouve grue_base).
+function rebuildTowerStack(crane, topY){
+  crane.towerStack.clear();
+  let y = topY;
+  let guard = 0;
+  while(y > 0 && guard < 200){
+    const seg = craneTemplates.mat.clone(true);
+    cloneMaterialsDeep(seg);
+    seg.position.y = y;
+    crane.towerStack.add(seg);
+    y -= craneMatHeight;
+    guard++;
+  }
+}
+
+function startBuildingConstruction(b){
+  b.constructing = true;
+  b.constructT = 0;
+  const crane = spawnCraneForBuilding(b);
+  activeConstructions.push({ b, t:0, duration: CONSTRUCTION_DURATION, crane });
+  rebuildMesh(b);
+}
+
+// Rendu partiel du bâtiment pendant sa construction : les étages déjà
+// achevés sont pleins, l'étage en cours "pousse" depuis sa base (scale.y)
+// — indépendant du mode légende/vitrage, fixé une fois la construction finie
+// par un rebuildMesh() normal.
+function renderConstructionFrame(b){
+  b.group.clear();
+  const shape = new THREE.Shape(b.points.map(p=>new THREE.Vector2(p.x,-p.z)));
+  const progress = Math.min(b.floors, (b.constructT/CONSTRUCTION_DURATION)*b.floors);
+  const floorsDone = Math.floor(progress + 1e-6);
+  const partial = progress - floorsDone;
+  let yCursor = 0;
+  for(let f=1; f<=b.floors; f++){
+    const usage = usageAtFloor(b, f);
+    const h = floorHeightFor(usage);
+    if(f>floorsDone && !(f===floorsDone+1 && partial>0)) break;
+    const geo = new THREE.ExtrudeGeometry(shape, { depth:h, bevelEnabled:false, curveSegments:1 });
+    geo.rotateX(-Math.PI/2);
+    const mat = new THREE.MeshStandardMaterial({ color: USAGE_COLORS[usage], roughness:0.75, metalness:0.05 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = yCursor;
+    if(f===floorsDone+1){ mesh.scale.y = Math.max(0.02, partial); }
+    else { mesh.castShadow = true; }
+    mesh.receiveShadow = true;
+    b.group.add(mesh);
+    yCursor += h;
+  }
+  return progress;
+}
+
+function currentBuiltHeight(b){
+  let y=0;
+  const progress = Math.min(b.floors, (b.constructT/CONSTRUCTION_DURATION)*b.floors);
+  const floorsDone = Math.floor(progress+1e-6);
+  const partial = progress-floorsDone;
+  for(let f=1; f<=floorsDone; f++) y += floorHeightFor(usageAtFloor(b,f));
+  if(partial>0 && floorsDone<b.floors) y += floorHeightFor(usageAtFloor(b,floorsDone+1))*partial;
+  return y;
+}
+
+function updateConstructions(dt){
+  for(let i=activeConstructions.length-1; i>=0; i--){
+    const c = activeConstructions[i];
+    const b = c.b;
+    if(!c.crane || !c.crane.disappearing){
+      c.t += dt;
+      b.constructT = c.t;
+    }
+    if(!c.crane || !c.crane.disappearing){
+      rebuildMesh(b); // -> renderConstructionFrame() tant que b.constructing
+      if(c.crane){
+        const topY = currentBuiltHeight(b) + 4; // "toujours quelques mètres plus haut"
+        c.crane.flecheSwing.position.y = topY;
+        c.crane.boomChangeTimer -= dt;
+        if(c.crane.boomChangeTimer<=0){
+          c.crane.boomTarget = (Math.random()*2-1)*Math.PI/2; // entre -90° et +90°
+          c.crane.boomChangeTimer = 1.5 + Math.random()*2.5;
+        }
+        const angDiff = c.crane.boomTarget - c.crane.boomAngle;
+        c.crane.boomAngle += angDiff * Math.min(1, dt*0.6);
+        c.crane.flecheSwing.rotation.y = c.crane.boomAngle;
+        rebuildTowerStack(c.crane, topY);
+      }
+    }
+    if(c.t >= c.duration && (!c.crane || !c.crane.disappearing)){
+      // Construction terminée : rendu final normal, puis on lance la
+      // disparition de la grue (du haut vers le bas, en 1 seconde).
+      b.constructing = false;
+      rebuildMesh(b);
+      if(c.crane){ c.crane.disappearing = true; c.crane.disappearT = 0; }
+      else { activeConstructions.splice(i,1); continue; }
+    }
+    if(c.crane && c.crane.disappearing){
+      c.crane.disappearT += dt;
+      const t = Math.min(1, c.crane.disappearT/CRANE_DISAPPEAR_DURATION);
+      const topY = c.crane.flecheSwing.position.y + 6;
+      const clipY = topY * (1-t);
+      setCraneClip(c.crane, clipY);
+      if(t>=1){
+        worldRoot.remove(c.crane.group);
+        disposeObject3D(c.crane.group);
+        activeConstructions.splice(i,1);
+      }
+    }
+  }
+}
+
 // Surface totale (m²) par usage, cumulée sur tous les bâtiments dessinés
 // (chaque étage compte sa propre emprise au sol pour l'usage de sa tranche),
 // affichée dans le panneau "Légende des usages" + le total tous usages.
@@ -3434,6 +3723,12 @@ function deleteBuilding(id, opts={}){
   if(editingBuildingId===id) stopEditBuildingShape();
   buildings = buildings.filter(x=>x.id!==id);
   if(selectedId===id){ selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); }
+  // Le halo de sélection (pourtour bleu clair à la base) a pu être ajouté à
+  // b.group pendant que ce bâtiment était sélectionné ; comme on ne rappelle
+  // pas rebuildMesh() après désélection ici, on le retire explicitement pour
+  // qu'il ne reste pas visible pendant l'animation de démolition.
+  const halo = b.group.getObjectByName('selectionHalo');
+  if(halo){ b.group.remove(halo); halo.geometry.dispose(); halo.material.dispose(); }
   renderList();
   updateLegendTotals();
   if(opts.silent){
@@ -6634,6 +6929,7 @@ function animate(){
   controls.update();
   if(!simulationPaused) tickAgents(dt);
   updateDemolitions(dt);
+  updateConstructions(dt);
   updateCompass();
   updateLabelPositions();
   updateDrawAreaLabel();
@@ -6656,7 +6952,7 @@ animate();
 // vrais bus/trams/voitures au lieu de boîtes de secours. Le fichier est petit,
 // le délai est négligeable, et un échec de chargement ne bloque rien (repli
 // automatique sur les boîtes de secours, voir instantiateVehiclePart).
-Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB()]).then(()=>{
+Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB(), loadCraneFromGLB()]).then(()=>{
   // Charge la vraie maquette si le fichier est présent à côté de index.html ;
   // sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
   // et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
