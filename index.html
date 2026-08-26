@@ -3470,7 +3470,9 @@ function disposeObject3D(root){
    nettoyer la scène.
    ------------------------------------------------------------ */
 const demolitions = [];
-const DEMOLITION_DURATION = 1.35; // secondes
+const SINK_DURATION = 1.35; // secondes — durée de la chute du bâtiment
+const DUST_TAIL = 0.75; // secondes — la poussière retombe encore un peu après que le bâtiment ait disparu
+const DUST_DURATION = SINK_DURATION + DUST_TAIL;
 const DUST_COLORS = [0xC9B8A0, 0xB7A489, 0x9C8F7C, 0xDCCFB8];
 const PUFF_COLORS = [0xD8CBB4, 0xC7B89E, 0xBDAF97];
 
@@ -3585,10 +3587,12 @@ function animateBuildingDemolition(b){
     group: b.group,
     dust,
     t: 0,
-    duration: DEMOLITION_DURATION,
+    sinkDuration: SINK_DURATION,
+    dustDuration: DUST_DURATION,
     sinkDepth,
     tiltX, tiltZ,
-    startY: b.group.position.y
+    startY: b.group.position.y,
+    buildingGone: false
   });
 }
 
@@ -3597,37 +3601,48 @@ function updateDemolitions(dt){
   for(let i=demolitions.length-1; i>=0; i--){
     const d = demolitions[i];
     d.t += dt;
-    const p = Math.min(1, d.t / d.duration);
+    const sinkP = Math.min(1, d.t / d.sinkDuration);
+    const dustP = Math.min(1, d.t / d.dustDuration);
 
     // Le bâtiment plonge de plus en plus vite (accélération façon chute),
-    // avec une légère bascule pour un effondrement moins mécanique.
-    const sinkP = easeInCubic(p);
-    d.group.position.y = d.startY - sinkP * d.sinkDepth;
-    d.group.rotation.x = d.tiltX * sinkP;
-    d.group.rotation.z = d.tiltZ * sinkP;
-    const s = Math.max(0.001, 1 - sinkP*0.06); // très légère compression visuelle
-    d.group.scale.set(s, 1, s);
+    // avec une légère bascule pour un effondrement moins mécanique. Une
+    // fois englouti, on retire son mesh mais la poussière continue son
+    // animation (voir DUST_TAIL) — elle ne doit pas disparaître pile au
+    // moment où le bâtiment a fini de sombrer.
+    if(sinkP < 1){
+      const sinkEase = easeInCubic(sinkP);
+      d.group.position.y = d.startY - sinkEase * d.sinkDepth;
+      d.group.rotation.x = d.tiltX * sinkEase;
+      d.group.rotation.z = d.tiltZ * sinkEase;
+      const s = Math.max(0.001, 1 - sinkEase*0.06); // très légère compression visuelle
+      d.group.scale.set(s, 1, s);
+    } else if(!d.buildingGone){
+      worldRoot.remove(d.group);
+      disposeObject3D(d.group);
+      d.buildingGone = true;
+    }
 
     // Nuages de poussière : gonflent rapidement puis s'estompent en dérivant
     // légèrement vers l'extérieur et vers le haut — c'est cette partie qui
-    // doit rester lisible même caméra éloignée.
+    // doit rester lisible même caméra éloignée, et qui continue un peu
+    // après la disparition complète du bâtiment.
     d.dust.puffs.forEach(pf=>{
-      const lt = Math.max(0, Math.min(1, (d.t - pf.delay)/(d.duration-pf.delay)));
+      const lt = Math.max(0, Math.min(1, (d.t - pf.delay)/(d.dustDuration-pf.delay)));
       if(lt<=0) return;
-      const grow = easeOutQuad(Math.min(1, lt*1.6));
+      const grow = easeOutQuad(Math.min(1, lt*1.4));
       pf.mesh.scale.setScalar(0.25 + grow*1.15);
       pf.mesh.position.x += pf.vx*dt;
       pf.mesh.position.z += pf.vz*dt;
       pf.mesh.position.y += pf.vy*dt*(1-lt*0.6);
       const fadeIn = Math.min(1, lt*4);
-      const fadeOut = 1 - easeOutCubic(Math.max(0, (lt-0.35)/0.65));
+      const fadeOut = 1 - easeOutCubic(Math.max(0, (lt-0.3)/0.7));
       pf.mesh.material.opacity = pf.maxOpacity * fadeIn * fadeOut;
     });
 
     // Gravats : jaillissent puis retombent sous l'effet d'une petite
     // gravité, en s'estompant progressivement (fondu + rétrécissement).
     d.dust.debris.forEach(pt=>{
-      const lt = Math.max(0, Math.min(1, (d.t - pt.delay)/(d.duration-pt.delay)));
+      const lt = Math.max(0, Math.min(1, (d.t - pt.delay)/(d.dustDuration-pt.delay)));
       if(lt<=0) return;
       pt.mesh.position.x += pt.vx*dt*(1-lt*0.5);
       pt.mesh.position.z += pt.vz*dt*(1-lt*0.5);
@@ -3639,9 +3654,8 @@ function updateDemolitions(dt){
       pt.mesh.scale.setScalar(0.4+0.6*fade);
     });
 
-    if(p>=1){
-      worldRoot.remove(d.group);
-      disposeObject3D(d.group);
+    if(dustP>=1){
+      if(!d.buildingGone){ worldRoot.remove(d.group); disposeObject3D(d.group); }
       worldRoot.remove(d.dust.group);
       disposeObject3D(d.dust.group);
       demolitions.splice(i,1);
