@@ -89,8 +89,7 @@
   #left-stack{
     position:absolute;top:84px;left:16px;z-index:6;
     display:flex;flex-direction:column;align-items:flex-start;gap:6px;
-    max-height:calc(100vh - 84px - 16px);
-    overflow-y:auto;overflow-x:visible;
+    overflow:visible;
   }
   #toolbar-left{
     flex-shrink:0;width:214px;
@@ -154,7 +153,7 @@
   /* ---------- Mini liste des bâtiments (sous "Nouveau bâtiment"), visible
      seulement quand cet outil est actif ---------- */
   #bldg-mini-list{
-    display:none;flex-direction:column;padding:2px 2px 4px;max-height:260px;overflow-y:auto;
+    display:none;flex-direction:column;padding:2px 2px 4px;overflow:visible;
   }
   #bldg-mini-list.show{display:flex;}
   #bldg-mini-empty{color:var(--muted);font-size:11px;line-height:1.4;font-family:'IBM Plex Mono',monospace;padding:4px 2px;}
@@ -176,11 +175,12 @@
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
-    width:198px;flex-shrink:0;align-self:stretch;
+    width:198px;flex-shrink:0;
     background:rgba(24,36,48,.94);border:1px solid #2a3946;border-radius:10px;
     padding:10px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:flex;flex-direction:column;gap:6px;
   }
+  #bldg-list{overflow:visible;padding-right:0;}
   #bldg-panel-list-head{
     font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;
     color:var(--paper);display:flex;align-items:center;gap:7px;padding:2px 2px 8px;
@@ -275,11 +275,15 @@
   }
   .brush-btn.disabled{opacity:.4;pointer-events:none;}
 
-  /* ---------- Petit menu bas-gauche : capture / sauver / charger / aide ---------- */
+  /* ---------- Menu fichier/aide : sorti du flux du ruban (qui peut passer
+     à la ligne selon la largeur d'écran) et fixé en haut à droite, pour ne
+     jamais se retrouver ailleurs sur l'écran. ---------- */
   #bottom-left-menu{
-    display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0;
+    position:fixed;top:14px;right:18px;z-index:20;
+    display:flex;align-items:center;gap:8px;flex-shrink:0;
+    pointer-events:auto;
   }
-  #ribbon-sep{width:1px;align-self:stretch;background:#2a3946;margin:0 4px;flex-shrink:0;}
+  #ribbon-sep{display:none;}
   #bottom-left-menu .mini-fab{
     width:38px;height:38px;border-radius:50%;flex-shrink:0;
     background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
@@ -423,14 +427,12 @@
      avancée — bâtiments/arbres/circulation/sauvegarde — plutôt qu'une colonne
      fixe permanente) ---------- */
   #admin-panel{
-    position:absolute;bottom:78px;left:16px;z-index:6;width:240px;max-height:60vh;overflow-y:auto;
+    position:absolute;bottom:78px;left:16px;z-index:6;width:240px;overflow:visible;
     background:var(--ink-2);border:1px solid #23303b;border-radius:8px;
     padding:14px 16px;box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;
   }
   #admin-panel.show{display:block;}
-  #admin-panel::-webkit-scrollbar{width:8px;}
-  #admin-panel::-webkit-scrollbar-thumb{background:#2a3946;border-radius:4px;}
   .admin-check-row{
     display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--paper);
     font-family:'IBM Plex Mono',monospace;margin-bottom:8px;cursor:pointer;
