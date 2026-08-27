@@ -78,25 +78,18 @@
   }
   #status-line b{color:var(--accent);text-shadow:var(--accent-glow);}
 
-  /* ---------- Barre de défilement : jamais visible nulle part dans l'UI —
-     le scroll interne reste possible (molette / glisser) si le contenu est
-     vraiment trop grand, mais la barre elle-même ne doit jamais apparaître. ---------- */
-  #left-stack, #toolbar-left, #bldg-panel-list, #bldg-edit-window, #tree-mini-list,
-  #admin-panel, #about-modal{
-    scrollbar-width:none; -ms-overflow-style:none;
-  }
-  #left-stack::-webkit-scrollbar, #toolbar-left::-webkit-scrollbar,
-  #bldg-panel-list::-webkit-scrollbar, #bldg-edit-window::-webkit-scrollbar,
-  #tree-mini-list::-webkit-scrollbar, #admin-panel::-webkit-scrollbar,
-  #about-modal::-webkit-scrollbar{
-    display:none; width:0; height:0;
-  }
+  /* ---------- Défilement : un seul conteneur scrollable pour toute la
+     colonne de gauche (#left-stack), avec la vraie barre native du
+     navigateur si — et seulement si — le contenu dépasse vraiment la
+     hauteur d'écran disponible. Pas de scrollbars cachées/imbriquées
+     ailleurs : chaque sous-bloc (toolbar, panneau bâtiment, colonnes) garde
+     sa hauteur naturelle, ce qui évite les doubles barres fantômes. ---------- */
 
   /* ---------- Vertical toolbar (left edge, SimCity-style) ---------- */
   #left-stack{
     position:absolute;top:84px;left:16px;z-index:6;
     display:flex;flex-direction:column;align-items:flex-start;gap:6px;
-    max-height:calc(100vh - 100px);
+    max-height:calc(100vh - 84px - 16px);
     overflow-y:auto;overflow-x:visible;
   }
   #toolbar-left{
@@ -105,7 +98,6 @@
     background:rgba(24,36,48,.9);border:1px solid #2a3946;border-radius:8px;
     padding:6px;backdrop-filter:blur(6px);
     box-shadow:0 8px 24px rgba(0,0,0,.35);
-    overflow-y:auto;overflow-x:hidden;
   }
   #toolbar-left .tool-btn{
     justify-content:center;text-align:center;padding:8px 8px;
@@ -181,14 +173,13 @@
   #bldg-panel{
     flex-shrink:0;z-index:16;
     display:none;align-items:flex-start;gap:14px;
-    max-height:calc(100vh - 84px - 180px);
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
-    width:198px;flex-shrink:0;align-self:stretch;max-height:inherit;
+    width:198px;flex-shrink:0;align-self:stretch;
     background:rgba(24,36,48,.94);border:1px solid #2a3946;border-radius:10px;
     padding:10px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
-    overflow-y:auto;display:flex;flex-direction:column;gap:6px;
+    display:flex;flex-direction:column;gap:6px;
   }
   #bldg-panel-list-head{
     font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;
@@ -206,13 +197,13 @@
   #bldg-panel-placeholder svg{width:30px;height:30px;color:#3a4a58;}
   #bldg-panel-placeholder p{margin:0;font-size:12.5px;line-height:1.5;max-width:240px;}
   #bldg-edit-window{
-    width:360px;flex-shrink:1;overflow-y:auto;overflow-x:hidden;min-height:0;align-self:stretch;
+    width:640px;flex-shrink:1;align-self:stretch;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
-    display:none;
+    display:none;flex-direction:column;
   }
-  #bldg-panel.has-selection #bldg-edit-window{display:block;}
-  #bldg-edit-window .bew-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;}
+  #bldg-panel.has-selection #bldg-edit-window{display:flex;}
+  #bldg-edit-window .bew-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-shrink:0;}
   #bldg-edit-window .bew-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
   #bldg-edit-window .bew-name{
     flex:1;background:none;border:none;color:var(--paper);font-family:'Space Grotesk',sans-serif;
@@ -221,7 +212,17 @@
   #bldg-edit-window .bew-close{background:none;border:none;color:var(--muted);cursor:pointer;
     width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:5px;flex-shrink:0;}
   #bldg-edit-window .bew-close:hover{color:var(--paper);background:#0b1116;}
-  #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin:3px 0 16px;}
+  #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin:3px 0 14px;flex-shrink:0;}
+  /* ---------- Corps à deux colonnes : édition à gauche, répartition des
+     usages par étage (graphique) à droite. Aucune des deux colonnes n'a son
+     propre scroll : toute la hauteur nécessaire remonte jusqu'à #left-stack,
+     seul et unique conteneur scrollable de la colonne de gauche. ---------- */
+  #bew-body{display:flex;gap:20px;}
+  #bew-col-left{flex:1 1 auto;min-width:0;}
+  #bew-col-right{
+    width:236px;flex-shrink:0;
+    border-left:1px solid #2a3946;padding-left:18px;
+  }
   #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:13px;}
   #bldg-edit-window .field label svg{width:14px;height:14px;color:var(--muted);}
   .stepper{display:flex;align-items:stretch;gap:0;margin-top:4px;}
@@ -240,6 +241,25 @@
   .btn-row button svg{width:13px;height:13px;margin-right:5px;}
   .btn-row button{display:flex;align-items:center;justify-content:center;}
 
+  /* ---------- Graphique "petites cases par étage" (colonne de droite) :
+     une rangée par niveau réel du bâtiment, du dernier étage en haut au
+     rez-de-chaussée en bas, colorée selon l'usage de CE niveau précis —
+     bien plus lisible qu'un simple bloc proportionnel par tranche quand il
+     y a plusieurs usages. ---------- */
+  #bew-floor-stack{
+    display:flex;flex-direction:column-reverse;gap:2px;margin:8px 0 12px;
+    border:1px solid #2a3946;border-radius:6px;overflow:hidden;padding:3px;
+    background:rgba(255,255,255,.02);
+  }
+  .floor-cell{
+    display:flex;align-items:center;justify-content:space-between;gap:6px;
+    min-height:19px;padding:0 7px;border-radius:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+    color:#0b1116;cursor:default;
+  }
+  .floor-cell .fc-label{opacity:.85;}
+  .floor-cell .fc-area{opacity:.7;font-weight:500;}
+
   /* ---------- Boutons de taille de pinceau (popout à droite de "Gazon") ---------- */
   .brush-btn{
     width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
@@ -257,9 +277,9 @@
 
   /* ---------- Petit menu bas-gauche : capture / sauver / charger / aide ---------- */
   #bottom-left-menu{
-    position:absolute;bottom:22px;left:16px;z-index:6;
-    display:flex;align-items:center;gap:8px;
+    display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0;
   }
+  #ribbon-sep{width:1px;align-self:stretch;background:#2a3946;margin:0 4px;flex-shrink:0;}
   #bottom-left-menu .mini-fab{
     width:38px;height:38px;border-radius:50%;flex-shrink:0;
     background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
@@ -836,6 +856,15 @@
       <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
       <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
       <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
+      <div id="ribbon-sep"></div>
+      <div id="bottom-left-menu">
+        <button id="btn-help" class="mini-fab" title="À propos">?</button>
+        <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i></button>
+        <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
+        <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
+        <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><i data-lucide="map-pin"></i></button>
+        <button id="btn-admin-panel" class="mini-fab admin-only" title="Circulation & options (admin)"><i data-lucide="settings"></i></button>
+      </div>
     </div>
     <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     <div id="edit-banner">
@@ -888,7 +917,10 @@
           <button class="bew-close" id="bew-close" title="Fermer"><i data-lucide="x"></i></button>
         </div>
         <div class="bew-meta" id="bew-meta"></div>
-        <div id="bew-content"></div>
+        <div id="bew-body">
+          <div id="bew-col-left"></div>
+          <div id="bew-col-right"></div>
+        </div>
       </div>
       <div id="bldg-panel-placeholder">
         <i data-lucide="mouse-pointer-click"></i>
@@ -936,14 +968,6 @@
       <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
       <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
       <div id="legend-total-row"><span>Total opération</span><b id="legend-m2-total">0 m²</b></div>
-    </div>
-    <div id="bottom-left-menu">
-      <button id="btn-help" class="mini-fab" title="À propos">?</button>
-      <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i></button>
-      <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
-      <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
-      <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><i data-lucide="map-pin"></i></button>
-      <button id="btn-admin-panel" class="mini-fab admin-only" title="Circulation & options (admin)"><i data-lucide="settings"></i></button>
     </div>
     <div id="admin-panel" class="admin-only">
       <div class="section-title">Éléments visibles sur la maquette</div>
@@ -3121,9 +3145,22 @@ function setupGrassPaintOverlay(parts){
     // facteur d'échelle totalement faux dès que ce fragment était plus petit
     // que le polygone complet — d'où l'écart énorme observé entre le cercle
     // guide et la tache réellement peinte.
+    // BUG CORRIGÉ : ce calcul utilisait mesh.geometry.boundingBox, c'est-à-dire
+    // l'étendue en espace LOCAL de la géométrie — en ignorant complètement
+    // l'échelle propre du mesh et de ses parents jusqu'à worldRoot (le repère
+    // dans lequel vit le cercle-guide grassCursorDecal). Si ce fragment de sol
+    // est mis à l'échelle quelque part dans sa chaîne de parenté (import GLB,
+    // groupe "quartier"…), l'étendue réelle au sol pouvait être plusieurs fois
+    // plus grande que ce que la géométrie locale laissait croire — d'où le
+    // cercle-guide bien plus petit que la tache réellement peinte. On calcule
+    // maintenant la bounding box dans le repère de worldRoot (même repère que
+    // le décalque), en combinant les matrices monde du mesh et de worldRoot.
+    mesh.updateWorldMatrix(true, false);
+    worldRoot.updateWorldMatrix(true, false);
+    const relMatrix = new THREE.Matrix4().copy(worldRoot.matrixWorld).invert().multiply(mesh.matrixWorld);
     if(!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-    const bb = mesh.geometry.boundingBox;
-    const worldSpan = (Math.abs(bb.max.x-bb.min.x) + Math.abs(bb.max.z-bb.min.z)) / 2;
+    const bbRel = mesh.geometry.boundingBox.clone().applyMatrix4(relMatrix);
+    const worldSpan = (Math.abs(bbRel.max.x-bbRel.min.x) + Math.abs(bbRel.max.z-bbRel.min.z)) / 2;
     grassParts.push({ mesh, overlayMesh, canvas, ctx, texture, worldSpan: worldSpan || 60 });
   });
 }
@@ -3175,13 +3212,7 @@ function updateGrassCursor(ev){
   grassCursorDecal.visible = true;
   grassCursorDecal.position.set(pt.x, 0.22, pt.z);
   const part = grassPartUnderCursor(ev);
-  // Facteur de calibration : le cercle-guide (mode "ring", anneau visible
-  // vers 0.82–1 de son rayon) paraissait bien plus petit que la tache
-  // réellement peinte au sol — on l'agrandit légèrement pour que son bord
-  // corresponde à l'étendue visuelle réelle du pinceau (voir aussi le
-  // dégradé resserré dans paintGrassAt, qui va dans l'autre sens).
-  const GUIDE_CALIBRATION = 1.35;
-  const r = Math.max(0.4, grassBrushWorldRadius(part)) * GUIDE_CALIBRATION;
+  const r = Math.max(0.4, grassBrushWorldRadius(part));
   grassCursorDecal.scale.setScalar(r);
 }
 renderer.domElement.addEventListener('pointermove', (ev)=>{
@@ -4769,34 +4800,17 @@ function renderBldgEditWindow(b){
   const groundArea = polygonAreaXZ(b.points);
   document.getElementById('bew-meta').textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${buildingTotalHeight(b).toFixed(1)} m`;
 
-  const body = document.getElementById('bew-content');
-  body.innerHTML = '';
+  const colLeft = document.getElementById('bew-col-left');
+  const colRight = document.getElementById('bew-col-right');
+  colLeft.innerHTML = '';
+  colRight.innerHTML = '';
 
-  // Surfaces — emprise au sol et surface potentielle totale (emprise × nb
-  // d'étages), affichées en tête du panneau de sorte à toujours refléter le
-  // nombre d'étages courant.
+  // ---------- Colonne de gauche : surfaces, nombre d'étages, actions ----------
+
   const areaField = document.createElement('div');
   areaField.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;';
   areaField.innerHTML = `<span>Emprise au sol : <b style="color:var(--fg)">${groundArea.toFixed(0)} m²</b></span><span>Potentiel total : <b style="color:var(--fg)">${buildingTotalFloorArea(b).toFixed(0)} m²</b></span>`;
-  body.appendChild(areaField);
-
-  // Répartition des m² par usage pour CE bâtiment (emprise × nb d'étages de
-  // chaque tranche) — ne montre que les usages effectivement présents.
-  const usageTotals = {};
-  b.bands.forEach(band=>{
-    const nFloors = Math.max(0, band.to - band.from + 1);
-    usageTotals[band.usage] = (usageTotals[band.usage]||0) + groundArea*nFloors;
-  });
-  const usageLabels = { residentiel:'Résidentiel', bureaux:'Bureaux', commerces:'Commerces', hotel:'Hôtel', services:'Services' };
-  const usageEntries = Object.entries(usageTotals).filter(([,v])=>v>0);
-  if(usageEntries.length){
-    const usageField = document.createElement('div');
-    usageField.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;';
-    usageField.innerHTML = usageEntries.map(([usage,val])=>
-      `<span style="display:flex;justify-content:space-between;gap:8px;"><span>${usageLabels[usage]||usage}</span><b style="color:var(--fg)">${val.toFixed(0)} m²</b></span>`
-    ).join('');
-    body.appendChild(usageField);
-  }
+  colLeft.appendChild(areaField);
 
   // Nombre d'étages — stepper +/- avec icônes plutôt qu'un simple champ nu.
   const floorsField = document.createElement('div');
@@ -4820,32 +4834,67 @@ function renderBldgEditWindow(b){
   floorsInput.addEventListener('change', ()=> setFloors(parseInt(floorsInput.value)||1));
   stepper.append(minus, floorsInput, plus);
   floorsField.appendChild(stepper);
+  colLeft.appendChild(floorsField);
+
+  const actions = document.createElement('div');
+  actions.className='btn-row';
+  actions.style.marginTop = '18px';
+  const editBtn = document.createElement('button');
+  editBtn.className='action-btn edit' + (editingBuildingId===b.id ? ' active' : '');
+  editBtn.innerHTML = editingBuildingId===b.id
+    ? '<i data-lucide="check"></i> Terminer'
+    : '<i data-lucide="move-3d"></i> Modifier la forme';
+  editBtn.addEventListener('click', ()=>{
+    editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b);
+    renderBldgEditWindow(b);
+  });
+  const delBtn = document.createElement('button');
+  delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
+  delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
+  actions.append(editBtn, delBtn);
+  colLeft.appendChild(actions);
+
+  // ---------- Colonne de droite : répartition des usages par étage ----------
+  // Un vrai petit graphique du bâtiment : une case par NIVEAU réel (et non
+  // plus un simple bloc proportionnel par tranche), colorée selon l'usage de
+  // ce niveau précis, du dernier étage en haut au rez-de-chaussée en bas.
 
   const bandsTitle = document.createElement('div');
-  bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;';
+  bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;';
   bandsTitle.innerHTML = '<i data-lucide="palette" style="width:12px;height:12px;"></i> Répartition des usages par étage';
-  body.append(floorsField, bandsTitle);
+  colRight.appendChild(bandsTitle);
 
-  // Graphique de l'immeuble : un bloc par tranche d'usage, empilé dans le
-  // bon ordre (rez-de-chaussée en bas grâce à column-reverse), avec le
-  // nombre d'étages et les m² écrits directement dessus — un coup d'œil
-  // suffit à comprendre la répartition, sans avoir à lire les champs.
-  const chart = document.createElement('div');
-  chart.id = 'bew-floor-chart';
+  const floorStack = document.createElement('div');
+  floorStack.id = 'bew-floor-stack';
+  for(let f=1; f<=b.floors; f++){
+    const usage = usageAtFloor(b, f);
+    const cell = document.createElement('div');
+    cell.className = 'floor-cell';
+    cell.style.background = '#'+USAGE_COLORS[usage].toString(16).padStart(6,'0');
+    cell.title = `R+${f-1} · ${USAGE_LABELS[usage]||usage} · ${groundArea.toFixed(0)} m²`;
+    cell.innerHTML = `<span class="fc-label">R+${f-1}</span><span class="fc-area">${groundArea.toFixed(0)} m²</span>`;
+    floorStack.appendChild(cell);
+  }
+  colRight.appendChild(floorStack);
+
+  // Récapitulatif des m² par usage pour CE bâtiment (emprise × nb d'étages de
+  // chaque tranche) — ne montre que les usages effectivement présents.
+  const usageTotals = {};
   b.bands.forEach(band=>{
     const nFloors = Math.max(0, band.to - band.from + 1);
-    if(nFloors<=0) return;
-    const area = groundArea * nFloors;
-    const blk = document.createElement('div');
-    blk.className = 'floor-chart-block';
-    blk.style.flexGrow = String(nFloors);
-    blk.style.background = '#'+USAGE_COLORS[band.usage].toString(16).padStart(6,'0');
-    blk.title = `${USAGE_LABELS[band.usage]||band.usage} · étages ${band.from} à ${band.to}`;
-    blk.innerHTML = `<span class="fcb-usage">${USAGE_LABELS[band.usage]||band.usage}<span class="fcb-floors">(R+${band.from-1}${band.to>band.from?'\u2192R+'+(band.to-1):''})</span></span><span class="fcb-area">${area.toFixed(0)} m²</span>`;
-    chart.appendChild(blk);
+    usageTotals[band.usage] = (usageTotals[band.usage]||0) + groundArea*nFloors;
   });
-  body.appendChild(chart);
+  const usageEntries = Object.entries(usageTotals).filter(([,v])=>v>0);
+  if(usageEntries.length){
+    const usageField = document.createElement('div');
+    usageField.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px;margin-bottom:12px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;';
+    usageField.innerHTML = usageEntries.map(([usage,val])=>
+      `<span style="display:flex;justify-content:space-between;gap:8px;"><span>${USAGE_LABELS[usage]||usage}</span><b style="color:var(--fg)">${val.toFixed(0)} m²</b></span>`
+    ).join('');
+    colRight.appendChild(usageField);
+  }
 
+  // Tranches d'usage éditables (bornes + sélecteur d'usage par tranche).
   b.bands.forEach((band, idx)=>{
     const row = document.createElement('div');
     row.className='band-row';
@@ -4891,7 +4940,7 @@ function renderBldgEditWindow(b){
     toInp.addEventListener('change', commit);
     sel.addEventListener('change', commit);
     row.append(fromLabel, x, toInp, sel, del);
-    body.appendChild(row);
+    colRight.appendChild(row);
   });
 
   const addBandBtn = document.createElement('button');
@@ -4910,24 +4959,7 @@ function renderBldgEditWindow(b){
     normalizeBands(b);
     rebuildMesh(b); renderList(); renderBldgEditWindow(b);
   });
-  body.appendChild(addBandBtn);
-
-  const actions = document.createElement('div');
-  actions.className='btn-row';
-  const editBtn = document.createElement('button');
-  editBtn.className='action-btn edit' + (editingBuildingId===b.id ? ' active' : '');
-  editBtn.innerHTML = editingBuildingId===b.id
-    ? '<i data-lucide="check"></i> Terminer'
-    : '<i data-lucide="move-3d"></i> Modifier la forme';
-  editBtn.addEventListener('click', ()=>{
-    editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b);
-    renderBldgEditWindow(b);
-  });
-  const delBtn = document.createElement('button');
-  delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
-  delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
-  actions.append(editBtn, delBtn);
-  body.appendChild(actions);
+  colRight.appendChild(addBandBtn);
 
   if(window.lucide) lucide.createIcons();
 }
