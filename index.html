@@ -190,11 +190,21 @@
   /* Placeholder "Choisissez un bâtiment…" supprimé : ne plus rien afficher
      tant qu'aucun bâtiment n'est sélectionné, plutôt qu'un cadre vide. */
   #bldg-edit-window{
-    width:640px;flex-shrink:1;align-self:stretch;
+    width:360px;flex-shrink:0;align-self:stretch;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;
   }
+  /* ---------- Bloc séparé "répartition des usages par étage", collé juste
+     à droite de la fiche bâtiment (et non plus empilé à l'intérieur), pour
+     que l'ensemble reste toujours dans la largeur de l'écran. ---------- */
+  #bew-usage-panel{
+    width:300px;flex-shrink:0;align-self:stretch;
+    background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
+    padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
+    display:none;flex-direction:column;overflow:hidden;
+  }
+  #bldg-panel.has-selection #bew-usage-panel{display:flex;}
   #bldg-panel.has-selection #bldg-edit-window{display:flex;}
   #bldg-edit-window .bew-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-shrink:0;}
   #bldg-edit-window .bew-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
@@ -216,8 +226,8 @@
   #bew-body{display:flex;flex-direction:column;gap:16px;}
   #bew-col-left{flex:1 1 auto;min-width:0;}
   #bew-col-right{
-    width:100%;flex-shrink:0;
-    border-left:none;border-top:1px solid #2a3946;padding-left:0;padding-top:16px;
+    width:100%;flex-shrink:0;min-width:0;
+    overflow-y:auto;overflow-x:hidden;
   }
   #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:13px;}
   #bldg-edit-window .field label svg{width:14px;height:14px;color:var(--muted);}
@@ -764,6 +774,7 @@
     #bldg-panel{max-height:50vh;width:auto;}
     #bldg-panel-list{width:150px;}
     #bldg-edit-window{width:100%;}
+    #bew-usage-panel{width:100%;}
     #legend-window{right:8px;bottom:8px;width:min(260px, calc(100vw - 16px));}
     #sun-panel{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
     #ribbon{padding:8px 10px;gap:8px;}
@@ -914,8 +925,10 @@
         <div class="bew-meta" id="bew-meta"></div>
         <div id="bew-body">
           <div id="bew-col-left"></div>
-          <div id="bew-col-right"></div>
         </div>
+      </div>
+      <div id="bew-usage-panel">
+        <div id="bew-col-right"></div>
       </div>
     </div>
     </div>
