@@ -154,25 +154,52 @@
   #tree-empty-note{color:var(--muted);font-size:11px;line-height:1.4;font-family:'IBM Plex Mono',monospace;padding:4px 2px;}
 
   /* ---------- Fenêtre de modification d'un bâtiment sélectionné (gauche, sous les outils) ---------- */
+  #bldg-panel{
+    position:absolute;top:84px;left:246px;z-index:16;
+    display:none;align-items:flex-start;gap:14px;
+    max-height:calc(100vh - 84px - 96px);
+  }
+  #bldg-panel.show{display:flex;}
+  #bldg-panel-list{
+    width:198px;flex-shrink:0;align-self:stretch;max-height:inherit;
+    background:rgba(24,36,48,.94);border:1px solid #2a3946;border-radius:10px;
+    padding:12px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
+    overflow-y:auto;display:flex;flex-direction:column;gap:8px;
+  }
+  #bldg-panel-list-head{
+    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;
+    color:var(--paper);display:flex;align-items:center;gap:7px;padding:2px 2px 8px;
+    border-bottom:1px solid #2a3946;margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em;
+  }
+  #bldg-panel-list-head svg{width:15px;height:15px;color:var(--accent);}
+  #bldg-panel-placeholder{
+    display:none;width:340px;align-self:stretch;
+    background:rgba(15,22,29,.96);border:1px dashed #354858;border-radius:10px;
+    align-items:center;justify-content:center;flex-direction:column;gap:10px;
+    padding:30px 20px;color:var(--muted);text-align:center;
+  }
+  #bldg-panel.show:not(.has-selection) #bldg-panel-placeholder{display:flex;}
+  #bldg-panel-placeholder svg{width:30px;height:30px;color:#3a4a58;}
+  #bldg-panel-placeholder p{margin:0;font-size:12.5px;line-height:1.5;max-width:240px;}
   #bldg-edit-window{
-    width:262px;flex-shrink:1;overflow-y:auto;overflow-x:hidden;min-height:0;
-    background:rgba(15,22,29,.96);border:1px solid #2a3946;border-radius:8px;
-    padding:12px 13px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
+    width:360px;flex-shrink:1;overflow-y:auto;overflow-x:hidden;min-height:0;align-self:stretch;
+    background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
+    padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;
   }
-  #bldg-edit-window.show{display:block;}
-  #bldg-edit-window .bew-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
-  #bldg-edit-window .bew-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  #bldg-panel.has-selection #bldg-edit-window{display:block;}
+  #bldg-edit-window .bew-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;}
+  #bldg-edit-window .bew-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
   #bldg-edit-window .bew-name{
     flex:1;background:none;border:none;color:var(--paper);font-family:'Space Grotesk',sans-serif;
-    font-size:14px;font-weight:600;padding:2px 0;
+    font-size:17px;font-weight:700;padding:3px 0;
   }
   #bldg-edit-window .bew-close{background:none;border:none;color:var(--muted);cursor:pointer;
-    width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:4px;flex-shrink:0;}
+    width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:5px;flex-shrink:0;}
   #bldg-edit-window .bew-close:hover{color:var(--paper);background:#0b1116;}
-  #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);margin:2px 0 10px;}
-  #bldg-edit-window .field label{display:flex;align-items:center;gap:6px;}
-  #bldg-edit-window .field label svg{width:13px;height:13px;color:var(--muted);}
+  #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin:3px 0 16px;}
+  #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:13px;}
+  #bldg-edit-window .field label svg{width:14px;height:14px;color:var(--muted);}
   .stepper{display:flex;align-items:stretch;gap:0;margin-top:4px;}
   .stepper button{
     background:#101820;border:1px solid #23303b;color:var(--paper);width:30px;
@@ -414,28 +441,74 @@
   .bldg-body{padding:0 10px 12px;border-top:1px solid #1a242d;display:none;}
   .bldg-body.open{display:block;}
 
-  .band-row{display:flex;gap:5px;align-items:center;margin:6px 0;font-size:11px;}
+  /* ---------- Fenêtre bâtiment agrandie : espacements généreux, gros
+     contrôles faciles à cliquer — pensée pour un public non technophile. ---------- */
+  #bldg-edit-window .stepper{margin-top:6px;}
+  #bldg-edit-window .stepper button{width:40px;height:40px;}
+  #bldg-edit-window .stepper button svg{width:16px;height:16px;}
+  #bldg-edit-window .stepper input{height:40px;font-size:17px;font-weight:700;width:60px;}
+
+  .band-row{display:flex;gap:6px;align-items:center;margin:8px 0;font-size:12.5px;}
   .band-row select{
-    background:#141c24;border:1px solid #23303b;color:var(--paper);border-radius:3px;
-    padding:5px 4px;font-size:11px;flex:1;min-width:0;
+    background:#141c24;border:1px solid #23303b;color:var(--paper);border-radius:4px;
+    padding:8px 6px;font-size:12.5px;flex:1;min-width:0;
   }
-  .band-row input[type=number]{width:38px;flex-shrink:0;padding:5px 2px;font-size:11px;text-align:center;}
+  .band-row input[type=number]{width:46px;flex-shrink:0;padding:8px 3px;font-size:12.5px;text-align:center;}
   .band-row .x{color:var(--muted);flex-shrink:0;}
   .mini-btn{
-    background:none;border:1px solid #2a3946;color:var(--muted);border-radius:3px;
-    width:22px;height:22px;cursor:pointer;flex-shrink:0;font-size:13px;line-height:1;
+    background:none;border:1px solid #2a3946;color:var(--muted);border-radius:4px;
+    width:28px;height:28px;cursor:pointer;flex-shrink:0;font-size:13px;line-height:1;
   }
   .mini-btn:hover{color:var(--paper);border-color:var(--blue);}
   .mini-btn.danger:hover{border-color:var(--com);color:var(--com);}
 
-  .btn-row{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
   .small-action{
     flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;
     letter-spacing:.04em;background:#141c24;border:1px solid #23303b;color:var(--muted);
-    padding:6px;border-radius:3px;cursor:pointer;white-space:normal;
+    padding:6px;border-radius:3px;cursor:pointer;white-space:normal;display:flex;align-items:center;justify-content:center;
   }
   .small-action:hover{color:var(--paper);border-color:var(--blue);}
   .small-action.danger:hover{color:var(--com);border-color:var(--com);}
+  .small-action svg{width:13px;height:13px;margin-right:5px;}
+
+  /* ---------- Graphique de répartition des usages par étage : silhouette
+     de l'immeuble empilant un bloc coloré par tranche d'usage, avec sa
+     hauteur en étages et sa surface en m² directement lisibles dessus. ---------- */
+  #bew-floor-chart{
+    display:flex;flex-direction:column-reverse;gap:2px;margin:10px 0 16px;
+    border:1px solid #2a3946;border-radius:8px;overflow:hidden;padding:6px;
+    background:rgba(255,255,255,.02);
+  }
+  .floor-chart-block{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:9px 12px;border-radius:5px;color:#0b1116;font-weight:700;
+    font-family:'Space Grotesk',sans-serif;font-size:12.5px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.12);
+  }
+  .floor-chart-block .fcb-usage{display:flex;align-items:center;gap:6px;}
+  .floor-chart-block .fcb-floors{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:11px;opacity:.75;}
+  .floor-chart-block .fcb-area{font-family:'IBM Plex Mono',monospace;font-size:12px;}
+
+  /* ---------- Boutons d'action principaux (Modifier la forme / Supprimer) :
+     grands, colorés, sans ambiguïté possible — jaune = édition, rouge =
+     suppression, plutôt que la même teinte neutre pour tout. ---------- */
+  .btn-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .action-btn{
+    flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;gap:7px;
+    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;
+    padding:12px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;
+    transition:all .12s ease;
+  }
+  .action-btn svg{width:16px;height:16px;flex-shrink:0;}
+  .action-btn.edit{
+    background:#e8b93f;color:#211a05;box-shadow:0 4px 14px rgba(232,185,63,.25);
+  }
+  .action-btn.edit:hover{background:#f4c655;transform:translateY(-1px);box-shadow:0 6px 18px rgba(232,185,63,.35);}
+  .action-btn.edit.active{background:#211a05;color:#e8b93f;border-color:#e8b93f;}
+  .action-btn.delete{
+    background:#e5484d;color:#2a0808;box-shadow:0 4px 14px rgba(229,72,77,.25);
+  }
+  .action-btn.delete:hover{background:#f0605f;transform:translateY(-1px);box-shadow:0 6px 18px rgba(229,72,77,.35);}
 
   #footer-actions{
     padding:14px 16px;border-top:1px solid #23303b;display:flex;flex-direction:column;gap:8px;
@@ -647,7 +720,10 @@
   @media (max-width: 980px){
     #left-stack{top:auto;bottom:74px;left:8px;max-width:calc(100vw - 16px);}
     #toolbar-left .tool-btn{width:150px;}
-    #bldg-edit-window{width:min(240px, calc(100vw - 16px));}
+    #bldg-panel{left:8px;right:8px;top:8px;bottom:auto;max-height:50vh;width:auto;}
+    #bldg-panel-list{width:150px;}
+    #bldg-edit-window{width:100%;}
+    #bldg-panel-placeholder{width:auto;flex:1;}
     #legend-window{right:8px;bottom:8px;width:min(260px, calc(100vw - 16px));}
     #sun-panel{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
     #ribbon{padding:8px 10px;gap:8px;}
@@ -662,7 +738,9 @@
     #toolbar-left .tool-btn .tool-btn-label{display:none;}
     #toolbar-left .tool-sep{display:none;}
     #brush-row{width:100%;}
-    #bldg-edit-window{width:100%;}
+    #bldg-panel{flex-direction:column;max-height:56vh;}
+    #bldg-panel-list{width:100%;max-height:110px;}
+    #bldg-panel-placeholder{width:100%;}
     #brand span{display:none;}
     #draw-hint{max-width:calc(100vw - 20px);flex-wrap:wrap;justify-content:center;}
   }
@@ -755,10 +833,6 @@
         <button class="eye-btn" id="eye-btn-extgare" title="Afficher/masquer l'extension gare"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
         <button class="tool-btn ghost" id="btn-toggle-extension-gare"><i data-lucide="train-front"></i><span class="tool-btn-label">Extension Gare</span></button>
       </div>
-      <div id="bldg-mini-list">
-        <div id="bldg-mini-empty">Aucun bâtiment. Dessinez son emprise au sol.</div>
-        <div id="bldg-list"></div>
-      </div>
       <div class="tool-row">
         <button class="eye-btn" id="eye-btn-trees" title="Afficher/masquer les arbres"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
         <button class="tool-btn ghost" id="btn-tree"><i data-lucide="trees"></i><span class="tool-btn-label">Arbre</span></button>
@@ -783,15 +857,26 @@
         <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
       </div>
     </div>
-    <div id="bldg-edit-window">
-      <div class="bew-head">
-        <div class="bew-dot" id="bew-dot"></div>
-        <input class="bew-name" id="bew-name" />
-        <button class="bew-close" id="bew-close" title="Fermer"><i data-lucide="x"></i></button>
-      </div>
-      <div class="bew-meta" id="bew-meta"></div>
-      <div id="bew-content"></div>
     </div>
+    <div id="bldg-panel">
+      <div id="bldg-panel-list">
+        <div id="bldg-panel-list-head"><i data-lucide="building-2"></i> Bâtiments</div>
+        <div id="bldg-mini-empty">Aucun bâtiment pour l'instant.<br>Utilisez l'outil « Nouveau bâtiment » pour tracer son emprise au sol.</div>
+        <div id="bldg-list"></div>
+      </div>
+      <div id="bldg-edit-window">
+        <div class="bew-head">
+          <div class="bew-dot" id="bew-dot"></div>
+          <input class="bew-name" id="bew-name" />
+          <button class="bew-close" id="bew-close" title="Fermer"><i data-lucide="x"></i></button>
+        </div>
+        <div class="bew-meta" id="bew-meta"></div>
+        <div id="bew-content"></div>
+      </div>
+      <div id="bldg-panel-placeholder">
+        <i data-lucide="mouse-pointer-click"></i>
+        <p>Choisissez un bâtiment dans la liste à gauche pour le modifier.</p>
+      </div>
     </div>
     <div id="draw-mode-popout">
       <button class="draw-mode-btn" id="btn-mode-rect" title="Rectangle (cliquer-glisser-lâcher)"><i data-lucide="square"></i></button>
@@ -1686,7 +1771,7 @@ function buildDemoSite(){
   createRoute([{x:-70,y:0.15,z:34},{x:0,y:0.15,z:34},{x:60,y:0.15,z:34}], 'bus', 'Bus — ligne C');
   createRoute([{x:-50,y:0.15,z:-38},{x:34,y:0.15,z:-38},{x:44,y:0.15,z:0},{x:26,y:0.15,z:30},{x:-40,y:0.15,z:26},{x:-50,y:0.15,z:-10},{x:-50,y:0.15,z:-38}], 'voiture', 'Voirie — boucle place');
   createRoute([{x:-30,y:0.15,z:-55},{x:-10,y:0.15,z:-40},{x:5,y:0.15,z:-10},{x:0,y:0.15,z:15}], 'pieton', 'Piétons — parvis gare');
-  selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); rebuildAll(); renderList();
+  selectedId = null; updateBldgPanelVisibility(); rebuildAll(); renderList();
 }
 
 // Bascule le matériau visible du polygone d'implantation entre son rendu
@@ -3115,6 +3200,13 @@ function paintGrassAt(ev, erase){
 
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!grassPainting) return;
+  // Ne bloquer l'orbite caméra QUE si le clic tombe bien sur la maquette
+  // (un fragment de sol "gazonnable") — un clic à côté, sur le fond, doit
+  // continuer à permettre de déplacer la caméra normalement pendant qu'on
+  // peint, sans avoir à quitter l'outil Gazon.
+  const part = grassPartUnderCursor(ev);
+  if(!part){ grassPointerActive = false; return; }
+  controls.enabled = false;
   grassPointerActive = true;
   paintGrassAt(ev, ev.button===2);
 });
@@ -3122,7 +3214,10 @@ window.addEventListener('pointermove', (ev)=>{
   if(!grassPainting || !grassPointerActive) return;
   paintGrassAt(ev, ev.buttons===2);
 });
-window.addEventListener('pointerup', ()=>{ grassPointerActive = false; });
+window.addEventListener('pointerup', ()=>{
+  grassPointerActive = false;
+  if(grassPainting) controls.enabled = true;
+});
 renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting) ev.preventDefault(); });
 
 const brushBtns = {
@@ -3609,7 +3704,7 @@ function updateConstructions(dt){
     if(!c.crane || !c.crane.disappearing){
       rebuildMesh(b); // -> renderConstructionFrame() tant que b.constructing
       if(c.crane){
-        const topY = currentBuiltHeight(b) + 20; // "toujours quelques mètres plus haut"
+        const topY = currentBuiltHeight(b) + 4; // "toujours quelques mètres plus haut"
         c.crane.flecheSwing.position.y = topY;
         // Va-et-vient continu et net entre -90° et +90° (sinusoïde), bien
         // visible sur la courte durée de la construction — l'ancienne
@@ -3721,7 +3816,7 @@ function deleteBuilding(id, opts={}){
   if(!b) return;
   if(editingBuildingId===id) stopEditBuildingShape();
   buildings = buildings.filter(x=>x.id!==id);
-  if(selectedId===id){ selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); }
+  if(selectedId===id){ selectedId = null; updateBldgPanelVisibility(); }
   // Le halo de sélection (pourtour bleu clair à la base) a pu être ajouté à
   // b.group pendant que ce bâtiment était sélectionné ; comme on ne rappelle
   // pas rebuildMesh() après désélection ici, on le retire explicitement pour
@@ -4026,7 +4121,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   if(toolIsActive()) return;
   const hit = buildingHitAt(ev);
   if(!hit){
-    if(selectedId !== null){ selectedId = null; document.getElementById('bldg-edit-window').classList.remove('show'); rebuildAll(); renderList(); }
+    if(selectedId !== null){ selectedId = null; updateBldgPanelVisibility(); rebuildAll(); renderList(); }
     return;
   }
   selectBuilding(hit.id);
@@ -4533,15 +4628,23 @@ window.addEventListener('keydown', (ev)=>{
    ============================================================ */
 const bldgList = document.getElementById('bldg-list');
 const emptyNote = document.getElementById('bldg-mini-empty');
+const bldgPanel = document.getElementById('bldg-panel');
+
+// Le panneau (liste + fiche de modification) est visible dès qu'il existe au
+// moins un bâtiment — la fiche de droite, elle, ne s'affiche que si l'un
+// d'eux est sélectionné (sinon on montre un message d'invite).
+function updateBldgPanelVisibility(){
+  bldgPanel.classList.toggle('show', buildings.length>0);
+  bldgPanel.classList.toggle('has-selection', selectedId!==null && buildings.some(b=>b.id===selectedId));
+}
 
 function renderList(){
   emptyNote.style.display = buildings.length ? 'none' : 'block';
   bldgList.innerHTML = '';
   buildings.forEach(b=>{
-    // Liste compacte (panneau de droite) : juste l'identification et un accès
-    // rapide — l'édition complète vit désormais dans sa propre petite fenêtre,
-    // à gauche sous les outils (voir renderBldgEditWindow), qui ne s'affiche
-    // que pour le bâtiment sélectionné.
+    // Liste compacte (à gauche de la fiche de modification) : juste
+    // l'identification et un accès rapide — l'édition complète vit dans la
+    // fiche à droite (voir renderBldgEditWindow), pour le bâtiment sélectionné.
     const card = document.createElement('div');
     card.className = 'bldg-card' + (b.id===selectedId ? ' selected':'');
     card.dataset.id = b.id;
@@ -4565,25 +4668,26 @@ function renderList(){
     card.append(head);
     bldgList.appendChild(card);
   });
-  if(selectedId && buildings.some(b=>b.id===selectedId) && bldgEditWindow.classList.contains('show')){
+  updateBldgPanelVisibility();
+  if(selectedId && buildings.some(b=>b.id===selectedId) && bldgPanel.classList.contains('has-selection')){
     renderBldgEditWindow(buildings.find(b=>b.id===selectedId));
   }
 }
 
 /* ============================================================
-   FENÊTRE DE MODIFICATION D'UN BÂTIMENT (gauche, sous les outils)
+   FICHE DE MODIFICATION D'UN BÂTIMENT (à droite de la liste, dans #bldg-panel)
    ============================================================ */
 const bldgEditWindow = document.getElementById('bldg-edit-window');
 const bewClose = document.getElementById('bew-close');
 bewClose.addEventListener('click', closeBldgEditWindow);
 function openBldgEditWindow(id){
-  bldgEditWindow.classList.add('show');
+  updateBldgPanelVisibility();
   renderBldgEditWindow(buildings.find(b=>b.id===id));
 }
 function closeBldgEditWindow(){
-  bldgEditWindow.classList.remove('show');
   if(editingBuildingId) stopEditBuildingShape();
   if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
+  updateBldgPanelVisibility();
 }
 function renderBldgEditWindow(b){
   if(!b){ closeBldgEditWindow(); return; }
@@ -4650,6 +4754,26 @@ function renderBldgEditWindow(b){
   bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;';
   bandsTitle.innerHTML = '<i data-lucide="palette" style="width:12px;height:12px;"></i> Répartition des usages par étage';
   body.append(floorsField, bandsTitle);
+
+  // Graphique de l'immeuble : un bloc par tranche d'usage, empilé dans le
+  // bon ordre (rez-de-chaussée en bas grâce à column-reverse), avec le
+  // nombre d'étages et les m² écrits directement dessus — un coup d'œil
+  // suffit à comprendre la répartition, sans avoir à lire les champs.
+  const chart = document.createElement('div');
+  chart.id = 'bew-floor-chart';
+  b.bands.forEach(band=>{
+    const nFloors = Math.max(0, band.to - band.from + 1);
+    if(nFloors<=0) return;
+    const area = groundArea * nFloors;
+    const blk = document.createElement('div');
+    blk.className = 'floor-chart-block';
+    blk.style.flexGrow = String(nFloors);
+    blk.style.background = '#'+USAGE_COLORS[band.usage].toString(16).padStart(6,'0');
+    blk.title = `${USAGE_LABELS[band.usage]||band.usage} · étages ${band.from} à ${band.to}`;
+    blk.innerHTML = `<span class="fcb-usage">${USAGE_LABELS[band.usage]||band.usage}<span class="fcb-floors">(R+${band.from-1}${band.to>band.from?'\u2192R+'+(band.to-1):''})</span></span><span class="fcb-area">${area.toFixed(0)} m²</span>`;
+    chart.appendChild(blk);
+  });
+  body.appendChild(chart);
 
   b.bands.forEach((band, idx)=>{
     const row = document.createElement('div');
@@ -4720,7 +4844,7 @@ function renderBldgEditWindow(b){
   const actions = document.createElement('div');
   actions.className='btn-row';
   const editBtn = document.createElement('button');
-  editBtn.className='small-action';
+  editBtn.className='action-btn edit' + (editingBuildingId===b.id ? ' active' : '');
   editBtn.innerHTML = editingBuildingId===b.id
     ? '<i data-lucide="check"></i> Terminer'
     : '<i data-lucide="move-3d"></i> Modifier la forme';
@@ -4728,13 +4852,10 @@ function renderBldgEditWindow(b){
     editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b);
     renderBldgEditWindow(b);
   });
-  const focusBtn = document.createElement('button');
-  focusBtn.className='small-action'; focusBtn.innerHTML='<i data-lucide="crosshair"></i> Centrer la vue';
-  focusBtn.addEventListener('click', ()=> focusOn(b));
   const delBtn = document.createElement('button');
-  delBtn.className='small-action danger'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
+  delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
   delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
-  actions.append(editBtn, focusBtn, delBtn);
+  actions.append(editBtn, delBtn);
   body.appendChild(actions);
 
   if(window.lucide) lucide.createIcons();
@@ -5536,7 +5657,7 @@ fileLoad.addEventListener('change', (e)=>{
         createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands});
       });
       selectedId = null;
-      document.getElementById('bldg-edit-window').classList.remove('show');
+      updateBldgPanelVisibility();
 
       // Couleurs des légendes (avant rebuild des bâtiments, pour qu'ils
       // adoptent d'emblée la bonne teinte).
