@@ -2067,12 +2067,17 @@ function updateDrawAreaLabel(){
   drawAreaLabel.textContent = `${currentDrawLiveArea.toFixed(0)} m² au sol`;
   drawAreaLabel.classList.add('show');
 }
-const bldgMiniList = document.getElementById('bldg-mini-list');
+// NOTE : #bldg-mini-list a été remplacé par la liste permanente du panneau
+// #bldg-panel (déplacé sous le menu outils) — cette variable ne correspond
+// plus à aucun élément du DOM. On garde uniquement le rafraîchissement de la
+// liste (renderList), sans toucher à une classe "show" sur un élément qui
+// n'existe plus (l'ancien code plantait ici avec une TypeError sur
+// `null.classList`, ce qui empêchait tout le reste de la fonction appelante
+// de s'exécuter — d'où l'impossibilité de dessiner un bâtiment).
 let drawMenuOpen = false;
 
 function refreshBldgMiniListVisibility(){
   const show = drawMenuOpen || drawing;
-  bldgMiniList.classList.toggle('show', show);
   if(show) renderList();
 }
 function openDrawMenu(){
