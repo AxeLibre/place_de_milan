@@ -1,4 +1,4 @@
-<!doctype html> 
+<!doctype html>
 <html lang="fr"> 
 <head>
 <meta charset="utf-8" />
@@ -214,9 +214,9 @@
   #bldg-edit-window .bew-close:hover{color:var(--paper);background:#0b1116;}
   #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin:3px 0 14px;flex-shrink:0;}
   /* ---------- Corps à deux colonnes : édition à gauche, répartition des
-     usages par étage (graphique) à droite. Aucune des deux colonnes n'a son
-     propre scroll : toute la hauteur nécessaire remonte jusqu'à #left-stack,
-     seul et unique conteneur scrollable de la colonne de gauche. ---------- */
+     usages par étage (graphique) à droite. Le graphique est une seule barre
+     proportionnelle par tranche (hauteur fixe), donc jamais de défilement
+     nécessaire quel que soit le nombre d'étages. ---------- */
   #bew-body{display:flex;gap:20px;}
   #bew-col-left{flex:1 1 auto;min-width:0;}
   #bew-col-right{
@@ -247,18 +247,18 @@
      bien plus lisible qu'un simple bloc proportionnel par tranche quand il
      y a plusieurs usages. ---------- */
   #bew-floor-stack{
-    display:flex;flex-direction:column-reverse;gap:2px;margin:8px 0 12px;
+    display:flex;flex-direction:row;gap:2px;margin:8px 0 12px;
     border:1px solid #2a3946;border-radius:6px;overflow:hidden;padding:3px;
-    background:rgba(255,255,255,.02);
+    background:rgba(255,255,255,.02);height:44px;width:100%;box-sizing:border-box;
   }
   .floor-cell{
-    display:flex;align-items:center;justify-content:space-between;gap:6px;
-    min-height:19px;padding:0 7px;border-radius:2px;
-    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
-    color:#0b1116;cursor:default;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    min-width:0;border-radius:2px;overflow:hidden;
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;
+    color:#0b1116;cursor:default;white-space:nowrap;
   }
-  .floor-cell .fc-label{opacity:.85;}
-  .floor-cell .fc-area{opacity:.7;font-weight:500;}
+  .floor-cell .fc-label{opacity:.85;overflow:hidden;text-overflow:ellipsis;}
+  .floor-cell .fc-area{opacity:.7;font-weight:500;overflow:hidden;text-overflow:ellipsis;}
 
   /* ---------- Boutons de taille de pinceau (popout à droite de "Gazon") ---------- */
   .brush-btn{
@@ -4868,15 +4868,22 @@ function renderBldgEditWindow(b){
 
   const floorStack = document.createElement('div');
   floorStack.id = 'bew-floor-stack';
-  for(let f=1; f<=b.floors; f++){
-    const usage = usageAtFloor(b, f);
+  // Une case par TRANCHE (et non plus par étage individuel) : sa largeur est
+  // proportionnelle au nombre d'étages qu'elle couvre. Toujours une seule
+  // ligne de hauteur fixe, donc plus jamais de débordement vertical ni de
+  // besoin de défilement, même avec un immeuble de 60 niveaux.
+  b.bands.slice().sort((x,y)=> y.to-x.to).forEach(band=>{
+    const nFloors = Math.max(1, band.to - band.from + 1);
+    const usage = band.usage;
     const cell = document.createElement('div');
     cell.className = 'floor-cell';
     cell.style.background = '#'+USAGE_COLORS[usage].toString(16).padStart(6,'0');
-    cell.title = `R+${f-1} · ${USAGE_LABELS[usage]||usage} · ${groundArea.toFixed(0)} m²`;
-    cell.innerHTML = `<span class="fc-label">R+${f-1}</span><span class="fc-area">${groundArea.toFixed(0)} m²</span>`;
+    cell.style.flex = `${nFloors} 0 0`;
+    const rangeLabel = band.from===band.to ? `R+${band.from-1}` : `R+${band.from-1}→R+${band.to-1}`;
+    cell.title = `${rangeLabel} · ${USAGE_LABELS[usage]||usage} · ${nFloors} niveau${nFloors>1?'x':''} · ${groundArea.toFixed(0)} m²/niveau`;
+    cell.innerHTML = `<span class="fc-label">${rangeLabel}</span><span class="fc-area">${(groundArea*nFloors).toFixed(0)} m²</span>`;
     floorStack.appendChild(cell);
-  }
+  });
   colRight.appendChild(floorStack);
 
   // Récapitulatif des m² par usage pour CE bâtiment (emprise × nb d'étages de
