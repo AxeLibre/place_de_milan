@@ -78,18 +78,32 @@
   }
   #status-line b{color:var(--accent);text-shadow:var(--accent-glow);}
 
+  /* ---------- Barre de défilement : jamais visible nulle part dans l'UI —
+     le scroll interne reste possible (molette / glisser) si le contenu est
+     vraiment trop grand, mais la barre elle-même ne doit jamais apparaître. ---------- */
+  #left-stack, #toolbar-left, #bldg-panel-list, #bldg-edit-window, #tree-mini-list,
+  #admin-panel, #about-modal{
+    scrollbar-width:none; -ms-overflow-style:none;
+  }
+  #left-stack::-webkit-scrollbar, #toolbar-left::-webkit-scrollbar,
+  #bldg-panel-list::-webkit-scrollbar, #bldg-edit-window::-webkit-scrollbar,
+  #tree-mini-list::-webkit-scrollbar, #admin-panel::-webkit-scrollbar,
+  #about-modal::-webkit-scrollbar{
+    display:none; width:0; height:0;
+  }
+
   /* ---------- Vertical toolbar (left edge, SimCity-style) ---------- */
   #left-stack{
     position:absolute;top:84px;left:16px;z-index:6;
-    display:flex;flex-direction:column;align-items:flex-start;gap:10px;
-    max-height:calc(100vh - 110px);
+    display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+    max-height:calc(100vh - 100px);
     overflow-y:auto;overflow-x:visible;
   }
   #toolbar-left{
     flex-shrink:0;width:214px;
-    display:flex;flex-direction:column;gap:6px;
+    display:flex;flex-direction:column;gap:4px;
     background:rgba(24,36,48,.9);border:1px solid #2a3946;border-radius:8px;
-    padding:8px;backdrop-filter:blur(6px);
+    padding:6px;backdrop-filter:blur(6px);
     box-shadow:0 8px 24px rgba(0,0,0,.35);
     overflow-y:auto;overflow-x:hidden;
   }
@@ -167,14 +181,14 @@
   #bldg-panel{
     flex-shrink:0;z-index:16;
     display:none;align-items:flex-start;gap:14px;
-    max-height:calc(100vh - 84px - 220px);
+    max-height:calc(100vh - 84px - 180px);
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
     width:198px;flex-shrink:0;align-self:stretch;max-height:inherit;
     background:rgba(24,36,48,.94);border:1px solid #2a3946;border-radius:10px;
-    padding:12px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
-    overflow-y:auto;display:flex;flex-direction:column;gap:8px;
+    padding:10px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
+    overflow-y:auto;display:flex;flex-direction:column;gap:6px;
   }
   #bldg-panel-list-head{
     font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;
@@ -3231,14 +3245,33 @@ function paintGrassAt(ev, erase){
   part.texture.needsUpdate = true;
 }
 
+// Détection large "clic sur la maquette" (peu importe l'élément précis :
+// gazon, quartier, hall, bâtiments, arbres…) — utilisée pour décider si
+// l'orbite caméra doit être bloquée pendant la peinture de gazon. Distincte
+// de grassPartUnderCursor (qui ne teste QUE les fragments de sol peignables,
+// pour savoir où peindre) : un clic sur un bâtiment ou un arbre, par exemple,
+// doit lui aussi bloquer la caméra puisqu'il tombe bien "sur la maquette",
+// même s'il n'y a rien à y peindre.
+function modelHitTargets(){
+  const targets = [siteRoot];
+  if(typeof buildings !== 'undefined') buildings.forEach(b=>{ if(b.group) targets.push(b.group); });
+  if(typeof treesGroup !== 'undefined' && treesGroup) targets.push(treesGroup);
+  return targets;
+}
+function isClickOnModel(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.intersectObjects(modelHitTargets(), true).length>0;
+}
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!grassPainting) return;
   // Ne bloquer l'orbite caméra QUE si le clic tombe bien sur la maquette
-  // (un fragment de sol "gazonnable") — un clic à côté, sur le fond, doit
-  // continuer à permettre de déplacer la caméra normalement pendant qu'on
-  // peint, sans avoir à quitter l'outil Gazon.
-  const part = grassPartUnderCursor(ev);
-  if(!part){ grassPointerActive = false; return; }
+  // (n'importe où dessus) — un clic à côté, sur le fond, doit continuer à
+  // permettre de déplacer la caméra normalement pendant qu'on peint, sans
+  // avoir à quitter l'outil Gazon.
+  if(!isClickOnModel(ev)){ grassPointerActive = false; return; }
   controls.enabled = false;
   grassPointerActive = true;
   paintGrassAt(ev, ev.button===2);
