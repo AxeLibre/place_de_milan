@@ -187,15 +187,8 @@
     border-bottom:1px solid #2a3946;margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em;
   }
   #bldg-panel-list-head svg{width:15px;height:15px;color:var(--accent);}
-  #bldg-panel-placeholder{
-    display:none;width:340px;align-self:stretch;
-    background:rgba(15,22,29,.96);border:1px dashed #354858;border-radius:10px;
-    align-items:center;justify-content:center;flex-direction:column;gap:10px;
-    padding:30px 20px;color:var(--muted);text-align:center;
-  }
-  #bldg-panel.show:not(.has-selection) #bldg-panel-placeholder{display:flex;}
-  #bldg-panel-placeholder svg{width:30px;height:30px;color:#3a4a58;}
-  #bldg-panel-placeholder p{margin:0;font-size:12.5px;line-height:1.5;max-width:240px;}
+  /* Placeholder "Choisissez un bâtiment…" supprimé : ne plus rien afficher
+     tant qu'aucun bâtiment n'est sélectionné, plutôt qu'un cadre vide. */
   #bldg-edit-window{
     width:640px;flex-shrink:1;align-self:stretch;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
@@ -217,11 +210,14 @@
      usages par étage (graphique) à droite. Le graphique est une seule barre
      proportionnelle par tranche (hauteur fixe), donc jamais de défilement
      nécessaire quel que soit le nombre d'étages. ---------- */
-  #bew-body{display:flex;gap:20px;}
+  /* ---------- Corps empilé verticalement : édition en haut, répartition
+     des usages par étage (graphique en forme d'immeuble, du rez-de-chaussée
+     en bas au dernier étage en haut) en dessous, pleine largeur. ---------- */
+  #bew-body{display:flex;flex-direction:column;gap:16px;}
   #bew-col-left{flex:1 1 auto;min-width:0;}
   #bew-col-right{
-    width:236px;flex-shrink:0;
-    border-left:1px solid #2a3946;padding-left:18px;
+    width:100%;flex-shrink:0;
+    border-left:none;border-top:1px solid #2a3946;padding-left:0;padding-top:16px;
   }
   #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:13px;}
   #bldg-edit-window .field label svg{width:14px;height:14px;color:var(--muted);}
@@ -241,19 +237,18 @@
   .btn-row button svg{width:13px;height:13px;margin-right:5px;}
   .btn-row button{display:flex;align-items:center;justify-content:center;}
 
-  /* ---------- Graphique "petites cases par étage" (colonne de droite) :
-     une rangée par niveau réel du bâtiment, du dernier étage en haut au
-     rez-de-chaussée en bas, colorée selon l'usage de CE niveau précis —
-     bien plus lisible qu'un simple bloc proportionnel par tranche quand il
-     y a plusieurs usages. ---------- */
+  /* ---------- Graphique "immeuble" (répartition des usages par étage) :
+     une colonne verticale, comme un bâtiment vu en coupe — rez-de-chaussée
+     en bas, dernier étage en haut. Hauteur fixe, largeur fixe : jamais de
+     défilement ni de débordement quel que soit le nombre d'étages. ---------- */
   #bew-floor-stack{
-    display:flex;flex-direction:row;gap:2px;margin:8px 0 12px;
+    display:flex;flex-direction:column-reverse;gap:2px;margin:10px auto 12px;
     border:1px solid #2a3946;border-radius:6px;overflow:hidden;padding:3px;
-    background:rgba(255,255,255,.02);height:44px;width:100%;box-sizing:border-box;
+    background:rgba(255,255,255,.02);height:260px;width:150px;box-sizing:border-box;
   }
   .floor-cell{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
-    min-width:0;border-radius:2px;overflow:hidden;
+    display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:6px;
+    min-height:0;padding:0 7px;border-radius:2px;overflow:hidden;
     font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;
     color:#0b1116;cursor:default;white-space:nowrap;
   }
@@ -769,7 +764,6 @@
     #bldg-panel{max-height:50vh;width:auto;}
     #bldg-panel-list{width:150px;}
     #bldg-edit-window{width:100%;}
-    #bldg-panel-placeholder{width:auto;flex:1;}
     #legend-window{right:8px;bottom:8px;width:min(260px, calc(100vw - 16px));}
     #sun-panel{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
     #ribbon{padding:8px 10px;gap:8px;}
@@ -785,7 +779,6 @@
     #toolbar-left .tool-sep{display:none;}
     #bldg-panel{flex-direction:column;max-height:56vh;}
     #bldg-panel-list{width:100%;max-height:110px;}
-    #bldg-panel-placeholder{width:100%;}
     #brand span{display:none;}
     #draw-hint{max-width:calc(100vw - 20px);flex-wrap:wrap;justify-content:center;}
   }
@@ -923,10 +916,6 @@
           <div id="bew-col-left"></div>
           <div id="bew-col-right"></div>
         </div>
-      </div>
-      <div id="bldg-panel-placeholder">
-        <i data-lucide="mouse-pointer-click"></i>
-        <p>Choisissez un bâtiment dans la liste à gauche pour le modifier.</p>
       </div>
     </div>
     </div>
@@ -4868,11 +4857,12 @@ function renderBldgEditWindow(b){
 
   const floorStack = document.createElement('div');
   floorStack.id = 'bew-floor-stack';
-  // Une case par TRANCHE (et non plus par étage individuel) : sa largeur est
-  // proportionnelle au nombre d'étages qu'elle couvre. Toujours une seule
-  // ligne de hauteur fixe, donc plus jamais de débordement vertical ni de
-  // besoin de défilement, même avec un immeuble de 60 niveaux.
-  b.bands.slice().sort((x,y)=> y.to-x.to).forEach(band=>{
+  // Une case par TRANCHE (et non plus par étage individuel) : sa hauteur est
+  // proportionnelle au nombre d'étages qu'elle couvre. Colonne verticale
+  // façon immeuble : rez-de-chaussée en bas, dernier étage en haut —
+  // hauteur totale fixe, donc plus jamais de débordement, même avec un
+  // immeuble de 60 niveaux.
+  b.bands.slice().sort((x,y)=> x.to-y.to).forEach(band=>{
     const nFloors = Math.max(1, band.to - band.from + 1);
     const usage = band.usage;
     const cell = document.createElement('div');
