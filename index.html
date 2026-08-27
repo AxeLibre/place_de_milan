@@ -83,6 +83,7 @@
     position:absolute;top:84px;left:16px;z-index:6;
     display:flex;flex-direction:column;align-items:flex-start;gap:10px;
     max-height:calc(100vh - 110px);
+    overflow-y:auto;overflow-x:visible;
   }
   #toolbar-left{
     flex-shrink:0;width:214px;
@@ -137,6 +138,13 @@
   .draw-mode-btn:hover{border-color:var(--accent);color:#fff;}
   .draw-mode-btn svg{width:16px;height:16px;stroke-width:2;}
 
+  /* ---------- Popout tailles de pinceau (à droite du bouton "Gazon"), même
+     mécanique que #draw-mode-popout : position "fixed" calculée en JS ---------- */
+  #grass-brush-popout{
+    position:fixed;z-index:30;display:none;gap:6px;
+  }
+  #grass-brush-popout.show{display:flex;}
+
   /* ---------- Mini liste des bâtiments (sous "Nouveau bâtiment"), visible
      seulement quand cet outil est actif ---------- */
   #bldg-mini-list{
@@ -153,11 +161,13 @@
   #tree-mini-list.show{display:flex;}
   #tree-empty-note{color:var(--muted);font-size:11px;line-height:1.4;font-family:'IBM Plex Mono',monospace;padding:4px 2px;}
 
-  /* ---------- Fenêtre de modification d'un bâtiment sélectionné (gauche, sous les outils) ---------- */
+  /* ---------- Fenêtre de modification d'un bâtiment sélectionné — collée
+     à gauche, sous le menu outils (flux normal dans #left-stack, plus de
+     positionnement absolu décalé à droite) ---------- */
   #bldg-panel{
-    position:absolute;top:84px;left:246px;z-index:16;
+    flex-shrink:0;z-index:16;
     display:none;align-items:flex-start;gap:14px;
-    max-height:calc(100vh - 84px - 96px);
+    max-height:calc(100vh - 84px - 220px);
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
@@ -216,12 +226,12 @@
   .btn-row button svg{width:13px;height:13px;margin-right:5px;}
   .btn-row button{display:flex;align-items:center;justify-content:center;}
 
-  /* ---------- Brush size row (under "Gazon") ---------- */
-  #brush-row{display:flex;gap:4px;padding:2px 2px 4px;}
+  /* ---------- Boutons de taille de pinceau (popout à droite de "Gazon") ---------- */
   .brush-btn{
-    flex:1;display:flex;align-items:center;justify-content:center;
-    background:#101820;border:1px solid #23303b;color:#45525c;
-    border-radius:3px;padding:6px 0;cursor:pointer;transition:all .12s ease;
+    width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    background:var(--ink-2);border:1px solid #2a3946;color:#45525c;
+    border-radius:4px;cursor:pointer;transition:all .12s ease;
+    box-shadow:0 8px 20px rgba(0,0,0,.4);
   }
   .brush-btn svg{width:15px;height:15px;stroke-width:2;}
   .brush-btn:hover{color:var(--paper);border-color:#3a4a58;}
@@ -720,7 +730,7 @@
   @media (max-width: 980px){
     #left-stack{top:auto;bottom:74px;left:8px;max-width:calc(100vw - 16px);}
     #toolbar-left .tool-btn{width:150px;}
-    #bldg-panel{left:8px;right:8px;top:8px;bottom:auto;max-height:50vh;width:auto;}
+    #bldg-panel{max-height:50vh;width:auto;}
     #bldg-panel-list{width:150px;}
     #bldg-edit-window{width:100%;}
     #bldg-panel-placeholder{width:auto;flex:1;}
@@ -737,7 +747,6 @@
     #toolbar-left .tool-btn{width:auto;padding:8px 10px;}
     #toolbar-left .tool-btn .tool-btn-label{display:none;}
     #toolbar-left .tool-sep{display:none;}
-    #brush-row{width:100%;}
     #bldg-panel{flex-direction:column;max-height:56vh;}
     #bldg-panel-list{width:100%;max-height:110px;}
     #bldg-panel-placeholder{width:100%;}
@@ -846,17 +855,11 @@
         <button class="eye-btn" id="eye-btn-grass" title="Afficher/masquer le gazon"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
         <button class="tool-btn ghost" id="btn-paint-grass"><i data-lucide="paintbrush"></i><span class="tool-btn-label">Gazon</span></button>
       </div>
-      <div id="brush-row">
-        <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
-        <button class="brush-btn active" id="brush-medium" title="Pinceau moyen"><i data-lucide="circle" style="width:11px;height:11px;"></i></button>
-        <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
-      </div>
       <div class="tool-sep"></div>
       <div class="tool-row">
         <button class="eye-btn" id="eye-btn-labels" title="Afficher/masquer les labels"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
         <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
       </div>
-    </div>
     </div>
     <div id="bldg-panel">
       <div id="bldg-panel-list">
@@ -878,9 +881,15 @@
         <p>Choisissez un bâtiment dans la liste à gauche pour le modifier.</p>
       </div>
     </div>
+    </div>
     <div id="draw-mode-popout">
       <button class="draw-mode-btn" id="btn-mode-rect" title="Rectangle (cliquer-glisser-lâcher)"><i data-lucide="square"></i></button>
       <button class="draw-mode-btn" id="btn-mode-poly" title="Polygone (clics successifs)"><i data-lucide="pentagon"></i></button>
+    </div>
+    <div id="grass-brush-popout">
+      <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
+      <button class="brush-btn active" id="brush-medium" title="Pinceau moyen"><i data-lucide="circle" style="width:11px;height:11px;"></i></button>
+      <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
     </div>
     <div id="sun-panel">
       <div id="sun-arc">
@@ -3064,7 +3073,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
    ============================================================ */
 let grassParts = []; // [{mesh, overlayMesh, canvas, ctx, texture}]
 let grassVisibleFlag = true; // oeil "Gazon"
-let grassBrushRadius = 22; // px, sur un canvas de 1024 — "moyen" par défaut (réduit : l'ancien pinceau peignait un disque bien plus large que ce que le cercle-guide laissait penser)
+let grassBrushRadius = 12; // px, sur un canvas de 1024 — "moyen" par défaut (réduit à nouveau : la tache peinte réelle restait bien plus grande que ce que son cercle-guide au sol laissait penser)
 
 function setupGrassPaintOverlay(parts){
   grassParts = [];
@@ -3103,6 +3112,13 @@ function setupGrassPaintOverlay(parts){
 let grassPainting = false;
 let grassPointerActive = false;
 const btnGrass = document.getElementById('btn-paint-grass');
+const grassBrushPopout = document.getElementById('grass-brush-popout');
+function positionGrassBrushPopout(){
+  const r = btnGrass.getBoundingClientRect();
+  grassBrushPopout.style.left = (r.right + 8) + 'px';
+  grassBrushPopout.style.top = r.top + 'px';
+}
+window.addEventListener('resize', ()=>{ if(grassPainting) positionGrassBrushPopout(); });
 
 // Repère circulaire au sol pour le pinceau de gazon : à l'inverse du guide de
 // tracé, il est plein sur le bord intérieur (le contour du pinceau) et
@@ -3140,7 +3156,13 @@ function updateGrassCursor(ev){
   grassCursorDecal.visible = true;
   grassCursorDecal.position.set(pt.x, 0.22, pt.z);
   const part = grassPartUnderCursor(ev);
-  const r = Math.max(0.4, grassBrushWorldRadius(part));
+  // Facteur de calibration : le cercle-guide (mode "ring", anneau visible
+  // vers 0.82–1 de son rayon) paraissait bien plus petit que la tache
+  // réellement peinte au sol — on l'agrandit légèrement pour que son bord
+  // corresponde à l'étendue visuelle réelle du pinceau (voir aussi le
+  // dégradé resserré dans paintGrassAt, qui va dans l'autre sens).
+  const GUIDE_CALIBRATION = 1.35;
+  const r = Math.max(0.4, grassBrushWorldRadius(part)) * GUIDE_CALIBRATION;
   grassCursorDecal.scale.setScalar(r);
 }
 renderer.domElement.addEventListener('pointermove', (ev)=>{
@@ -3161,6 +3183,8 @@ function startGrassTool(){
   drawHintEnter.style.display = 'none';
   ensureGrassCursorDecal();
   updateBrushRowState();
+  positionGrassBrushPopout();
+  grassBrushPopout.classList.add('show');
 }
 function stopGrassTool(){
   grassPainting = false;
@@ -3168,6 +3192,7 @@ function stopGrassTool(){
   drawHint.classList.remove('show');
   if(grassCursorDecal) grassCursorDecal.visible = false;
   updateBrushRowState();
+  grassBrushPopout.classList.remove('show');
 }
 btnGrass.addEventListener('click', ()=> grassPainting ? stopGrassTool() : startGrassTool());
 window.addEventListener('keydown', (ev)=>{ if(grassPainting && ev.key==='Escape') stopGrassTool(); });
@@ -3184,11 +3209,19 @@ function paintGrassAt(ev, erase){
   const px = hit.uv.x * part.canvas.width;
   const py = (1-hit.uv.y) * part.canvas.height;
   part.ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+  // Dégradé resserré : plein jusqu'à 70% du rayon puis chute rapide sur les
+  // 30% restants — un dégradé qui s'étalait doucement dès le centre (ancien
+  // 2-stops) donnait l'illusion d'une tache bien plus large que le rayon
+  // réellement réglé, car sa moitié externe restait visible à l'œil malgré
+  // une opacité déjà faible.
   const grad = part.ctx.createRadialGradient(px,py,0, px,py,grassBrushRadius);
   if(erase){
-    grad.addColorStop(0,'rgba(0,0,0,1)'); grad.addColorStop(1,'rgba(0,0,0,0)');
+    grad.addColorStop(0,'rgba(0,0,0,1)');
+    grad.addColorStop(0.7,'rgba(0,0,0,1)');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
   } else {
     grad.addColorStop(0,'rgba(94,168,84,0.95)');
+    grad.addColorStop(0.7,'rgba(94,168,84,0.95)');
     grad.addColorStop(1,'rgba(94,168,84,0)');
   }
   part.ctx.fillStyle = grad;
@@ -3225,7 +3258,7 @@ const brushBtns = {
   medium: document.getElementById('brush-medium'),
   large: document.getElementById('brush-large'),
 };
-const BRUSH_SIZES = { small:10, medium:22, large:38 };
+const BRUSH_SIZES = { small:6, medium:12, large:20 };
 function setBrushSize(key){
   grassBrushRadius = BRUSH_SIZES[key];
   Object.entries(brushBtns).forEach(([k,btn])=> btn.classList.toggle('active', k===key));
