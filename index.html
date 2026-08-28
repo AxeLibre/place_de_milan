@@ -172,6 +172,7 @@
   #bldg-panel{
     flex-shrink:0;z-index:16;
     display:none;align-items:flex-start;gap:14px;
+    transition:transform .15s ease;
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
@@ -194,21 +195,18 @@
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;
-    max-height:calc(100vh - 110px);overflow-y:auto;overflow-x:hidden;
   }
   /* ---------- Bloc séparé "répartition des usages par étage", collé juste
      à droite de la fiche bâtiment (et non plus empilé à l'intérieur), pour
-     que l'ensemble reste toujours dans la largeur de l'écran. Hauteur
-     plafonnée + défilement interne : avec beaucoup de tranches d'usage, le
-     bouton "Ajouter une tranche" ne doit jamais se retrouver hors écran,
-     il remonte dans la zone défilante plutôt que de disparaître en bas.
-     ---------- */
+     que l'ensemble reste toujours dans la largeur de l'écran. AUCUN
+     défilement (ni visible ni caché) : si le contenu dépasse le bas de
+     l'écran, c'est tout #bldg-panel qui remonte (translateY calculé en JS,
+     voir syncBldgPanelMaxHeight), jamais une scrollbar. ---------- */
   #bew-usage-panel{
     width:300px;flex-shrink:0;align-self:stretch;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;
-    max-height:calc(100vh - 110px);overflow-y:auto;overflow-x:hidden;
   }
   #bldg-panel.has-selection #bew-usage-panel{display:flex;}
   #bldg-panel.has-selection #bldg-edit-window{display:flex;}
@@ -483,28 +481,23 @@
     font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--paper);
   }
   #legend-total-row b{font-size:13px;color:var(--accent);}
-  .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;pointer-events:none;}
+  .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
 
-  /* ---------- Pastilles de couleur cliquables dans la légende : personnalisation
-     accessible à tous les utilisateurs (pas seulement en mode admin), avec un
-     léger halo au survol pour indiquer que c'est interactif. ---------- */
+  /* ---------- Pastilles de couleur cliquables dans "Options d'affichage" :
+     personnalisation accessible à tous les utilisateurs. ---------- */
+  #usage-colors{display:flex;flex-direction:column;gap:8px;margin-bottom:4px;}
+  .usage-color-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--paper);}
+  .usage-color-row span{flex:1;}
   .swatch-wrap{
-    position:relative;width:16px;height:16px;border-radius:4px;flex-shrink:0;
-    display:flex;align-items:center;justify-content:center;cursor:pointer;
-    transition:box-shadow .15s ease, transform .1s ease;
+    position:relative;width:22px;height:22px;border-radius:5px;flex-shrink:0;
+    border:1px solid #2a3946;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25);
+    cursor:pointer;transition:box-shadow .15s ease, transform .1s ease;
   }
-  .swatch-wrap:hover{box-shadow:0 0 0 3px rgba(46,232,255,.22);transform:scale(1.08);}
-  .swatch-wrap .swatch{width:12px;height:12px;}
+  .swatch-wrap:hover{box-shadow:inset 0 0 0 2px rgba(0,0,0,.25), 0 0 0 3px rgba(46,232,255,.22);transform:scale(1.06);}
   .swatch-input{
     position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;
     border:none;padding:0;margin:0;
   }
-  #legend-color-hint{
-    display:flex;align-items:center;gap:5px;margin-top:10px;padding-top:8px;
-    border-top:1px solid #2a3946;font-family:'IBM Plex Mono',monospace;
-    font-size:9.5px;color:var(--muted);letter-spacing:.01em;opacity:.75;
-  }
-  #legend-color-hint svg{width:11px;height:11px;flex-shrink:0;color:var(--accent);}
 
   /* building cards */
   .bldg-card{
@@ -999,18 +992,19 @@
     </div>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
-      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-residentiel"><span class="swatch" style="background:var(--res)"></span></label><span>Résidentiel</span><span class="legend-m2" id="legend-m2-residentiel">0 m²</span></div>
-      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-bureaux"><span class="swatch" style="background:var(--bur)"></span></label><span>Bureaux</span><span class="legend-m2" id="legend-m2-bureaux">0 m²</span></div>
-      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-commerces"><span class="swatch" style="background:var(--com)"></span></label><span>Commerces</span><span class="legend-m2" id="legend-m2-commerces">0 m²</span></div>
-      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-hotel"><span class="swatch" style="background:var(--hot)"></span></label><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
-      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-services"><span class="swatch" style="background:var(--ser)"></span></label><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
+      <div class="legend-item"><div class="swatch" style="background:var(--res)"></div><span>Résidentiel</span><span class="legend-m2" id="legend-m2-residentiel">0 m²</span></div>
+      <div class="legend-item"><div class="swatch" style="background:var(--bur)"></div><span>Bureaux</span><span class="legend-m2" id="legend-m2-bureaux">0 m²</span></div>
+      <div class="legend-item"><div class="swatch" style="background:var(--com)"></div><span>Commerces</span><span class="legend-m2" id="legend-m2-commerces">0 m²</span></div>
+      <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
+      <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
       <div id="legend-total-row"><span>Total opération</span><b id="legend-m2-total">0 m²</b></div>
-      <div id="legend-color-hint"><i data-lucide="palette"></i> Cliquez un pastille pour changer sa couleur</div>
     </div>
     <div id="admin-panel">
       <div class="section-title">Éléments visibles sur la maquette</div>
       <label class="admin-check-row"><input type="checkbox" id="chk-vis-vehicles" checked> Véhicules (bus, trams, voitures, TGV)</label>
       <label class="admin-check-row"><input type="checkbox" id="chk-vis-pedestrians" checked> Piétons</label>
+      <div class="section-title">Couleurs des usages</div>
+      <div id="usage-colors"></div>
     </div>
     <div id="about-overlay">
       <div id="about-modal">
@@ -4777,19 +4771,27 @@ function updateBldgPanelVisibility(){
   syncBldgPanelMaxHeight();
 }
 
-// La hauteur disponible pour la fiche bâtiment / le panneau des usages dépend
-// de leur position réelle à l'écran (variable selon la hauteur du menu
-// outils au-dessus) : un simple "calc(100vh - Xpx)" fixe en CSS ne suffit
-// pas, il sous-estimait la marge réellement prise au-dessus du panneau et
-// laissait le bouton "Ajouter une tranche" hors écran. On mesure donc la
-// position réelle (getBoundingClientRect) et on ajuste max-height en
-// conséquence, avec une petite marge de sécurité en bas.
+// La hauteur du contenu (surtout la liste de tranches d'usage) peut dépasser
+// l'espace disponible sous le panneau. AUCUN défilement autorisé : à la
+// place, on fait remonter tout le bloc #bldg-panel (translateY) pour que son
+// bas reste toujours visible à l'écran, jusqu'à une limite haute (pas
+// question de remonter sous le ruban du haut).
 function syncBldgPanelMaxHeight(){
-  if(!bldgPanel.classList.contains('has-selection')) return;
-  const top = bldgPanel.getBoundingClientRect().top;
-  const maxH = Math.max(200, window.innerHeight - top - 16);
-  bldgEditWindow.style.maxHeight = maxH + 'px';
-  bewUsagePanel.style.maxHeight = maxH + 'px';
+  if(!bldgPanel.classList.contains('has-selection')){
+    bldgPanel.style.transform = '';
+    return;
+  }
+  bldgPanel.style.transform = ''; // on repart d'une position neutre pour mesurer
+  const rect = bldgPanel.getBoundingClientRect();
+  const contentHeight = Math.max(bldgEditWindow.scrollHeight, bewUsagePanel.scrollHeight);
+  const bottom = rect.top + contentHeight;
+  const maxBottom = window.innerHeight - 16;
+  const minTop = 84; // ne jamais remonter au-dessus du menu outils / ruban
+  let shift = bottom - maxBottom;
+  if(shift > 0){
+    shift = Math.min(shift, rect.top - minTop);
+    if(shift > 0) bldgPanel.style.transform = `translateY(-${shift}px)`;
+  }
 }
 window.addEventListener('resize', syncBldgPanelMaxHeight);
 
@@ -6399,27 +6401,38 @@ createRoute = function(...args){
 };
 applyAgentTypeVisibility(); // synchronise les voies déjà créées avant ce point (ex. démo piétons)
 
-// ---------------- Couleurs des légendes des usages — personnalisation
-// accessible à TOUS les utilisateurs (pas seulement en mode admin), via les
-// pastilles cliquables directement dans la fenêtre "Légende des usages". ----
+// ---------------- Couleurs des usages — personnalisation accessible à TOUS
+// les utilisateurs, dans le panneau "Options d'affichage" (petit engrenage
+// sous la boussole). ----------------
 const LEGEND_CSS_VAR_MAP = { residentiel:'--res', bureaux:'--bur', commerces:'--com', hotel:'--hot', services:'--ser' };
 function renderUsageColorControls(){
+  const container = document.getElementById('usage-colors');
+  container.innerHTML = '';
   Object.entries(USAGE_COLORS).forEach(([key,hexNum])=>{
-    const input = document.getElementById('swatch-input-'+key);
-    if(!input) return;
+    const row = document.createElement('div');
+    row.className = 'usage-color-row';
+    const label = document.createElement('span');
+    label.textContent = USAGE_LABELS[key] || key;
+    const wrap = document.createElement('label');
+    wrap.className = 'swatch-wrap';
+    wrap.title = 'Personnaliser la couleur';
+    wrap.style.background = '#'+hexNum.toString(16).padStart(6,'0');
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.className = 'swatch-input';
     input.value = '#'+hexNum.toString(16).padStart(6,'0');
+    input.addEventListener('input', ()=>{
+      const hex = parseInt(input.value.slice(1), 16);
+      USAGE_COLORS[key] = hex;
+      wrap.style.background = input.value;
+      if(LEGEND_CSS_VAR_MAP[key]) document.documentElement.style.setProperty(LEGEND_CSS_VAR_MAP[key], input.value);
+      rebuildAll();
+    });
+    wrap.appendChild(input);
+    row.append(wrap, label);
+    container.appendChild(row);
   });
 }
-Object.keys(LEGEND_CSS_VAR_MAP).forEach(key=>{
-  const input = document.getElementById('swatch-input-'+key);
-  if(!input) return;
-  input.addEventListener('input', ()=>{
-    const hex = parseInt(input.value.slice(1), 16);
-    USAGE_COLORS[key] = hex;
-    document.documentElement.style.setProperty(LEGEND_CSS_VAR_MAP[key], input.value);
-    rebuildAll();
-  });
-});
 renderUsageColorControls();
 
 
