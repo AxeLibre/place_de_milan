@@ -3068,15 +3068,26 @@ const TREE_DELETE_COLOR = '255,64,64';
 const TREE_PLANT_COLOR = NEON_BLUE_CSS;
 let treeDeleteHalo = null, treePlantHalo = null, treePreviewObj = null;
 let treeHoverId = null;
+// NB : depthWrite:false + depthTest:false sur ces halos (via makeCircleDecal)
+// veut dire qu'ils ne sont jamais bloqués par la profondeur — l'ordre visuel
+// entre "objets qui dessinent par-dessus" dépend alors uniquement de
+// renderOrder (dessiné en dernier = visible par-dessus). L'overlay de gazon
+// peint (voir setupGrassPaintOverlay) a renderOrder=1 ; sans renderOrder
+// explicite ici (défaut 0), le gazon — peint après — recouvrait le halo/
+// aperçu de l'arbre-guide dès qu'on survolait une zone déjà peinte. On les
+// place donc au-dessus de tout ce qui peut être peint au sol.
+const TREE_GUIDE_RENDER_ORDER = 5;
 function ensureTreeDeleteHalo(){
   if(treeDeleteHalo) return treeDeleteHalo;
   treeDeleteHalo = new THREE.Group();
   const disc = makeCircleDecal(1.8, TREE_DELETE_COLOR, 'fill');
   disc.position.y = 0.05;
+  disc.renderOrder = TREE_GUIDE_RENDER_ORDER;
   const sphere = new THREE.Mesh(
     new THREE.SphereGeometry(1.6, 16, 16),
     new THREE.MeshBasicMaterial({ color:0xff4040, transparent:true, opacity:0.28, depthWrite:false })
   );
+  sphere.renderOrder = TREE_GUIDE_RENDER_ORDER;
   treeDeleteHalo.add(disc, sphere);
   treeDeleteHalo.visible = false;
   worldRoot.add(treeDeleteHalo);
@@ -3086,6 +3097,7 @@ function ensureTreePlantHalo(){
   if(treePlantHalo) return treePlantHalo;
   treePlantHalo = makeCircleDecal(1.8, TREE_PLANT_COLOR, 'fill');
   treePlantHalo.position.y = 0.05;
+  treePlantHalo.renderOrder = TREE_GUIDE_RENDER_ORDER;
   treePlantHalo.visible = false;
   worldRoot.add(treePlantHalo);
   return treePlantHalo;
@@ -3104,6 +3116,7 @@ function ensureTreePreviewObj(){
       o.material.opacity = 0.55;
       o.material.depthWrite = false;
     }
+    if(o.isMesh) o.renderOrder = TREE_GUIDE_RENDER_ORDER;
   });
   treePreviewObj.visible = false;
   worldRoot.add(treePreviewObj);
