@@ -194,15 +194,21 @@
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;
+    max-height:calc(100vh - 110px);overflow-y:auto;overflow-x:hidden;
   }
   /* ---------- Bloc séparé "répartition des usages par étage", collé juste
      à droite de la fiche bâtiment (et non plus empilé à l'intérieur), pour
-     que l'ensemble reste toujours dans la largeur de l'écran. ---------- */
+     que l'ensemble reste toujours dans la largeur de l'écran. Hauteur
+     plafonnée + défilement interne : avec beaucoup de tranches d'usage, le
+     bouton "Ajouter une tranche" ne doit jamais se retrouver hors écran,
+     il remonte dans la zone défilante plutôt que de disparaître en bas.
+     ---------- */
   #bew-usage-panel{
     width:300px;flex-shrink:0;align-self:stretch;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
-    display:none;flex-direction:column;overflow:hidden;
+    display:none;flex-direction:column;
+    max-height:calc(100vh - 110px);overflow-y:auto;overflow-x:hidden;
   }
   #bldg-panel.has-selection #bew-usage-panel{display:flex;}
   #bldg-panel.has-selection #bldg-edit-window{display:flex;}
@@ -227,7 +233,6 @@
   #bew-col-left{flex:1 1 auto;min-width:0;}
   #bew-col-right{
     width:100%;flex-shrink:0;min-width:0;
-    overflow-y:auto;overflow-x:hidden;
   }
   #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:13px;}
   #bldg-edit-window .field label svg{width:14px;height:14px;color:var(--muted);}
@@ -298,6 +303,13 @@
   }
   #bottom-left-menu .mini-fab:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px);}
   #bottom-left-menu .mini-fab svg{width:17px;height:17px;stroke-width:2;}
+  /* #bottom-left-menu .mini-fab (sélecteur avec ID) l'emporte en spécificité
+     sur ".admin-only"/"button.admin-only" définis plus haut : sans ces deux
+     règles ciblant explicitement ".mini-fab.admin-only", les boutons admin
+     (Enregistrer depart.json, Circulation & options) resteraient visibles
+     même hors mode admin. */
+  #bottom-left-menu .mini-fab.admin-only{display:none;}
+  body.is-admin #bottom-left-menu .mini-fab.admin-only{display:flex;}
   #btn-help{ font-size:16px; }
 
   /* ---------- About modal ---------- */
@@ -432,7 +444,7 @@
      avancée — bâtiments/arbres/circulation/sauvegarde — plutôt qu'une colonne
      fixe permanente) ---------- */
   #admin-panel{
-    position:absolute;bottom:78px;left:16px;z-index:6;width:240px;overflow:visible;
+    position:absolute;top:186px;right:16px;z-index:8;width:240px;overflow:visible;
     background:var(--ink-2);border:1px solid #23303b;border-radius:8px;
     padding:14px 16px;box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;
