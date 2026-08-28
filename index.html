@@ -553,6 +553,7 @@
   }
   .mini-btn:hover{color:var(--paper);border-color:var(--blue);}
   .mini-btn.danger:hover{border-color:var(--com);color:var(--com);}
+  .mini-btn.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
 
   .small-action{
     flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;
@@ -2124,6 +2125,18 @@ function groundPointFromEvent(ev){
     _roofPlane.constant = -volumeDrawRoofY;
     const hit = raycaster.ray.intersectPlane(_roofPlane, _roofPlaneHit);
     return hit ? {x:hit.x, y:hit.y, z:hit.z} : null;
+  }
+  // Édition du contour d'un décroché déjà posé (sommets déplaçables) : même
+  // logique, on vise le plan horizontal au niveau du plancher de CETTE
+  // tranche plutôt que le sol.
+  if(editingBuildingId!==null && editingBandIndex!==null){
+    const b = buildings.find(x=>x.id===editingBuildingId);
+    const band = b ? editTargetBand(b) : null;
+    if(b && band){
+      _roofPlane.constant = -floorOffsetY(b, band.from);
+      const hit = raycaster.ray.intersectPlane(_roofPlane, _roofPlaneHit);
+      if(hit) return {x:hit.x, y:hit.y, z:hit.z};
+    }
   }
   const hit = raycaster.intersectObject(ground)[0];
   return hit ? hit.point : null;
@@ -3952,7 +3965,13 @@ function rebuildMesh(b){
   // "barrières de chantier" le long du contour du polygone d'implantation,
   // affichée même si la grille est désactivée.
   if(editing){
-    b.group.add(makeHazardStripeOutline(b.points, 0.5));
+    // La bande zébrée de chantier suit la cible RÉELLEMENT en cours d'édition
+    // (le socle, ou le contour propre d'une tranche/décroché) — à sa propre
+    // hauteur, pas toujours au sol.
+    const targetBand = (editingBandIndex!==null) ? b.bands[editingBandIndex] : null;
+    const targetPts = targetBand ? footprintForBand(b, targetBand) : b.points;
+    const baseY = targetBand ? floorOffsetY(b, targetBand.from) : 0;
+    b.group.add(makeHazardStripeOutline(targetPts, 0.5, baseY));
   }
   updateLegendTotals();
 }
@@ -4225,7 +4244,7 @@ function makeHazardStripeTexture(){
   return tex;
 }
 let _hazardTexture = null;
-function makeHazardStripeOutline(points, height=0.5){
+function makeHazardStripeOutline(points, height=0.5, baseY=0){
   if(!_hazardTexture) _hazardTexture = makeHazardStripeTexture();
   const group = new THREE.Group();
   const n = points.length;
@@ -4238,7 +4257,7 @@ function makeHazardStripeOutline(points, height=0.5){
     tex.repeat.set(Math.max(1, Math.round(len/1.2)), 1);
     const mat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.DoubleSide, depthWrite:false });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((a.x+b.x)/2, height/2+0.05, (a.z+b.z)/2);
+    mesh.position.set((a.x+b.x)/2, baseY+height/2+0.05, (a.z+b.z)/2);
     const angle = Math.atan2(dz,dx);
     mesh.rotation.y = -angle;
     mesh.renderOrder = 5;
@@ -4674,6 +4693,42 @@ window.addEventListener('pointerup', (ev)=>{
    temps exact du glissement d'un sommet).
    ============================================================ */
 let editingBuildingId = null;
+// Quand on édite le contour d'un décroché (une tranche avec son propre
+// polygone) plutôt que le socle : index de cette tranche dans b.bands, sinon
+// null (= on édite le socle, b.points, comme avant). Un seul et même système
+// de poignées/gizmo sert aux deux cas — seule la "cible" change.
+let editingBandIndex = null;
+function editTargetBand(b){
+  return editingBandIndex!==null ? b.bands[editingBandIndex] : null;
+}
+// Tableau de points RÉELLEMENT édité (référence directe, pour pouvoir muter
+// b.points[idx] = ... ou band.points[idx] = ... normalement).
+function editTargetPoints(b){
+  const band = editTargetBand(b);
+  if(!band) return b.points;
+  if(!band.points || band.points.length<3) band.points = b.points.map(p=>({x:p.x, z:p.z}));
+  return band.points;
+}
+function setEditTargetPoints(b, pts){
+  const band = editTargetBand(b);
+  if(band) band.points = pts; else b.points = pts;
+}
+// Hauteur (Y) à laquelle flottent les poignées de CETTE cible : au sol pour
+// le socle, au niveau du "plancher" de la tranche pour un décroché.
+function editTargetHandleY(b){
+  const band = editTargetBand(b);
+  return (band ? floorOffsetY(b, band.from) : 0) + 0.3;
+}
+// Contour de référence pour la règle des 30% de débord : la tranche juste en
+// dessous de celle éditée (ou le socle si c'est la toute première). Vaut
+// `null` quand on édite le socle lui-même (pas de règle de débord, seule la
+// contrainte de zone d'implantation s'applique alors, comme avant).
+function editTargetBelowFootprint(b){
+  if(editingBandIndex===null) return null;
+  const idx = editingBandIndex;
+  const below = idx>0 ? b.bands[idx-1] : null;
+  return below ? footprintForBand(b, below) : b.points;
+}
 let bldgVertexGroup = new THREE.Group(); worldRoot.add(bldgVertexGroup);
 let bldgVertexHandles = []; // [{mesh, index}]
 let bldgSelectionRingGroup = new THREE.Group(); worldRoot.add(bldgSelectionRingGroup);
@@ -4706,7 +4761,7 @@ document.getElementById('edit-banner-cancel').addEventListener('click', ()=>{
   stopEditBuildingShape();
   flashStatus('Modifications annulées');
 });
-function startEditBuildingShape(b){
+function startEditBuildingShape(b, bandIndex=null){
   if(editingBuildingId && editingBuildingId!==b.id) stopEditBuildingShape();
   if(drawing) cancelDraw();
   if(treePlacing) stopTreeTool();
@@ -4714,6 +4769,7 @@ function startEditBuildingShape(b){
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   editingBuildingId = b.id;
+  editingBandIndex = bandIndex;
   bldgEditSnapshot = { id:b.id, points: b.points.map(p=>({x:p.x,z:p.z})), floors:b.floors, bands: JSON.parse(JSON.stringify(b.bands||[])) };
   bldgSelected.clear();
   rebuildBldgVertexHandles(b);
@@ -4723,11 +4779,14 @@ function startEditBuildingShape(b){
   setVertexSelectMode('point');
   refreshVertexSelectBar();
   refreshEditBanner();
-  flashStatus("Cliquez les sommets pour les sélectionner (plusieurs possibles) · glissez pour déplacer · reclic sur Modifier pour terminer");
+  flashStatus(bandIndex===null
+    ? "Cliquez les sommets pour les sélectionner (plusieurs possibles) · glissez pour déplacer · reclic sur Modifier pour terminer"
+    : "Cliquez les sommets du décroché pour les sélectionner · glissez pour déplacer · reclic sur le bouton pour terminer");
 }
 function stopEditBuildingShape(){
   const id = editingBuildingId;
   editingBuildingId = null;
+  editingBandIndex = null;
   bldgEditSnapshot = null;
   unregisterScreenSizedMarkersOf(bldgVertexGroup);
   bldgVertexGroup.clear();
@@ -4755,7 +4814,9 @@ const BLDG_HANDLE_RADIUS = 0.55;
 function rebuildBldgVertexHandles(b){
   unregisterScreenSizedMarkersOf(bldgVertexGroup);
   bldgVertexGroup.clear();
-  bldgVertexHandles = b.points.map((p,i)=>{
+  const pts = editTargetPoints(b);
+  const handleY = editTargetHandleY(b);
+  bldgVertexHandles = pts.map((p,i)=>{
     const holder = new THREE.Group();
     const rim = new THREE.Mesh(
       new THREE.SphereGeometry(1.22, 16, 16),
@@ -4770,11 +4831,10 @@ function rebuildBldgVertexHandles(b){
     );
     mesh.renderOrder = 61;
     holder.add(mesh);
-    // Placées au niveau du toit (comme les autres boules oranges, qui
-    // flottent au-dessus de la maquette) plutôt qu'au sol, où elles se
-    // retrouvaient enterrées dans le volume du bâtiment dès qu'il a de la
-    // hauteur.
-    holder.position.set(p.x, 0.3, p.z);
+    // Placées au niveau du toit de LEUR cible (socle ou décroché) — comme les
+    // autres boules oranges, qui flottent au-dessus de la maquette plutôt que
+    // de s'enterrer dans le volume du bâtiment.
+    holder.position.set(p.x, handleY, p.z);
     bldgVertexGroup.add(holder);
     registerScreenSizedMarker(holder);
     return { mesh, holder, index:i };
@@ -4794,11 +4854,13 @@ function rebuildBldgSelectionVisuals(){
   bldgSelectionRingGroup.clear();
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
+  const pts = editTargetPoints(b);
+  const handleY = editTargetHandleY(b);
   bldgSelected.forEach(idx=>{
-    const p = b.points[idx];
+    const p = pts[idx];
     if(!p) return;
     const ring = makeCircleDecal(1.5, NEON_BLUE_CSS, 'ring', 0.9);
-    ring.position.set(p.x, 0.1, p.z);
+    ring.position.set(p.x, handleY-0.2, p.z);
     bldgSelectionRingGroup.add(ring);
   });
   refreshBldgHandleColors();
@@ -4857,17 +4919,20 @@ function remapSelectionByProximity(coords, points, epsilon=0.75){
 function gizmoCentroid(){
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b || !bldgSelected.size) return null;
+  const pts = editTargetPoints(b);
   let x=0,z=0,n=0;
-  bldgSelected.forEach(idx=>{ const p=b.points[idx]; if(p){ x+=p.x; z+=p.z; n++; } });
+  bldgSelected.forEach(idx=>{ const p=pts[idx]; if(p){ x+=p.x; z+=p.z; n++; } });
   return n ? {x:x/n, z:z/n} : null;
 }
 function updateGizmoForSelection(){
   const c = gizmoCentroid();
   if(!c || bldgVertexDrag){ gizmoGroup.visible = false; return; }
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  const handleY = b ? editTargetHandleY(b) : 0.3;
   gizmoGroup.visible = true;
-  gizmoGroup.position.set(c.x, 0, c.z);
-  // Au sol, devant le modèle 3D — même logique que les boules oranges des
-  // sommets (depthTest désactivé + renderOrder élevé, voir buildGizmo).
+  gizmoGroup.position.set(c.x, handleY-0.3, c.z);
+  // Au sol/plancher de la cible, devant le modèle 3D — même logique que les
+  // boules oranges des sommets (depthTest désactivé + renderOrder élevé).
   gizmoMove.position.set(0,0.12,0);
   gizmoGroup.userData.moveCore.position.set(0,0.3,0);
   gizmoScale.position.set(GIZMO_SCALE_OFFSET,0.3,0);
@@ -4912,10 +4977,11 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   // 1) le gizmo (déplacement / échelle) est prioritaire s'il est visible
   const gizmoHit = gizmoHitTest(ev);
   if(gizmoHit){
+    const pts = editTargetPoints(b);
     const startGround = groundPointFromEvent(ev);
     const centroid = gizmoCentroid();
     const startPoints = new Map();
-    bldgSelected.forEach(idx=>{ if(b.points[idx]) startPoints.set(idx, {x:b.points[idx].x, z:b.points[idx].z}); });
+    bldgSelected.forEach(idx=>{ if(pts[idx]) startPoints.set(idx, {x:pts[idx].x, z:pts[idx].z}); });
     gizmoDrag = {
       type: gizmoHit, startGround, centroid, startPoints,
       startDist: startGround && centroid ? Math.hypot(startGround.x-centroid.x, startGround.z-centroid.z) : 1
@@ -4944,13 +5010,19 @@ window.addEventListener('pointermove', (ev)=>{
     const b = buildings.find(x=>x.id===editingBuildingId);
     const pt = groundPointFromEvent(ev);
     if(b && pt){
+      const pts = editTargetPoints(b);
+      const handleY = editTargetHandleY(b);
+      const editingBand = editingBandIndex!==null;
       if(gizmoDrag.type==='move'){
         const dx = pt.x-gizmoDrag.startGround.x, dz = pt.z-gizmoDrag.startGround.z;
         gizmoDrag.startPoints.forEach((startP, idx)=>{
           let target = { x:startP.x+dx, z:startP.z+dz };
-          if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
-          b.points[idx] = target;
-          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
+          // Un décroché ne se contraint pas à la zone d'implantation au sol
+          // (il est en l'air) — sa seule limite est la règle des 30% de
+          // débord, appliquée une fois au relâchement, pas pendant le glisser.
+          if(!editingBand && buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
+          pts[idx] = target;
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, handleY, target.z);
         });
       } else if(gizmoDrag.type==='scale'){
         const c = gizmoDrag.centroid;
@@ -4959,9 +5031,9 @@ window.addEventListener('pointermove', (ev)=>{
         factor = Math.max(0.15, Math.min(6, factor));
         gizmoDrag.startPoints.forEach((startP, idx)=>{
           let target = { x: c.x + (startP.x-c.x)*factor, z: c.z + (startP.z-c.z)*factor };
-          if(buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
-          b.points[idx] = target;
-          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
+          if(!editingBand && buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
+          pts[idx] = target;
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, handleY, target.z);
         });
       }
       rebuildMesh(b);
@@ -4978,14 +5050,24 @@ window.addEventListener('pointermove', (ev)=>{
     const b = buildings.find(x=>x.id===editingBuildingId);
     if(!b) return;
     const idx = bldgVertexDrag.index;
-    // Aimantation légère sur un sommet du polygone si on approche, sinon simple
-    // clamp dans l'emprise — même logique que snapPointToZone mais SANS
-    // insertion de sommets intermédiaires : le contour garde le même nombre de
-    // points pendant tout le glissement, d'où la stabilité.
-    const vertex = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
-    const target = vertex ? vertex : (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
-    b.points[idx] = { x: target.x, z: target.z };
-    bldgVertexHandles[idx].holder.position.set(target.x, 0.3, target.z);
+    const pts = editTargetPoints(b);
+    const handleY = editTargetHandleY(b);
+    let target;
+    if(editingBandIndex!==null){
+      // Décroché : pas d'accrochage/clamp sur la zone d'implantation au sol
+      // (aucun sens en l'air) — le point suit librement la souris ; la règle
+      // des 30% de débord est appliquée une seule fois, au relâchement.
+      target = { x: pt.x, z: pt.z };
+    } else {
+      // Aimantation légère sur un sommet du polygone si on approche, sinon
+      // simple clamp dans l'emprise — même logique que snapPointToZone mais
+      // SANS insertion de sommets intermédiaires : le contour garde le même
+      // nombre de points pendant tout le glissement, d'où la stabilité.
+      const vertex = buildZone.length>=3 ? nearestZoneVertex(pt, buildZone, VERTEX_SNAP_RADIUS) : null;
+      target = vertex ? vertex : (buildZone.length>=3 ? clampPointToPolygon(pt, buildZone) : pt);
+    }
+    pts[idx] = { x: target.x, z: target.z };
+    bldgVertexHandles[idx].holder.position.set(target.x, handleY, target.z);
     rebuildMesh(b);
     return;
   }
@@ -5007,15 +5089,30 @@ window.addEventListener('pointerup', (ev)=>{
     controls.enabled = true;
     renderer.domElement.style.cursor = '';
     if(b){
-      const selectedCoords = Array.from(bldgSelected).map(i=>b.points[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
-      const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
-      const cleaned = (cleanPolygonPoints(repaired) || repaired);
-      b.points = simplifyClosedPolygon(cleaned) || cleaned;
+      const pts = editTargetPoints(b);
+      const selectedCoords = Array.from(bldgSelected).map(i=>pts[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
+      let finalPts;
+      if(editingBandIndex!==null){
+        // Décroché : pas de hug contre buildZone (aucun sens en l'air) —
+        // juste un nettoyage, puis la règle des 30% de débord par rapport à
+        // la tranche du dessous, appliquée une seule fois ici.
+        const cleaned = (cleanPolygonPoints(pts) || pts);
+        finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+        const belowFootprint = editTargetBelowFootprint(b);
+        const before = polygonOutsideAreaRatio(finalPts, belowFootprint);
+        finalPts = shrinkPolygonToFitOverlap(finalPts, belowFootprint, 0.30);
+        if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum');
+      } else {
+        const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
+        const cleaned = (cleanPolygonPoints(repaired) || repaired);
+        finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+      }
+      setEditTargetPoints(b, finalPts);
       // La réparation peut insérer/fusionner des sommets : on retrouve les
       // sommets sélectionnés par proximité de coordonnées pour ne PAS perdre
       // la sélection — l'utilisateur peut ainsi enchaîner plusieurs
       // transformations (déplacer puis échelle, etc.) sans re-sélectionner.
-      bldgSelected = remapSelectionByProximity(selectedCoords, b.points);
+      bldgSelected = remapSelectionByProximity(selectedCoords, editTargetPoints(b));
       rebuildMesh(b);
       rebuildBldgVertexHandles(b);
       rebuildBldgSelectionVisuals();
@@ -5043,14 +5140,26 @@ window.addEventListener('pointerup', (ev)=>{
     // que ce hug peut laisser le long du bord — sans jamais réordonner le
     // contour. C'est cette étape, et elle seule, qui peut changer le nombre
     // de sommets ; les poignées ne sont donc recréées qu'ici, pas à chaque frame.
-    const selectedCoords = Array.from(bldgSelected).map(i=>b.points[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
-    if(!selectedCoords.some(c=> c.x===b.points[clickedIndex]?.x && c.z===b.points[clickedIndex]?.z)){
-      const p = b.points[clickedIndex]; if(p) selectedCoords.push({x:p.x,z:p.z});
+    const pts = editTargetPoints(b);
+    const selectedCoords = Array.from(bldgSelected).map(i=>pts[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
+    if(!selectedCoords.some(c=> c.x===pts[clickedIndex]?.x && c.z===pts[clickedIndex]?.z)){
+      const p = pts[clickedIndex]; if(p) selectedCoords.push({x:p.x,z:p.z});
     }
-    const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(b.points, buildZone) : b.points;
-    const cleaned = (cleanPolygonPoints(repaired) || repaired);
-    b.points = simplifyClosedPolygon(cleaned) || cleaned;
-    bldgSelected = remapSelectionByProximity(selectedCoords, b.points);
+    let finalPts;
+    if(editingBandIndex!==null){
+      const cleaned = (cleanPolygonPoints(pts) || pts);
+      finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+      const belowFootprint = editTargetBelowFootprint(b);
+      const before = polygonOutsideAreaRatio(finalPts, belowFootprint);
+      finalPts = shrinkPolygonToFitOverlap(finalPts, belowFootprint, 0.30);
+      if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum');
+    } else {
+      const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
+      const cleaned = (cleanPolygonPoints(repaired) || repaired);
+      finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+    }
+    setEditTargetPoints(b, finalPts);
+    bldgSelected = remapSelectionByProximity(selectedCoords, editTargetPoints(b));
     rebuildMesh(b);
     rebuildBldgVertexHandles(b);
     rebuildBldgSelectionVisuals();
@@ -5224,12 +5333,13 @@ function renderBldgEditWindow(b){
   actions.className='btn-row';
   actions.style.marginTop = '18px';
   const editBtn = document.createElement('button');
-  editBtn.className='action-btn edit' + (editingBuildingId===b.id ? ' active' : '');
-  editBtn.innerHTML = editingBuildingId===b.id
+  const editingSocle = editingBuildingId===b.id && editingBandIndex===null;
+  editBtn.className='action-btn edit' + (editingSocle ? ' active' : '');
+  editBtn.innerHTML = editingSocle
     ? '<i data-lucide="check"></i> Terminer'
     : '<i data-lucide="move-3d"></i> Modifier la forme au sol';
   editBtn.addEventListener('click', ()=>{
-    editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b);
+    editingSocle ? stopEditBuildingShape() : startEditBuildingShape(b, null);
     renderBldgEditWindow(b);
   });
   const addVolumeBtn = document.createElement('button');
@@ -5329,11 +5439,32 @@ function renderBldgEditWindow(b){
     sel.style.background = '#'+USAGE_COLORS[band.usage].toString(16).padStart(6,'0');
     sel.style.color = '#0b1116';
     sel.style.fontWeight = '700';
+    const isSetback = !!(band.points && band.points.length>=3);
+    let shapeBtn = null;
+    if(isSetback){
+      // Uniquement sur les tranches avec un contour propre (un décroché) —
+      // les tranches qui partagent simplement le contour du socle n'ont rien
+      // à éditer ici (voir "Modifier la forme au sol" plus haut pour ça).
+      shapeBtn = document.createElement('button');
+      const isEditingThis = editingBuildingId===b.id && editingBandIndex===idx;
+      shapeBtn.className = 'mini-btn' + (isEditingThis ? ' active' : '');
+      shapeBtn.innerHTML = isEditingThis
+        ? '<i data-lucide="check" style="width:12px;height:12px;"></i>'
+        : '<i data-lucide="move-3d" style="width:12px;height:12px;"></i>';
+      shapeBtn.title = isEditingThis ? 'Terminer la modification de ce décroché' : 'Modifier la forme de ce décroché';
+      shapeBtn.addEventListener('click', ()=>{
+        if(isEditingThis) stopEditBuildingShape();
+        else startEditBuildingShape(b, idx);
+        renderBldgEditWindow(b);
+      });
+    }
     const del = document.createElement('button');
     del.className='mini-btn danger'; del.innerHTML='<i data-lucide="x" style="width:11px;height:11px;"></i>';
     del.title = 'Fusionner ce bloc avec celui du dessus';
     del.disabled = b.bands.length<=1;
     del.addEventListener('click', ()=>{
+      if(editingBuildingId===b.id && editingBandIndex===idx) stopEditBuildingShape();
+      else if(editingBuildingId===b.id && editingBandIndex!==null && editingBandIndex>idx) editingBandIndex--;
       b.bands.splice(idx,1);
       normalizeBands(b);
       rebuildMesh(b); renderList(); renderBldgEditWindow(b);
@@ -5346,7 +5477,9 @@ function renderBldgEditWindow(b){
     }
     toInp.addEventListener('change', commit);
     sel.addEventListener('change', commit);
-    row.append(fromLabel, x, toInp, sel, del);
+    row.append(fromLabel, x, toInp, sel);
+    if(shapeBtn) row.append(shapeBtn);
+    row.append(del);
     colRight.appendChild(row);
   });
 
