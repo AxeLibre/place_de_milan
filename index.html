@@ -201,29 +201,32 @@
      AUCUN défilement (ni visible ni caché) : c'est elle qui remonte, jamais
      le reste de l'interface. */
   #bldg-edit-window{
-    position:fixed;width:390px;flex-shrink:0;
+    position:fixed;width:370px;flex-shrink:0;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
-    padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
+    padding:14px 16px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;z-index:16;
     transition:top .12s ease, left .12s ease;
   }
   #bldg-panel.has-selection #bldg-edit-window{display:flex;}
-  #bldg-edit-window .bew-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-shrink:0;}
+  #bldg-edit-window .bew-head{display:flex;align-items:center;gap:10px;margin-bottom:2px;flex-shrink:0;}
   #bldg-edit-window .bew-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
   #bldg-edit-window .bew-name{
     flex:1;background:none;border:none;color:var(--paper);font-family:'Space Grotesk',sans-serif;
-    font-size:17px;font-weight:700;padding:3px 0;
+    font-size:16px;font-weight:700;padding:2px 0;
   }
   #bldg-edit-window .bew-close{background:none;border:none;color:var(--muted);cursor:pointer;
-    width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:5px;flex-shrink:0;}
+    width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:5px;flex-shrink:0;}
   #bldg-edit-window .bew-close:hover{color:var(--paper);background:#0b1116;}
-  #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin:3px 0 14px;flex-shrink:0;}
+  #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin:2px 0 8px;flex-shrink:0;}
   /* ---------- Corps : une seule colonne verticale, dans l'ordre logique de
      lecture — stats, étages, graphique interactif, éditeur de la tranche
-     sélectionnée, récap des usages, actions. ---------- */
-  #bew-body{display:flex;flex-direction:column;gap:14px;}
-  #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:13px;}
-  #bldg-edit-window .field label svg{width:14px;height:14px;color:var(--muted);}
+     sélectionnée, récap des usages, actions. Espacements resserrés partout
+     (gaps, paddings, tailles de boutons) pour que tout tienne à l'écran SANS
+     défilement, même sur un écran bas — c'est cette fiche qui doit s'adapter
+     à l'écran, jamais l'inverse. ---------- */
+  #bew-body{display:flex;flex-direction:column;gap:8px;}
+  #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:12.5px;}
+  #bldg-edit-window .field label svg{width:13px;height:13px;color:var(--muted);}
   .stepper{display:flex;align-items:stretch;gap:0;margin-top:4px;}
   .stepper button{
     background:#101820;border:1px solid #23303b;color:var(--paper);width:30px;
@@ -245,9 +248,9 @@
      en bas, dernier étage en haut. Hauteur fixe, largeur fixe : jamais de
      défilement ni de débordement quel que soit le nombre d'étages. ---------- */
   #bew-floor-stack{
-    display:flex;flex-direction:column-reverse;gap:2px;margin:10px auto 4px;
+    display:flex;flex-direction:column-reverse;gap:2px;margin:4px auto 2px;
     border:1px solid #2a3946;border-radius:6px;overflow:hidden;padding:3px;
-    background:rgba(255,255,255,.02);height:280px;width:100%;box-sizing:border-box;
+    background:rgba(255,255,255,.02);height:170px;width:100%;box-sizing:border-box;
   }
   .floor-cell{
     display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:6px;
@@ -260,12 +263,12 @@
   .floor-cell.selected{border-color:#0b1116;box-shadow:inset 0 0 0 1px rgba(255,255,255,.6);}
   .floor-cell .fc-label{opacity:.85;overflow:hidden;text-overflow:ellipsis;}
   .floor-cell .fc-area{opacity:.7;font-weight:500;overflow:hidden;text-overflow:ellipsis;}
-  .bew-hint{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);text-align:center;margin:0 0 8px;}
+  .bew-hint{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--muted);text-align:center;margin:0;}
   /* ---------- Bandeau compact de stats (emprise/surface/hauteur) ---------- */
   .bew-stats{
-    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
-    display:flex;flex-direction:column;gap:4px;
-    padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);
+    display:flex;flex-direction:column;gap:3px;
+    padding:6px 9px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;
   }
   .bew-stats > span{display:flex;justify-content:space-between;gap:8px;}
   .bew-stats b{color:var(--fg);}
@@ -273,28 +276,28 @@
      apparaît juste sous le graphique, ne montre QUE la tranche cliquée
      (plus de longue liste de toutes les tranches à la fois). ---------- */
   .bew-band-editor{
-    border:1px solid #2a3946;border-radius:8px;padding:12px;
-    background:rgba(255,255,255,.03);display:flex;flex-direction:column;gap:10px;
+    border:1px solid #2a3946;border-radius:8px;padding:9px;
+    background:rgba(255,255,255,.03);display:flex;flex-direction:column;gap:7px;
   }
   .bew-band-editor-head{
     display:flex;align-items:center;justify-content:space-between;gap:8px;
-    font-family:'Space Grotesk',sans-serif;font-size:12.5px;font-weight:700;color:var(--paper);
+    font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:700;color:var(--paper);
   }
-  .bew-band-editor-head .range{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--muted);font-size:11px;}
-  .bew-band-editor-row{display:flex;gap:8px;align-items:center;}
+  .bew-band-editor-head .range{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--muted);font-size:10.5px;}
+  .bew-band-editor-row{display:flex;gap:6px;align-items:center;}
   .bew-band-editor-row select{
     background:#141c24;border:1px solid #23303b;color:var(--paper);border-radius:4px;
-    padding:8px 6px;font-size:12.5px;flex:1;min-width:0;font-weight:600;
+    padding:6px 5px;font-size:12px;flex:1;min-width:0;font-weight:600;
   }
-  .bew-band-editor-row input[type=number]{width:52px;flex-shrink:0;padding:8px 3px;font-size:12.5px;text-align:center;}
-  .bew-band-editor-row .x{color:var(--muted);flex-shrink:0;font-size:12px;}
-  .bew-band-editor-actions{display:flex;gap:6px;}
+  .bew-band-editor-row input[type=number]{width:48px;flex-shrink:0;padding:6px 3px;font-size:12px;text-align:center;}
+  .bew-band-editor-row .x{color:var(--muted);flex-shrink:0;font-size:11px;}
+  .bew-band-editor-actions{display:flex;gap:5px;}
   .bew-band-editor-actions button{
-    flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
+    flex:1;display:flex;align-items:center;justify-content:center;gap:4px;
     background:#101820;border:1px solid #23303b;color:var(--paper);border-radius:5px;
-    padding:8px 6px;font-size:11.5px;cursor:pointer;font-weight:600;
+    padding:6px 4px;font-size:10.5px;cursor:pointer;font-weight:600;
   }
-  .bew-band-editor-actions button svg{width:12px;height:12px;}
+  .bew-band-editor-actions button svg{width:11px;height:11px;}
   .bew-band-editor-actions button:hover{border-color:var(--accent);color:var(--accent);}
   .bew-band-editor-actions button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
   .bew-band-editor-actions button.danger:hover{border-color:var(--com);color:var(--com);}
@@ -552,10 +555,10 @@
 
   /* ---------- Fenêtre bâtiment agrandie : espacements généreux, gros
      contrôles faciles à cliquer — pensée pour un public non technophile. ---------- */
-  #bldg-edit-window .stepper{margin-top:6px;}
-  #bldg-edit-window .stepper button{width:40px;height:40px;}
-  #bldg-edit-window .stepper button svg{width:16px;height:16px;}
-  #bldg-edit-window .stepper input{height:40px;font-size:17px;font-weight:700;width:60px;}
+  #bldg-edit-window .stepper{margin-top:3px;}
+  #bldg-edit-window .stepper button{width:30px;height:30px;}
+  #bldg-edit-window .stepper button svg{width:13px;height:13px;}
+  #bldg-edit-window .stepper input{height:30px;font-size:14px;font-weight:700;width:50px;}
 
   .band-row{display:flex;gap:6px;align-items:center;margin:8px 0;font-size:12.5px;}
   .band-row select{
@@ -602,14 +605,14 @@
   /* ---------- Boutons d'action principaux (Modifier la forme / Supprimer) :
      grands, colorés, sans ambiguïté possible — jaune = édition, rouge =
      suppression, plutôt que la même teinte neutre pour tout. ---------- */
-  .btn-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .btn-row{display:flex;gap:6px;margin-top:6px;flex-wrap:nowrap;}
   .action-btn{
-    flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;gap:7px;
-    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;
-    padding:12px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;
+    flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;
+    font-family:'Space Grotesk',sans-serif;font-size:10.5px;font-weight:700;line-height:1.15;text-align:center;
+    padding:8px 4px;border-radius:6px;cursor:pointer;border:1px solid transparent;
     transition:all .12s ease;
   }
-  .action-btn svg{width:16px;height:16px;flex-shrink:0;}
+  .action-btn svg{width:13px;height:13px;flex-shrink:0;}
   .action-btn.edit{
     background:#e8b93f;color:#211a05;box-shadow:0 4px 14px rgba(232,185,63,.25);
   }
@@ -5445,7 +5448,8 @@ function renderBldgEditWindow(b){
   editBtn.className='action-btn edit' + (editingSocle ? ' active' : '');
   editBtn.innerHTML = editingSocle
     ? '<i data-lucide="check"></i> Terminer'
-    : '<i data-lucide="move-3d"></i> Modifier la forme au sol';
+    : '<i data-lucide="move-3d"></i> Forme au sol';
+  editBtn.title = 'Modifier la forme au sol (socle)';
   editBtn.addEventListener('click', ()=>{
     editingSocle ? stopEditBuildingShape() : startEditBuildingShape(b, null);
     renderBldgEditWindow(b);
@@ -5453,9 +5457,9 @@ function renderBldgEditWindow(b){
   const addVolumeBtn = document.createElement('button');
   addVolumeBtn.className='action-btn' + (volumeDrawTargetId===b.id ? ' active' : '');
   addVolumeBtn.innerHTML = volumeDrawTargetId===b.id
-    ? '<i data-lucide="x"></i> Annuler le tracé'
-    : '<i data-lucide="building"></i> Ajouter un volume supérieur';
-  addVolumeBtn.title = "Trace un nouveau volume sur le toit de ce bâtiment (décroché) — jusqu'à 30% de débord par rapport au socle";
+    ? '<i data-lucide="x"></i> Annuler'
+    : '<i data-lucide="building"></i> + Volume';
+  addVolumeBtn.title = "Ajouter un volume supérieur : trace un nouveau volume sur le toit de ce bâtiment (décroché) — jusqu'à 30% de débord par rapport au socle";
   addVolumeBtn.addEventListener('click', ()=>{
     if(volumeDrawTargetId===b.id){ cancelDraw(); }
     else { startVolumeDraw(b); }
