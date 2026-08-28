@@ -483,7 +483,28 @@
     font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--paper);
   }
   #legend-total-row b{font-size:13px;color:var(--accent);}
-  .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+  .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;pointer-events:none;}
+
+  /* ---------- Pastilles de couleur cliquables dans la légende : personnalisation
+     accessible à tous les utilisateurs (pas seulement en mode admin), avec un
+     léger halo au survol pour indiquer que c'est interactif. ---------- */
+  .swatch-wrap{
+    position:relative;width:16px;height:16px;border-radius:4px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    transition:box-shadow .15s ease, transform .1s ease;
+  }
+  .swatch-wrap:hover{box-shadow:0 0 0 3px rgba(46,232,255,.22);transform:scale(1.08);}
+  .swatch-wrap .swatch{width:12px;height:12px;}
+  .swatch-input{
+    position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;
+    border:none;padding:0;margin:0;
+  }
+  #legend-color-hint{
+    display:flex;align-items:center;gap:5px;margin-top:10px;padding-top:8px;
+    border-top:1px solid #2a3946;font-family:'IBM Plex Mono',monospace;
+    font-size:9.5px;color:var(--muted);letter-spacing:.01em;opacity:.75;
+  }
+  #legend-color-hint svg{width:11px;height:11px;flex-shrink:0;color:var(--accent);}
 
   /* building cards */
   .bldg-card{
@@ -881,7 +902,7 @@
         <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
         <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
         <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><i data-lucide="map-pin"></i></button>
-        <button id="btn-admin-panel" class="mini-fab admin-only" title="Circulation & options (admin)"><i data-lucide="settings"></i></button>
+        <button id="btn-admin-panel" class="mini-fab" title="Options d'affichage"><i data-lucide="settings"></i></button>
       </div>
     </div>
     <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
@@ -978,19 +999,18 @@
     </div>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
-      <div class="legend-item"><div class="swatch" style="background:var(--res)"></div><span>Résidentiel</span><span class="legend-m2" id="legend-m2-residentiel">0 m²</span></div>
-      <div class="legend-item"><div class="swatch" style="background:var(--bur)"></div><span>Bureaux</span><span class="legend-m2" id="legend-m2-bureaux">0 m²</span></div>
-      <div class="legend-item"><div class="swatch" style="background:var(--com)"></div><span>Commerces</span><span class="legend-m2" id="legend-m2-commerces">0 m²</span></div>
-      <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
-      <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
+      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-residentiel"><span class="swatch" style="background:var(--res)"></span></label><span>Résidentiel</span><span class="legend-m2" id="legend-m2-residentiel">0 m²</span></div>
+      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-bureaux"><span class="swatch" style="background:var(--bur)"></span></label><span>Bureaux</span><span class="legend-m2" id="legend-m2-bureaux">0 m²</span></div>
+      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-commerces"><span class="swatch" style="background:var(--com)"></span></label><span>Commerces</span><span class="legend-m2" id="legend-m2-commerces">0 m²</span></div>
+      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-hotel"><span class="swatch" style="background:var(--hot)"></span></label><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
+      <div class="legend-item"><label class="swatch-wrap" title="Personnaliser la couleur"><input type="color" class="swatch-input" id="swatch-input-services"><span class="swatch" style="background:var(--ser)"></span></label><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
       <div id="legend-total-row"><span>Total opération</span><b id="legend-m2-total">0 m²</b></div>
+      <div id="legend-color-hint"><i data-lucide="palette"></i> Cliquez un pastille pour changer sa couleur</div>
     </div>
-    <div id="admin-panel" class="admin-only">
+    <div id="admin-panel">
       <div class="section-title">Éléments visibles sur la maquette</div>
       <label class="admin-check-row"><input type="checkbox" id="chk-vis-vehicles" checked> Véhicules (bus, trams, voitures, TGV)</label>
       <label class="admin-check-row"><input type="checkbox" id="chk-vis-pedestrians" checked> Piétons</label>
-      <div class="section-title">Couleurs des légendes des nouveaux bâtiments</div>
-      <div id="usage-colors" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px;"></div>
     </div>
     <div id="about-overlay">
       <div id="about-modal">
@@ -4754,7 +4774,24 @@ const bldgPanel = document.getElementById('bldg-panel');
 function updateBldgPanelVisibility(){
   bldgPanel.classList.toggle('show', buildings.length>0);
   bldgPanel.classList.toggle('has-selection', selectedId!==null && buildings.some(b=>b.id===selectedId));
+  syncBldgPanelMaxHeight();
 }
+
+// La hauteur disponible pour la fiche bâtiment / le panneau des usages dépend
+// de leur position réelle à l'écran (variable selon la hauteur du menu
+// outils au-dessus) : un simple "calc(100vh - Xpx)" fixe en CSS ne suffit
+// pas, il sous-estimait la marge réellement prise au-dessus du panneau et
+// laissait le bouton "Ajouter une tranche" hors écran. On mesure donc la
+// position réelle (getBoundingClientRect) et on ajuste max-height en
+// conséquence, avec une petite marge de sécurité en bas.
+function syncBldgPanelMaxHeight(){
+  if(!bldgPanel.classList.contains('has-selection')) return;
+  const top = bldgPanel.getBoundingClientRect().top;
+  const maxH = Math.max(200, window.innerHeight - top - 16);
+  bldgEditWindow.style.maxHeight = maxH + 'px';
+  bewUsagePanel.style.maxHeight = maxH + 'px';
+}
+window.addEventListener('resize', syncBldgPanelMaxHeight);
 
 function renderList(){
   emptyNote.style.display = buildings.length ? 'none' : 'block';
@@ -4796,6 +4833,7 @@ function renderList(){
    FICHE DE MODIFICATION D'UN BÂTIMENT (à droite de la liste, dans #bldg-panel)
    ============================================================ */
 const bldgEditWindow = document.getElementById('bldg-edit-window');
+const bewUsagePanel = document.getElementById('bew-usage-panel');
 const bewClose = document.getElementById('bew-close');
 bewClose.addEventListener('click', closeBldgEditWindow);
 function openBldgEditWindow(id){
@@ -4986,6 +5024,7 @@ function renderBldgEditWindow(b){
   colRight.appendChild(addBandBtn);
 
   if(window.lucide) lucide.createIcons();
+  syncBldgPanelMaxHeight();
 }
 function renderRouteListNoop(){ /* nom modifié : rafraîchit juste la pastille de la liste compacte */ renderList(); }
 
@@ -5018,9 +5057,10 @@ btnToggleLegend.addEventListener('click', ()=>{
 });
 
 /* ============================================================
-   PANNEAU ADMIN (circulation / couleurs véhicules) — masqué par défaut,
-   accessible uniquement en mode admin (?admin=1), ouvert via le petit
-   bouton engrenage en bas à gauche.
+   PANNEAU "OPTIONS D'AFFICHAGE" (visibilité véhicules/piétons) — accessible
+   à tous les utilisateurs, ouvert via le petit bouton engrenage sous la
+   boussole. (Ne pas re-gater en admin-only : ce sont des préférences
+   d'affichage personnelles, pas des réglages de gestion du site.)
    ============================================================ */
 const adminPanel = document.getElementById('admin-panel');
 const btnAdminPanel = document.getElementById('btn-admin-panel');
@@ -6359,32 +6399,27 @@ createRoute = function(...args){
 };
 applyAgentTypeVisibility(); // synchronise les voies déjà créées avant ce point (ex. démo piétons)
 
-// ---------------- Couleurs des légendes des nouveaux bâtiments (panneau admin) ----------------
+// ---------------- Couleurs des légendes des usages — personnalisation
+// accessible à TOUS les utilisateurs (pas seulement en mode admin), via les
+// pastilles cliquables directement dans la fenêtre "Légende des usages". ----
+const LEGEND_CSS_VAR_MAP = { residentiel:'--res', bureaux:'--bur', commerces:'--com', hotel:'--hot', services:'--ser' };
 function renderUsageColorControls(){
-  const container = document.getElementById('usage-colors');
-  container.innerHTML = '';
   Object.entries(USAGE_COLORS).forEach(([key,hexNum])=>{
-    const row = document.createElement('div');
-    row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px';
-    const label = document.createElement('span');
-    label.textContent = USAGE_LABELS[key] || key; label.style.flex='1'; label.style.fontSize='12px';
-    const input = document.createElement('input');
-    input.type='color';
+    const input = document.getElementById('swatch-input-'+key);
+    if(!input) return;
     input.value = '#'+hexNum.toString(16).padStart(6,'0');
-    input.style.width='40px'; input.style.height='26px'; input.style.border='1px solid #2a3946';
-    input.style.borderRadius='3px'; input.style.background='none'; input.style.cursor='pointer';
-    input.addEventListener('input', ()=>{
-      const hex = parseInt(input.value.slice(1), 16);
-      USAGE_COLORS[key] = hex;
-      // Répercute sur la légende flottante (variables CSS --res/--bur/…)
-      const cssVarMap = { residentiel:'--res', bureaux:'--bur', commerces:'--com', hotel:'--hot', services:'--ser' };
-      if(cssVarMap[key]) document.documentElement.style.setProperty(cssVarMap[key], input.value);
-      rebuildAll();
-    });
-    row.append(label, input);
-    container.appendChild(row);
   });
 }
+Object.keys(LEGEND_CSS_VAR_MAP).forEach(key=>{
+  const input = document.getElementById('swatch-input-'+key);
+  if(!input) return;
+  input.addEventListener('input', ()=>{
+    const hex = parseInt(input.value.slice(1), 16);
+    USAGE_COLORS[key] = hex;
+    document.documentElement.style.setProperty(LEGEND_CSS_VAR_MAP[key], input.value);
+    rebuildAll();
+  });
+});
 renderUsageColorControls();
 
 
