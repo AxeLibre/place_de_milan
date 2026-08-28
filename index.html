@@ -172,7 +172,6 @@
   #bldg-panel{
     flex-shrink:0;z-index:16;
     display:none;align-items:flex-start;gap:14px;
-    transition:transform .15s ease;
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
@@ -191,7 +190,7 @@
   /* Placeholder "Choisissez un bâtiment…" supprimé : ne plus rien afficher
      tant qu'aucun bâtiment n'est sélectionné, plutôt qu'un cadre vide. */
   #bldg-edit-window{
-    width:360px;flex-shrink:0;align-self:stretch;
+    width:360px;flex-shrink:0;align-self:flex-start;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;
@@ -199,14 +198,20 @@
   /* ---------- Bloc séparé "répartition des usages par étage", collé juste
      à droite de la fiche bâtiment (et non plus empilé à l'intérieur), pour
      que l'ensemble reste toujours dans la largeur de l'écran. AUCUN
-     défilement (ni visible ni caché) : si le contenu dépasse le bas de
-     l'écran, c'est tout #bldg-panel qui remonte (translateY calculé en JS,
-     voir syncBldgPanelMaxHeight), jamais une scrollbar. ---------- */
+     défilement (ni visible ni caché) : si CE bloc précis dépasse le bas de
+     l'écran, lui seul remonte (translateY calculé en JS, voir
+     syncBldgPanelMaxHeight) — la liste des bâtiments et la fiche du
+     bâtiment sélectionné restent immobiles. align-self:flex-start (et non
+     stretch) pour que sa hauteur suive son propre contenu, sans étirer ni
+     être étiré par la fiche bâtiment voisine (qui provoquait un vide sous
+     "Modifier la forme / Supprimer" quand la liste d'usages était plus
+     haute). ---------- */
   #bew-usage-panel{
-    width:300px;flex-shrink:0;align-self:stretch;
+    width:300px;flex-shrink:0;align-self:flex-start;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;
+    transition:transform .15s ease;
   }
   #bldg-panel.has-selection #bew-usage-panel{display:flex;}
   #bldg-panel.has-selection #bldg-edit-window{display:flex;}
@@ -4771,26 +4776,24 @@ function updateBldgPanelVisibility(){
   syncBldgPanelMaxHeight();
 }
 
-// La hauteur du contenu (surtout la liste de tranches d'usage) peut dépasser
-// l'espace disponible sous le panneau. AUCUN défilement autorisé : à la
-// place, on fait remonter tout le bloc #bldg-panel (translateY) pour que son
-// bas reste toujours visible à l'écran, jusqu'à une limite haute (pas
-// question de remonter sous le ruban du haut).
+// La liste de tranches d'usage peut dépasser l'espace disponible sous le
+// panneau. AUCUN défilement autorisé, ET seul CE bloc doit bouger (pas la
+// liste des bâtiments, pas la fiche du bâtiment sélectionné) : on fait
+// remonter uniquement #bew-usage-panel (translateY), jusqu'à une limite
+// haute (jamais sous le ruban du haut).
 function syncBldgPanelMaxHeight(){
   if(!bldgPanel.classList.contains('has-selection')){
-    bldgPanel.style.transform = '';
+    bewUsagePanel.style.transform = '';
     return;
   }
-  bldgPanel.style.transform = ''; // on repart d'une position neutre pour mesurer
-  const rect = bldgPanel.getBoundingClientRect();
-  const contentHeight = Math.max(bldgEditWindow.scrollHeight, bewUsagePanel.scrollHeight);
-  const bottom = rect.top + contentHeight;
+  bewUsagePanel.style.transform = ''; // position neutre pour mesurer
+  const rect = bewUsagePanel.getBoundingClientRect();
   const maxBottom = window.innerHeight - 16;
   const minTop = 84; // ne jamais remonter au-dessus du menu outils / ruban
-  let shift = bottom - maxBottom;
+  let shift = rect.bottom - maxBottom;
   if(shift > 0){
     shift = Math.min(shift, rect.top - minTop);
-    if(shift > 0) bldgPanel.style.transform = `translateY(-${shift}px)`;
+    if(shift > 0) bewUsagePanel.style.transform = `translateY(-${shift}px)`;
   }
 }
 window.addEventListener('resize', syncBldgPanelMaxHeight);
