@@ -189,41 +189,24 @@
   #bldg-panel-list-head svg{width:15px;height:15px;color:var(--accent);}
   /* Placeholder "Choisissez un bâtiment…" supprimé : ne plus rien afficher
      tant qu'aucun bâtiment n'est sélectionné, plutôt qu'un cadre vide. */
+  /* Fiche bâtiment UNIQUE (fusion de l'ancienne fiche + de l'ancien bloc
+     "répartition des usages" séparé) : tout — surfaces, étages, graphique
+     interactif, éditeur de tranche, actions — vit maintenant dans une seule
+     carte, pour une lecture logique de haut en bas plutôt que deux boîtes
+     séparées à synchroniser visuellement.
+     position:fixed — sortie du flux de #bldg-panel : sa position (left/top)
+     est calculée et posée en JS (voir syncBldgPanelMaxHeight), ancrée sur
+     #bldg-panel-list. Ça lui donne accès à TOUTE la hauteur d'écran
+     disponible pour remonter si son contenu est trop grand pour l'écran —
+     AUCUN défilement (ni visible ni caché) : c'est elle qui remonte, jamais
+     le reste de l'interface. */
   #bldg-edit-window{
-    width:360px;flex-shrink:0;align-self:flex-start;
-    background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
-    padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
-    display:none;flex-direction:column;
-  }
-  /* ---------- Bloc séparé "répartition des usages par étage", collé juste
-     à droite de la fiche bâtiment (et non plus empilé à l'intérieur), pour
-     que l'ensemble reste toujours dans la largeur de l'écran. AUCUN
-     défilement (ni visible ni caché) : si CE bloc précis dépasse le bas de
-     l'écran, lui seul remonte (translateY calculé en JS, voir
-     syncBldgPanelMaxHeight) — la liste des bâtiments et la fiche du
-     bâtiment sélectionné restent immobiles. align-self:flex-start (et non
-     stretch) pour que sa hauteur suive son propre contenu, sans étirer ni
-     être étiré par la fiche bâtiment voisine (qui provoquait un vide sous
-     "Modifier la forme / Supprimer" quand la liste d'usages était plus
-     haute). ---------- */
-  /* position:fixed — sorti du flux de #bldg-panel : sa position (left/top)
-     est calculée et posée en JS (voir syncBldgPanelMaxHeight), ancrée sur la
-     fiche bâtiment (#bldg-edit-window) plutôt que sur sa propre position
-     dans le flux de #left-stack. Ça lui donne accès à TOUTE la hauteur
-     d'écran disponible pour remonter (jusqu'à minTop) au lieu d'être limité
-     par la hauteur des éléments qui le précèdent (barre d'outils, listes) —
-     c'est cette limite artificielle qui l'empêchait de assez remonter et
-     cachait le bouton "Ajouter une tranche d'usage" en bas d'écran, et qui
-     le faisait bouger de façon erratique quand le contenu changeait
-     (changement du nombre d'étages). */
-  #bew-usage-panel{
-    position:fixed;width:300px;flex-shrink:0;
+    position:fixed;width:390px;flex-shrink:0;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:none;flex-direction:column;z-index:16;
     transition:top .12s ease, left .12s ease;
   }
-  #bldg-panel.has-selection #bew-usage-panel{display:flex;}
   #bldg-panel.has-selection #bldg-edit-window{display:flex;}
   #bldg-edit-window .bew-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-shrink:0;}
   #bldg-edit-window .bew-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
@@ -235,18 +218,10 @@
     width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:5px;flex-shrink:0;}
   #bldg-edit-window .bew-close:hover{color:var(--paper);background:#0b1116;}
   #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin:3px 0 14px;flex-shrink:0;}
-  /* ---------- Corps à deux colonnes : édition à gauche, répartition des
-     usages par étage (graphique) à droite. Le graphique est une seule barre
-     proportionnelle par tranche (hauteur fixe), donc jamais de défilement
-     nécessaire quel que soit le nombre d'étages. ---------- */
-  /* ---------- Corps empilé verticalement : édition en haut, répartition
-     des usages par étage (graphique en forme d'immeuble, du rez-de-chaussée
-     en bas au dernier étage en haut) en dessous, pleine largeur. ---------- */
-  #bew-body{display:flex;flex-direction:column;gap:16px;}
-  #bew-col-left{flex:1 1 auto;min-width:0;}
-  #bew-col-right{
-    width:100%;flex-shrink:0;min-width:0;
-  }
+  /* ---------- Corps : une seule colonne verticale, dans l'ordre logique de
+     lecture — stats, étages, graphique interactif, éditeur de la tranche
+     sélectionnée, récap des usages, actions. ---------- */
+  #bew-body{display:flex;flex-direction:column;gap:14px;}
   #bldg-edit-window .field label{display:flex;align-items:center;gap:7px;font-size:13px;}
   #bldg-edit-window .field label svg{width:14px;height:14px;color:var(--muted);}
   .stepper{display:flex;align-items:stretch;gap:0;margin-top:4px;}
@@ -270,18 +245,60 @@
      en bas, dernier étage en haut. Hauteur fixe, largeur fixe : jamais de
      défilement ni de débordement quel que soit le nombre d'étages. ---------- */
   #bew-floor-stack{
-    display:flex;flex-direction:column-reverse;gap:2px;margin:10px auto 12px;
+    display:flex;flex-direction:column-reverse;gap:2px;margin:10px auto 4px;
     border:1px solid #2a3946;border-radius:6px;overflow:hidden;padding:3px;
-    background:rgba(255,255,255,.02);height:260px;width:150px;box-sizing:border-box;
+    background:rgba(255,255,255,.02);height:280px;width:100%;box-sizing:border-box;
   }
   .floor-cell{
     display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:6px;
     min-height:0;padding:0 7px;border-radius:2px;overflow:hidden;
     font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;
-    color:#0b1116;cursor:default;white-space:nowrap;
+    color:#0b1116;white-space:nowrap;cursor:pointer;
+    border:2px solid transparent;box-sizing:border-box;transition:filter .1s ease, border-color .1s ease;
   }
+  .floor-cell:hover{filter:brightness(1.12);}
+  .floor-cell.selected{border-color:#0b1116;box-shadow:inset 0 0 0 1px rgba(255,255,255,.6);}
   .floor-cell .fc-label{opacity:.85;overflow:hidden;text-overflow:ellipsis;}
   .floor-cell .fc-area{opacity:.7;font-weight:500;overflow:hidden;text-overflow:ellipsis;}
+  .bew-hint{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);text-align:center;margin:0 0 8px;}
+  /* ---------- Bandeau compact de stats (emprise/surface/hauteur) ---------- */
+  .bew-stats{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);
+    display:flex;flex-direction:column;gap:4px;
+    padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;
+  }
+  .bew-stats > span{display:flex;justify-content:space-between;gap:8px;}
+  .bew-stats b{color:var(--fg);}
+  /* ---------- Éditeur inline de la tranche sélectionnée dans le graphique :
+     apparaît juste sous le graphique, ne montre QUE la tranche cliquée
+     (plus de longue liste de toutes les tranches à la fois). ---------- */
+  .bew-band-editor{
+    border:1px solid #2a3946;border-radius:8px;padding:12px;
+    background:rgba(255,255,255,.03);display:flex;flex-direction:column;gap:10px;
+  }
+  .bew-band-editor-head{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    font-family:'Space Grotesk',sans-serif;font-size:12.5px;font-weight:700;color:var(--paper);
+  }
+  .bew-band-editor-head .range{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--muted);font-size:11px;}
+  .bew-band-editor-row{display:flex;gap:8px;align-items:center;}
+  .bew-band-editor-row select{
+    background:#141c24;border:1px solid #23303b;color:var(--paper);border-radius:4px;
+    padding:8px 6px;font-size:12.5px;flex:1;min-width:0;font-weight:600;
+  }
+  .bew-band-editor-row input[type=number]{width:52px;flex-shrink:0;padding:8px 3px;font-size:12.5px;text-align:center;}
+  .bew-band-editor-row .x{color:var(--muted);flex-shrink:0;font-size:12px;}
+  .bew-band-editor-actions{display:flex;gap:6px;}
+  .bew-band-editor-actions button{
+    flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
+    background:#101820;border:1px solid #23303b;color:var(--paper);border-radius:5px;
+    padding:8px 6px;font-size:11.5px;cursor:pointer;font-weight:600;
+  }
+  .bew-band-editor-actions button svg{width:12px;height:12px;}
+  .bew-band-editor-actions button:hover{border-color:var(--accent);color:var(--accent);}
+  .bew-band-editor-actions button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
+  .bew-band-editor-actions button.danger:hover{border-color:var(--com);color:var(--com);}
+  .bew-band-editor-actions button:disabled{opacity:.35;pointer-events:none;}
 
   /* ---------- Boutons de taille de pinceau (popout à droite de "Gazon") ---------- */
   .brush-btn{
@@ -823,7 +840,6 @@
     #bldg-panel{max-height:50vh;width:auto;}
     #bldg-panel-list{width:150px;}
     #bldg-edit-window{width:100%;}
-    #bew-usage-panel{width:100%;}
     #legend-window{right:8px;bottom:8px;width:min(260px, calc(100vw - 16px));}
     #sun-panel{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
     #ribbon{padding:8px 10px;gap:8px;}
@@ -972,12 +988,7 @@
           <button class="bew-close" id="bew-close" title="Fermer"><i data-lucide="x"></i></button>
         </div>
         <div class="bew-meta" id="bew-meta"></div>
-        <div id="bew-body">
-          <div id="bew-col-left"></div>
-        </div>
-      </div>
-      <div id="bew-usage-panel">
-        <div id="bew-col-right"></div>
+        <div id="bew-body"></div>
       </div>
     </div>
     </div>
@@ -1353,6 +1364,31 @@ function syncOrthoCameraForPlanView(){
   orthoCamera.updateProjectionMatrix();
 }
 document.getElementById('btn-plan-view').addEventListener('click', togglePlanView);
+// Verrouillage automatique en vue plan pendant le tracé d'un volume supérieur
+// (voir startVolumeDraw) : recentre la caméra, pile au-dessus du bâtiment
+// ciblé, en réutilisant togglePlanView() pour la bascule perspective/ortho
+// elle-même — on ne fait que repositionner ensuite. Si la vue plan était
+// DÉJÀ active manuellement, on la laisse telle quelle (juste recentrée) et
+// on ne la désactive pas à la fin : on ne touche jamais à un réglage que
+// l'utilisateur avait choisi lui-même.
+let volumeDrawForcedPlanView = false;
+function lockPlanViewForVolumeDraw(b){
+  const footprint = footprintForBand(b, b.bands[b.bands.length-1]);
+  const xs = footprint.map(p=>p.x), zs = footprint.map(p=>p.z);
+  const cx = (Math.max(...xs)+Math.min(...xs))/2, cz = (Math.max(...zs)+Math.min(...zs))/2;
+  const w = Math.max(...xs)-Math.min(...xs), d = Math.max(...zs)-Math.min(...zs);
+  const span = Math.max(w, d, 20);
+  volumeDrawForcedPlanView = !planViewActive;
+  if(!planViewActive) togglePlanView();
+  const dist = Math.max(60, span * 2.6);
+  camera.position.set(cx, dist, cz + 0.01);
+  controls.target.set(cx, 0, cz);
+  controls.update();
+}
+function unlockPlanViewAfterVolumeDraw(){
+  if(volumeDrawForcedPlanView && planViewActive) togglePlanView();
+  volumeDrawForcedPlanView = false;
+}
 
 // Lighting — soft overcast "plan de présentation" look
 const hemiLight = new THREE.HemisphereLight(0xdfe8ef, 0x1a1f24, 0.75);
@@ -2233,6 +2269,7 @@ function cancelDraw(){
   closeDrawMenu();
   volumeDrawTargetId = null;
   hideVolumeRoofGrid();
+  unlockPlanViewAfterVolumeDraw();
   refreshBldgMiniListVisibility();
 }
 function clearMarkers(){
@@ -2780,6 +2817,10 @@ function startVolumeDraw(b){
   drawing = true; drawPoints = [];
   clearMarkers();
   showVolumeRoofGrid(b);
+  // Tracé bien plus facile bloqué en vue plan (orthographique, du dessus),
+  // recentrée sur CE bâtiment — sinon la perspective déforme sa silhouette
+  // et fausse le jugement du débord de 30% pendant le tracé.
+  lockPlanViewForVolumeDraw(b);
   drawHintText.textContent = 'Cliquez sur le toit pour poser les sommets du volume supérieur';
   drawHintEnter.style.display = '';
   drawHint.classList.add('show');
@@ -5174,6 +5215,7 @@ window.addEventListener('keydown', (ev)=>{
    SIDE PANEL — building list & editors
    ============================================================ */
 const bldgList = document.getElementById('bldg-list');
+const bldgPanelList = document.getElementById('bldg-panel-list');
 const emptyNote = document.getElementById('bldg-mini-empty');
 const bldgPanel = document.getElementById('bldg-panel');
 
@@ -5186,48 +5228,44 @@ function updateBldgPanelVisibility(){
   syncBldgPanelMaxHeight();
 }
 
-// La liste de tranches d'usage peut dépasser l'espace disponible. AUCUN
-// défilement autorisé, ET seul CE bloc doit bouger (pas la liste des
-// bâtiments, pas la fiche du bâtiment sélectionné) : #bew-usage-panel est en
-// position:fixed (voir CSS), positionné explicitement ici plutôt que par le
-// flux de #left-stack. Comme sa position n'est plus relative à la hauteur de
-// la barre d'outils / des listes qui le précèdent, il peut utiliser toute la
-// hauteur d'écran dispo (jusqu'à minTop) pour remonter — d'où la correction
-// des deux bugs : il ne "saute" plus au gré de la hauteur du reste du
-// panneau, et il peut remonter suffisamment pour garder le bouton "Ajouter
-// une tranche d'usage" visible.
+// La fiche bâtiment (fusionnée) peut dépasser l'espace disponible. AUCUN
+// défilement autorisé, ET seule CETTE fiche doit bouger (jamais la liste des
+// bâtiments) : #bldg-edit-window est en position:fixed (voir CSS), posée ici
+// par rapport à #bldg-panel-list plutôt que par le flux de #left-stack —
+// elle a ainsi accès à toute la hauteur d'écran dispo pour remonter si son
+// contenu est trop grand pour l'écran.
 function syncBldgPanelMaxHeight(){
   if(!bldgPanel.classList.contains('has-selection')){
     return;
   }
-  const editRect = bldgEditWindow.getBoundingClientRect();
+  const listRect = bldgPanelList.getBoundingClientRect();
   const maxBottom = window.innerHeight - 16;
   const minTop = 84; // ne jamais remonter au-dessus du menu outils / ruban
   const narrow = window.innerWidth <= 980;
 
   if(narrow){
     // Écran étroit : #bldg-panel passe en colonne (liste + fiche empilées),
-    // donc le bloc usages se pose sous la fiche plutôt qu'à droite.
-    bewUsagePanel.style.width = editRect.width + 'px';
-    bewUsagePanel.style.left = editRect.left + 'px';
-    let top = editRect.bottom + 14;
-    const naturalHeight = bewUsagePanel.getBoundingClientRect().height;
+    // donc la fiche se pose sous la liste plutôt qu'à droite.
+    bldgEditWindow.style.width = listRect.width + 'px';
+    bldgEditWindow.style.left = listRect.left + 'px';
+    let top = listRect.bottom + 14;
+    const naturalHeight = bldgEditWindow.getBoundingClientRect().height;
     if(top + naturalHeight > maxBottom) top = Math.max(minTop, maxBottom - naturalHeight);
-    bewUsagePanel.style.top = top + 'px';
+    bldgEditWindow.style.top = top + 'px';
   } else {
-    bewUsagePanel.style.width = '';
+    bldgEditWindow.style.width = '';
     const gap = 14;
-    bewUsagePanel.style.left = (editRect.right + gap) + 'px';
-    // Ancre naturelle : aligné en haut avec la fiche bâtiment. On mesure sa
-    // hauteur réelle à cette position pour savoir de combien il faut le
+    bldgEditWindow.style.left = (listRect.right + gap) + 'px';
+    // Ancre naturelle : aligné en haut avec la liste des bâtiments. On mesure
+    // sa hauteur réelle à cette position pour savoir de combien il faut la
     // remonter pour tenir entièrement à l'écran.
-    bewUsagePanel.style.top = editRect.top + 'px';
-    const naturalHeight = bewUsagePanel.getBoundingClientRect().height;
-    let top = editRect.top;
+    bldgEditWindow.style.top = listRect.top + 'px';
+    const naturalHeight = bldgEditWindow.getBoundingClientRect().height;
+    let top = listRect.top;
     if(top + naturalHeight > maxBottom){
       top = Math.max(minTop, maxBottom - naturalHeight);
     }
-    bewUsagePanel.style.top = top + 'px';
+    bldgEditWindow.style.top = top + 'px';
   }
 }
 window.addEventListener('resize', syncBldgPanelMaxHeight);
@@ -5272,7 +5310,6 @@ function renderList(){
    FICHE DE MODIFICATION D'UN BÂTIMENT (à droite de la liste, dans #bldg-panel)
    ============================================================ */
 const bldgEditWindow = document.getElementById('bldg-edit-window');
-const bewUsagePanel = document.getElementById('bew-usage-panel');
 const bewClose = document.getElementById('bew-close');
 bewClose.addEventListener('click', closeBldgEditWindow);
 function openBldgEditWindow(id){
@@ -5284,8 +5321,17 @@ function closeBldgEditWindow(){
   if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
   updateBldgPanelVisibility();
 }
+// Mémorise quel bloc du graphique est actuellement "ouvert" pour édition
+// (index dans b.bands), et pour quel bâtiment — pour ne PAS réinitialiser la
+// sélection à chaque petit rafraîchissement (changement d'usage, etc.), mais
+// bien la remettre à zéro dès qu'on regarde un AUTRE bâtiment.
+let bewSelectedBandIndex = null;
+let bewSelectedForBuildingId = null;
+
 function renderBldgEditWindow(b){
   if(!b){ closeBldgEditWindow(); return; }
+  if(bewSelectedForBuildingId !== b.id){ bewSelectedForBuildingId = b.id; bewSelectedBandIndex = null; }
+
   document.getElementById('bew-dot').style.background = '#'+USAGE_COLORS[usageAtFloor(b, b.floors)].toString(16).padStart(6,'0');
   const nameInput = document.getElementById('bew-name');
   nameInput.value = b.name;
@@ -5293,22 +5339,20 @@ function renderBldgEditWindow(b){
   const groundArea = polygonAreaXZ(b.points);
   document.getElementById('bew-meta').textContent = `${b.points.length} sommets · ${b.floors} niveaux · ${buildingTotalHeight(b).toFixed(1)} m`;
 
-  const colLeft = document.getElementById('bew-col-left');
-  const colRight = document.getElementById('bew-col-right');
-  colLeft.innerHTML = '';
-  colRight.innerHTML = '';
+  const body = document.getElementById('bew-body');
+  body.innerHTML = '';
 
-  // ---------- Colonne de gauche : surfaces, nombre d'étages, actions ----------
+  // ---------- 1. Stats compactes (surfaces) ----------
+  const stats = document.createElement('div');
+  stats.className = 'bew-stats';
+  stats.innerHTML = `<span>Emprise au sol <b>${groundArea.toFixed(0)} m²</b></span><span>Potentiel total <b>${buildingTotalFloorArea(b).toFixed(0)} m²</b></span>`;
+  body.appendChild(stats);
 
-  const areaField = document.createElement('div');
-  areaField.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;';
-  areaField.innerHTML = `<span>Emprise au sol : <b style="color:var(--fg)">${groundArea.toFixed(0)} m²</b></span><span>Potentiel total : <b style="color:var(--fg)">${buildingTotalFloorArea(b).toFixed(0)} m²</b></span>`;
-  colLeft.appendChild(areaField);
-
-  // Nombre d'étages — stepper +/- avec icônes plutôt qu'un simple champ nu.
+  // ---------- 2. Nombre d'étages total du bâtiment (socle + décrochés) ----------
   const floorsField = document.createElement('div');
   floorsField.className='field';
-  floorsField.innerHTML = `<label><i data-lucide="layers"></i> Nombre d'étages (R+${Math.max(b.floors-1,0)})</label>`;
+  floorsField.style.marginBottom = '0';
+  floorsField.innerHTML = `<label><i data-lucide="layers"></i> Étages au total (R+${Math.max(b.floors-1,0)})</label>`;
   const stepper = document.createElement('div');
   stepper.className = 'stepper';
   const minus = document.createElement('button'); minus.innerHTML = '<i data-lucide="minus"></i>';
@@ -5320,18 +5364,82 @@ function renderBldgEditWindow(b){
     b.floors = v; floorsInput.value = v;
     normalizeBands(b);
     rebuildMesh(b); renderList(); renderBldgEditWindow(b);
-    if(window.lucide) lucide.createIcons();
   }
   minus.addEventListener('click', ()=> setFloors(b.floors-1));
   plus.addEventListener('click', ()=> setFloors(b.floors+1));
   floorsInput.addEventListener('change', ()=> setFloors(parseInt(floorsInput.value)||1));
   stepper.append(minus, floorsInput, plus);
   floorsField.appendChild(stepper);
-  colLeft.appendChild(floorsField);
+  body.appendChild(floorsField);
 
+  // ---------- 3. LE GRAPHIQUE — objet interactif représentant le bâtiment
+  // dans son ensemble (socle + volumes supérieurs), cliquable bloc par bloc
+  // pour en modifier l'usage, les étages ou la forme. C'est maintenant le
+  // cœur de la fiche : plus besoin d'une liste séparée en dessous. ----------
+  const bandsTitle = document.createElement('div');
+  bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:2px 0 0;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;';
+  bandsTitle.innerHTML = '<i data-lucide="building-2" style="width:12px;height:12px;"></i> Votre bâtiment';
+  body.appendChild(bandsTitle);
+
+  const floorStack = document.createElement('div');
+  floorStack.id = 'bew-floor-stack';
+  // Une case par TRANCHE (et non plus par étage individuel) : sa hauteur est
+  // proportionnelle au nombre d'étages qu'elle couvre. Colonne verticale
+  // façon immeuble : rez-de-chaussée en bas, dernier étage/décroché en haut.
+  const sortedBands = b.bands.slice().sort((x,y)=> x.to-y.to);
+  sortedBands.forEach(band=>{
+    const idx = b.bands.indexOf(band);
+    const nFloors = Math.max(1, band.to - band.from + 1);
+    const usage = band.usage;
+    const bandArea = polygonAreaXZ(footprintForBand(b, band));
+    const isSetback = !!(band.points && band.points.length>=3);
+    const cell = document.createElement('div');
+    cell.className = 'floor-cell' + (bewSelectedBandIndex===idx ? ' selected' : '');
+    cell.style.background = '#'+USAGE_COLORS[usage].toString(16).padStart(6,'0');
+    cell.style.flex = `${nFloors} 0 0`;
+    const rangeLabel = band.from===band.to ? `R+${band.from-1}` : `R+${band.from-1}→R+${band.to-1}`;
+    cell.title = `${rangeLabel} · ${USAGE_LABELS[usage]||usage} · ${nFloors} niveau${nFloors>1?'x':''} · ${bandArea.toFixed(0)} m²/niveau${isSetback?' · décroché':''} — cliquer pour modifier`;
+    cell.innerHTML = `<span class="fc-label">${rangeLabel}${isSetback?' ◆':''}</span><span class="fc-area">${(bandArea*nFloors).toFixed(0)} m²</span>`;
+    cell.addEventListener('click', ()=>{
+      bewSelectedBandIndex = (bewSelectedBandIndex===idx) ? null : idx;
+      renderBldgEditWindow(b);
+    });
+    floorStack.appendChild(cell);
+  });
+  body.appendChild(floorStack);
+  const hint = document.createElement('div');
+  hint.className = 'bew-hint';
+  hint.textContent = 'Cliquez un bloc pour changer son usage, ses étages ou sa forme';
+  body.appendChild(hint);
+
+  // ---------- 4. Éditeur du bloc sélectionné (rien tant qu'aucun bloc n'est
+  // choisi dans le graphique ci-dessus) ----------
+  if(bewSelectedBandIndex!==null && b.bands[bewSelectedBandIndex]){
+    body.appendChild(buildBandEditor(b, bewSelectedBandIndex));
+  }
+
+  // ---------- 5. Récap des m² par usage (emprise propre à chaque tranche ×
+  // son nombre d'étages) — ne montre que les usages effectivement présents.
+  const usageTotals = {};
+  b.bands.forEach(band=>{
+    const nFloors = Math.max(0, band.to - band.from + 1);
+    const bandArea = polygonAreaXZ(footprintForBand(b, band));
+    usageTotals[band.usage] = (usageTotals[band.usage]||0) + bandArea*nFloors;
+  });
+  const usageEntries = Object.entries(usageTotals).filter(([,v])=>v>0);
+  if(usageEntries.length){
+    const usageField = document.createElement('div');
+    usageField.className = 'bew-stats';
+    usageField.innerHTML = usageEntries.map(([usage,val])=>
+      `<span><span>${USAGE_LABELS[usage]||usage}</span><b>${val.toFixed(0)} m²</b></span>`
+    ).join('');
+    body.appendChild(usageField);
+  }
+
+  // ---------- 6. Actions générales du bâtiment ----------
   const actions = document.createElement('div');
   actions.className='btn-row';
-  actions.style.marginTop = '18px';
+  actions.style.marginTop = '2px';
   const editBtn = document.createElement('button');
   const editingSocle = editingBuildingId===b.id && editingBandIndex===null;
   editBtn.className='action-btn edit' + (editingSocle ? ' active' : '');
@@ -5357,155 +5465,120 @@ function renderBldgEditWindow(b){
   delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
   delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
   actions.append(editBtn, addVolumeBtn, delBtn);
-  colLeft.appendChild(actions);
-
-  // ---------- Colonne de droite : répartition des usages par étage ----------
-  // Un vrai petit graphique du bâtiment : une case par NIVEAU réel (et non
-  // plus un simple bloc proportionnel par tranche), colorée selon l'usage de
-  // ce niveau précis, du dernier étage en haut au rez-de-chaussée en bas.
-
-  const bandsTitle = document.createElement('div');
-  bandsTitle.style.cssText='font-family:IBM Plex Mono,monospace;font-size:10.5px;color:var(--muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;';
-  bandsTitle.innerHTML = '<i data-lucide="palette" style="width:12px;height:12px;"></i> Répartition des usages par étage';
-  colRight.appendChild(bandsTitle);
-
-  const floorStack = document.createElement('div');
-  floorStack.id = 'bew-floor-stack';
-  // Une case par TRANCHE (et non plus par étage individuel) : sa hauteur est
-  // proportionnelle au nombre d'étages qu'elle couvre. Colonne verticale
-  // façon immeuble : rez-de-chaussée en bas, dernier étage en haut —
-  // hauteur totale fixe, donc plus jamais de débordement, même avec un
-  // immeuble de 60 niveaux.
-  b.bands.slice().sort((x,y)=> x.to-y.to).forEach(band=>{
-    const nFloors = Math.max(1, band.to - band.from + 1);
-    const usage = band.usage;
-    const bandArea = polygonAreaXZ(footprintForBand(b, band));
-    const isSetback = !!(band.points && band.points.length>=3);
-    const cell = document.createElement('div');
-    cell.className = 'floor-cell';
-    cell.style.background = '#'+USAGE_COLORS[usage].toString(16).padStart(6,'0');
-    cell.style.flex = `${nFloors} 0 0`;
-    const rangeLabel = band.from===band.to ? `R+${band.from-1}` : `R+${band.from-1}→R+${band.to-1}`;
-    cell.title = `${rangeLabel} · ${USAGE_LABELS[usage]||usage} · ${nFloors} niveau${nFloors>1?'x':''} · ${bandArea.toFixed(0)} m²/niveau${isSetback?' · décroché':''}`;
-    cell.innerHTML = `<span class="fc-label">${rangeLabel}${isSetback?' ◆':''}</span><span class="fc-area">${(bandArea*nFloors).toFixed(0)} m²</span>`;
-    floorStack.appendChild(cell);
-  });
-  colRight.appendChild(floorStack);
-
-  // Récapitulatif des m² par usage pour CE bâtiment (emprise propre à
-  // chaque tranche × son nombre d'étages) — ne montre que les usages
-  // effectivement présents.
-  const usageTotals = {};
-  b.bands.forEach(band=>{
-    const nFloors = Math.max(0, band.to - band.from + 1);
-    const bandArea = polygonAreaXZ(footprintForBand(b, band));
-    usageTotals[band.usage] = (usageTotals[band.usage]||0) + bandArea*nFloors;
-  });
-  const usageEntries = Object.entries(usageTotals).filter(([,v])=>v>0);
-  if(usageEntries.length){
-    const usageField = document.createElement('div');
-    usageField.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px;margin-bottom:12px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;';
-    usageField.innerHTML = usageEntries.map(([usage,val])=>
-      `<span style="display:flex;justify-content:space-between;gap:8px;"><span>${USAGE_LABELS[usage]||usage}</span><b style="color:var(--fg)">${val.toFixed(0)} m²</b></span>`
-    ).join('');
-    colRight.appendChild(usageField);
-  }
-
-  // Tranches d'usage éditables (bornes + sélecteur d'usage par tranche).
-  b.bands.forEach((band, idx)=>{
-    const row = document.createElement('div');
-    row.className='band-row';
-    const fromLabel = document.createElement('span');
-    fromLabel.className='band-from-readonly';
-    fromLabel.style.cssText='font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--muted);min-width:22px;text-align:center;';
-    fromLabel.textContent = String(band.from);
-    const x = document.createElement('span'); x.className='x'; x.textContent='→';
-    const toInp = document.createElement('input');
-    toInp.type='number'; toInp.min=band.from; toInp.max=b.floors; toInp.value=band.to;
-    toInp.title = "Jusqu'à quel étage va ce bloc — les blocs au-dessus se recalent automatiquement";
-    const isLast = idx === b.bands.length-1;
-    if(isLast) toInp.disabled = true;
-    const sel = document.createElement('select');
-    Object.entries(USAGE_LABELS).forEach(([k,label])=>{
-      const opt = document.createElement('option');
-      opt.value=k; opt.textContent=label; if(k===band.usage) opt.selected=true;
-      // Colore chaque option avec la couleur de légende correspondante, pour
-      // reconnaître l'usage d'un coup d'œil sans lire le texte.
-      const hex = '#'+USAGE_COLORS[k].toString(16).padStart(6,'0');
-      opt.style.background = hex;
-      opt.style.color = '#0b1116';
-      sel.appendChild(opt);
-    });
-    sel.style.background = '#'+USAGE_COLORS[band.usage].toString(16).padStart(6,'0');
-    sel.style.color = '#0b1116';
-    sel.style.fontWeight = '700';
-    const isSetback = !!(band.points && band.points.length>=3);
-    let shapeBtn = null;
-    if(isSetback){
-      // Uniquement sur les tranches avec un contour propre (un décroché) —
-      // les tranches qui partagent simplement le contour du socle n'ont rien
-      // à éditer ici (voir "Modifier la forme au sol" plus haut pour ça).
-      shapeBtn = document.createElement('button');
-      const isEditingThis = editingBuildingId===b.id && editingBandIndex===idx;
-      shapeBtn.className = 'mini-btn' + (isEditingThis ? ' active' : '');
-      shapeBtn.innerHTML = isEditingThis
-        ? '<i data-lucide="check" style="width:12px;height:12px;"></i>'
-        : '<i data-lucide="move-3d" style="width:12px;height:12px;"></i>';
-      shapeBtn.title = isEditingThis ? 'Terminer la modification de ce décroché' : 'Modifier la forme de ce décroché';
-      shapeBtn.addEventListener('click', ()=>{
-        if(isEditingThis) stopEditBuildingShape();
-        else startEditBuildingShape(b, idx);
-        renderBldgEditWindow(b);
-      });
-    }
-    const del = document.createElement('button');
-    del.className='mini-btn danger'; del.innerHTML='<i data-lucide="x" style="width:11px;height:11px;"></i>';
-    del.title = 'Fusionner ce bloc avec celui du dessus';
-    del.disabled = b.bands.length<=1;
-    del.addEventListener('click', ()=>{
-      if(editingBuildingId===b.id && editingBandIndex===idx) stopEditBuildingShape();
-      else if(editingBuildingId===b.id && editingBandIndex!==null && editingBandIndex>idx) editingBandIndex--;
-      b.bands.splice(idx,1);
-      normalizeBands(b);
-      rebuildMesh(b); renderList(); renderBldgEditWindow(b);
-    });
-    function commit(){
-      band.to = Math.max(band.from, Math.min(parseInt(toInp.value)||band.from, b.floors));
-      band.usage = sel.value;
-      normalizeBands(b);
-      rebuildMesh(b); renderList(); renderBldgEditWindow(b);
-    }
-    toInp.addEventListener('change', commit);
-    sel.addEventListener('change', commit);
-    row.append(fromLabel, x, toInp, sel);
-    if(shapeBtn) row.append(shapeBtn);
-    row.append(del);
-    colRight.appendChild(row);
-  });
-
-  const addBandBtn = document.createElement('button');
-  addBandBtn.className='small-action';
-  addBandBtn.innerHTML='<i data-lucide="split" style="width:13px;height:13px;margin-right:5px;"></i> Ajouter une tranche d\'usage';
-  addBandBtn.style.cssText='margin-top:6px;display:flex;align-items:center;justify-content:center;';
-  addBandBtn.title = 'Scinde le bloc du haut en deux, moitié-moitié';
-  addBandBtn.disabled = b.bands[b.bands.length-1].from >= b.floors;
-  addBandBtn.addEventListener('click', ()=>{
-    const last = b.bands[b.bands.length-1];
-    if(last.from >= b.floors) return;
-    const mid = Math.floor((last.from + b.floors) / 2);
-    const splitAt = Math.max(last.from, Math.min(mid, b.floors-1));
-    last.to = splitAt;
-    // La tranche du dessus hérite du MÊME contour que celle qu'on scinde
-    // (juste un usage différent) : scinder ne doit jamais faire réapparaître
-    // le plein socle au-dessus d'un décroché déjà rétréci.
-    b.bands.push({from:splitAt+1, to:b.floors, usage:'residentiel', points: last.points || null});
-    normalizeBands(b);
-    rebuildMesh(b); renderList(); renderBldgEditWindow(b);
-  });
-  colRight.appendChild(addBandBtn);
+  body.appendChild(actions);
 
   if(window.lucide) lucide.createIcons();
   syncBldgPanelMaxHeight();
+}
+
+// Panneau d'édition du SEUL bloc sélectionné dans le graphique : usage,
+// étendue en étages, forme (si décroché) et scinder/fusionner — tout ce qui
+// concourait avant à une longue liste de lignes toujours visibles, condensé
+// ici et affiché seulement pour le bloc qu'on vient de cliquer.
+function buildBandEditor(b, idx){
+  const band = b.bands[idx];
+  const isSetback = !!(band.points && band.points.length>=3);
+  const isLast = idx === b.bands.length-1;
+  const wrap = document.createElement('div');
+  wrap.className = 'bew-band-editor';
+
+  const head = document.createElement('div');
+  head.className = 'bew-band-editor-head';
+  const rangeLabel = band.from===band.to ? `R+${band.from-1}` : `R+${band.from-1} → R+${band.to-1}`;
+  head.innerHTML = `<span>${isSetback ? 'Volume supérieur' : 'Bloc'} sélectionné</span><span class="range">${rangeLabel}</span>`;
+  wrap.appendChild(head);
+
+  const usageRow = document.createElement('div');
+  usageRow.className = 'bew-band-editor-row';
+  const sel = document.createElement('select');
+  Object.entries(USAGE_LABELS).forEach(([k,label])=>{
+    const opt = document.createElement('option');
+    opt.value=k; opt.textContent=label; if(k===band.usage) opt.selected=true;
+    opt.style.background = '#'+USAGE_COLORS[k].toString(16).padStart(6,'0');
+    opt.style.color = '#0b1116';
+    sel.appendChild(opt);
+  });
+  sel.style.background = '#'+USAGE_COLORS[band.usage].toString(16).padStart(6,'0');
+  sel.style.color = '#0b1116';
+  sel.addEventListener('change', ()=>{
+    band.usage = sel.value;
+    normalizeBands(b);
+    rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+  });
+  usageRow.appendChild(sel);
+  wrap.appendChild(usageRow);
+
+  const rangeRow = document.createElement('div');
+  rangeRow.className = 'bew-band-editor-row';
+  const fromLabel = document.createElement('span');
+  fromLabel.className = 'x';
+  fromLabel.textContent = 'De R+'+(band.from-1);
+  const x = document.createElement('span'); x.className='x'; x.textContent="jusqu'à R+";
+  const toInp = document.createElement('input');
+  toInp.type='number'; toInp.min=band.from; toInp.max=b.floors; toInp.value=band.to-1;
+  toInp.title = "Jusqu'à quel étage va ce bloc — les blocs au-dessus se recalent automatiquement";
+  if(isLast) toInp.disabled = true;
+  toInp.addEventListener('change', ()=>{
+    band.to = Math.max(band.from, Math.min((parseInt(toInp.value)||0)+1, b.floors));
+    normalizeBands(b);
+    rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+  });
+  rangeRow.append(fromLabel, x, toInp);
+  wrap.appendChild(rangeRow);
+
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'bew-band-editor-actions';
+  if(isSetback){
+    const isEditingThis = editingBuildingId===b.id && editingBandIndex===idx;
+    const shapeBtn = document.createElement('button');
+    if(isEditingThis) shapeBtn.className = 'active';
+    shapeBtn.innerHTML = isEditingThis
+      ? '<i data-lucide="check"></i> Terminer'
+      : '<i data-lucide="move-3d"></i> Forme';
+    shapeBtn.title = isEditingThis ? 'Terminer la modification de ce décroché' : 'Modifier la forme de ce décroché';
+    shapeBtn.addEventListener('click', ()=>{
+      if(isEditingThis) stopEditBuildingShape();
+      else startEditBuildingShape(b, idx);
+      renderBldgEditWindow(b);
+    });
+    actionsRow.appendChild(shapeBtn);
+  }
+  const splitBtn = document.createElement('button');
+  splitBtn.innerHTML = '<i data-lucide="split"></i> Scinder';
+  splitBtn.title = 'Scinde ce bloc en deux (moitié-moitié) pour lui donner deux usages';
+  splitBtn.disabled = band.from >= band.to;
+  splitBtn.addEventListener('click', ()=>{
+    const mid = Math.floor((band.from + band.to) / 2);
+    const splitAt = Math.max(band.from, Math.min(mid, band.to-1));
+    // La nouvelle moitié du haut hérite du MÊME contour (juste un usage à
+    // choisir) : scinder ne doit jamais faire réapparaître le plein socle
+    // au-dessus d'un décroché déjà rétréci.
+    const newBand = { from: splitAt+1, to: band.to, usage: band.usage, points: band.points || null };
+    band.to = splitAt;
+    b.bands.splice(idx+1, 0, newBand);
+    normalizeBands(b);
+    bewSelectedBandIndex = idx+1;
+    rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+  });
+  actionsRow.appendChild(splitBtn);
+
+  const mergeBtn = document.createElement('button');
+  mergeBtn.className = 'danger';
+  mergeBtn.innerHTML = '<i data-lucide="x"></i> Fusionner';
+  mergeBtn.title = 'Fusionne ce bloc avec celui du dessus';
+  mergeBtn.disabled = b.bands.length<=1;
+  mergeBtn.addEventListener('click', ()=>{
+    if(editingBuildingId===b.id && editingBandIndex===idx) stopEditBuildingShape();
+    else if(editingBuildingId===b.id && editingBandIndex!==null && editingBandIndex>idx) editingBandIndex--;
+    b.bands.splice(idx,1);
+    normalizeBands(b);
+    bewSelectedBandIndex = null;
+    rebuildMesh(b); renderList(); renderBldgEditWindow(b);
+  });
+  actionsRow.appendChild(mergeBtn);
+  wrap.appendChild(actionsRow);
+
+  return wrap;
 }
 function renderRouteListNoop(){ /* nom modifié : rafraîchit juste la pastille de la liste compacte */ renderList(); }
 
