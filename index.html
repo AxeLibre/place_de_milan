@@ -206,12 +206,22 @@
      être étiré par la fiche bâtiment voisine (qui provoquait un vide sous
      "Modifier la forme / Supprimer" quand la liste d'usages était plus
      haute). ---------- */
+  /* position:fixed — sorti du flux de #bldg-panel : sa position (left/top)
+     est calculée et posée en JS (voir syncBldgPanelMaxHeight), ancrée sur la
+     fiche bâtiment (#bldg-edit-window) plutôt que sur sa propre position
+     dans le flux de #left-stack. Ça lui donne accès à TOUTE la hauteur
+     d'écran disponible pour remonter (jusqu'à minTop) au lieu d'être limité
+     par la hauteur des éléments qui le précèdent (barre d'outils, listes) —
+     c'est cette limite artificielle qui l'empêchait de assez remonter et
+     cachait le bouton "Ajouter une tranche d'usage" en bas d'écran, et qui
+     le faisait bouger de façon erratique quand le contenu changeait
+     (changement du nombre d'étages). */
   #bew-usage-panel{
-    width:300px;flex-shrink:0;align-self:flex-start;
+    position:fixed;width:300px;flex-shrink:0;
     background:rgba(15,22,29,.97);border:1px solid #2a3946;border-radius:10px;
     padding:18px 20px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
-    display:none;flex-direction:column;
-    transition:transform .15s ease;
+    display:none;flex-direction:column;z-index:16;
+    transition:top .12s ease, left .12s ease;
   }
   #bldg-panel.has-selection #bew-usage-panel{display:flex;}
   #bldg-panel.has-selection #bldg-edit-window{display:flex;}
@@ -4776,24 +4786,48 @@ function updateBldgPanelVisibility(){
   syncBldgPanelMaxHeight();
 }
 
-// La liste de tranches d'usage peut dépasser l'espace disponible sous le
-// panneau. AUCUN défilement autorisé, ET seul CE bloc doit bouger (pas la
-// liste des bâtiments, pas la fiche du bâtiment sélectionné) : on fait
-// remonter uniquement #bew-usage-panel (translateY), jusqu'à une limite
-// haute (jamais sous le ruban du haut).
+// La liste de tranches d'usage peut dépasser l'espace disponible. AUCUN
+// défilement autorisé, ET seul CE bloc doit bouger (pas la liste des
+// bâtiments, pas la fiche du bâtiment sélectionné) : #bew-usage-panel est en
+// position:fixed (voir CSS), positionné explicitement ici plutôt que par le
+// flux de #left-stack. Comme sa position n'est plus relative à la hauteur de
+// la barre d'outils / des listes qui le précèdent, il peut utiliser toute la
+// hauteur d'écran dispo (jusqu'à minTop) pour remonter — d'où la correction
+// des deux bugs : il ne "saute" plus au gré de la hauteur du reste du
+// panneau, et il peut remonter suffisamment pour garder le bouton "Ajouter
+// une tranche d'usage" visible.
 function syncBldgPanelMaxHeight(){
   if(!bldgPanel.classList.contains('has-selection')){
-    bewUsagePanel.style.transform = '';
     return;
   }
-  bewUsagePanel.style.transform = ''; // position neutre pour mesurer
-  const rect = bewUsagePanel.getBoundingClientRect();
+  const editRect = bldgEditWindow.getBoundingClientRect();
   const maxBottom = window.innerHeight - 16;
   const minTop = 84; // ne jamais remonter au-dessus du menu outils / ruban
-  let shift = rect.bottom - maxBottom;
-  if(shift > 0){
-    shift = Math.min(shift, rect.top - minTop);
-    if(shift > 0) bewUsagePanel.style.transform = `translateY(-${shift}px)`;
+  const narrow = window.innerWidth <= 980;
+
+  if(narrow){
+    // Écran étroit : #bldg-panel passe en colonne (liste + fiche empilées),
+    // donc le bloc usages se pose sous la fiche plutôt qu'à droite.
+    bewUsagePanel.style.width = editRect.width + 'px';
+    bewUsagePanel.style.left = editRect.left + 'px';
+    let top = editRect.bottom + 14;
+    const naturalHeight = bewUsagePanel.getBoundingClientRect().height;
+    if(top + naturalHeight > maxBottom) top = Math.max(minTop, maxBottom - naturalHeight);
+    bewUsagePanel.style.top = top + 'px';
+  } else {
+    bewUsagePanel.style.width = '';
+    const gap = 14;
+    bewUsagePanel.style.left = (editRect.right + gap) + 'px';
+    // Ancre naturelle : aligné en haut avec la fiche bâtiment. On mesure sa
+    // hauteur réelle à cette position pour savoir de combien il faut le
+    // remonter pour tenir entièrement à l'écran.
+    bewUsagePanel.style.top = editRect.top + 'px';
+    const naturalHeight = bewUsagePanel.getBoundingClientRect().height;
+    let top = editRect.top;
+    if(top + naturalHeight > maxBottom){
+      top = Math.max(minTop, maxBottom - naturalHeight);
+    }
+    bewUsagePanel.style.top = top + 'px';
   }
 }
 window.addEventListener('resize', syncBldgPanelMaxHeight);
