@@ -601,6 +601,13 @@
     background:#e5484d;color:#2a0808;box-shadow:0 4px 14px rgba(229,72,77,.25);
   }
   .action-btn.delete:hover{background:#f0605f;transform:translateY(-1px);box-shadow:0 6px 18px rgba(229,72,77,.35);}
+  /* "Ajouter un volume supérieur" : couleur neutre de l'accent (bleu néon),
+     distincte du jaune (édition au sol) et du rouge (suppression). */
+  .action-btn:not(.edit):not(.delete){
+    background:rgba(46,232,255,.14);color:var(--accent);border-color:rgba(46,232,255,.4);
+  }
+  .action-btn:not(.edit):not(.delete):hover{background:rgba(46,232,255,.24);transform:translateY(-1px);box-shadow:0 6px 18px rgba(46,232,255,.25);}
+  .action-btn:not(.edit):not(.delete).active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
 
   #footer-actions{
     padding:14px 16px;border-top:1px solid #23303b;display:flex;flex-direction:column;gap:8px;
@@ -1953,6 +1960,12 @@ let rectStartPt = null;
 let drawMarkers = new THREE.Group();
 let previewLine = null;
 worldRoot.add(drawMarkers);
+// Tracé d'un "volume supérieur" (décroché posé sur le toit d'un bâtiment
+// existant) : réutilise exactement la même machine à état que le tracé d'un
+// nouveau bâtiment (drawing/drawPoints/drawMode/finishDraw…), simplement
+// signalée par cet id non-nul — voir startVolumeDraw().
+let volumeDrawTargetId = null;
+let volumeDrawRoofY = 0;
 
 /* ------------------------------------------------------------
    Marqueurs à taille d'écran CONSTANTE quel que soit le zoom —
@@ -2097,11 +2110,21 @@ let selectedId = null;
    ============================================================ */
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+const _roofPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+const _roofPlaneHit = new THREE.Vector3();
 function groundPointFromEvent(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
+  // Tracé d'un volume supérieur : on vise le toit du bâtiment ciblé (plan
+  // horizontal à sa hauteur), pas le sol — sinon impossible de poser des
+  // sommets "en l'air" au-dessus d'un bâtiment existant.
+  if(volumeDrawTargetId!==null){
+    _roofPlane.constant = -volumeDrawRoofY;
+    const hit = raycaster.ray.intersectPlane(_roofPlane, _roofPlaneHit);
+    return hit ? {x:hit.x, y:hit.y, z:hit.z} : null;
+  }
   const hit = raycaster.intersectObject(ground)[0];
   return hit ? hit.point : null;
 }
@@ -2195,6 +2218,8 @@ function cancelDraw(){
   drawHintEnter.style.display = '';
   controls.enabled = true;
   closeDrawMenu();
+  volumeDrawTargetId = null;
+  hideVolumeRoofGrid();
   refreshBldgMiniListVisibility();
 }
 function clearMarkers(){
@@ -2635,13 +2660,14 @@ function addDrawPoint(pt){
   // Aimantation directe sur un sommet/bord du polygone si on clique à
   // proximité — même mécanisme fiable que "Emprise pleine" (copie/projection
   // exacte des coordonnées, jamais un point "presque" dessus).
-  const target = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
+  const target = (!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt;
   // Étape 2 : hugue IMMÉDIATEMENT le segment reliant le point précédent à
   // celui-ci contre le bord réel du polygone — pas seulement à la fermeture
   // du tracé (finishDraw). Ainsi le contour est correct dès la pose, sans
-  // avoir à "valider" pour voir la marge fantôme disparaître.
+  // avoir à "valider" pour voir la marge fantôme disparaître. Un volume
+  // supérieur se trace librement sur le toit, sans accrochage au sol.
   let toInsert;
-  if(buildZone.length>=3 && drawPoints.length>0){
+  if(!volumeDrawTargetId && buildZone.length>=3 && drawPoints.length>0){
     const from = drawPoints[drawPoints.length-1];
     toInsert = repairEdgeAgainstZone(from, target, buildZone, drawPoints);
   } else {
@@ -2664,8 +2690,10 @@ function finishDraw(){
   // posé vers le premier) puis nettoie les doublons/points quasi confondus
   // qu'un hug répété peut laisser — mais ne réordonne JAMAIS les points : le
   // contour doit rester exactement dans l'ordre où il a été tracé.
+  // NB : un volume supérieur se dessine sur le toit, hors du polygone
+  // d'implantation au sol — pas de "hug" contre buildZone dans ce cas.
   let finalPoints = drawPoints.slice();
-  if(buildZone.length>=3 && finalPoints.length>=2){
+  if(!volumeDrawTargetId && buildZone.length>=3 && finalPoints.length>=2){
     const first = finalPoints[0], last = finalPoints[finalPoints.length-1];
     const closing = repairEdgeAgainstZone(last, first, buildZone, finalPoints);
     // le dernier point de "closing" == first ; on ne le rajoute pas (il ferme déjà la boucle)
@@ -2674,6 +2702,12 @@ function finishDraw(){
   finalPoints = cleanPolygonPoints(finalPoints) || finalPoints;
   finalPoints = simplifyClosedPolygon(finalPoints) || finalPoints;
   if(finalPoints.length<3){ cancelDraw(); return; }
+  if(volumeDrawTargetId!==null){
+    const targetBuilding = buildings.find(x=>x.id===volumeDrawTargetId);
+    cancelDraw();
+    if(targetBuilding) askVolumeFloorsThenBuild(targetBuilding, finalPoints);
+    return;
+  }
   cancelDraw();
   askFloorsThenBuild(finalPoints);
 }
@@ -2715,6 +2749,141 @@ function askFloorsThenBuild(finalPoints){
   document.getElementById('floors-modal-cancel').addEventListener('click', onCancel);
 }
 
+/* ------------------------------------------------------------
+   VOLUMES SUPÉRIEURS — tracé d'un "décroché" sur le toit d'un bâtiment
+   existant. Réutilise la machine de tracé polygone/rectangle ci-dessus
+   (drawing/drawPoints/drawMode/finishDraw), simplement redirigée vers le
+   toit via volumeDrawTargetId (voir groundPointFromEvent).
+   ------------------------------------------------------------ */
+function startVolumeDraw(b){
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+  if(editingBuildingId) stopEditBuildingShape();
+  volumeDrawTargetId = b.id;
+  volumeDrawRoofY = buildingTotalHeight(b);
+  drawMode = 'polygon';
+  drawing = true; drawPoints = [];
+  clearMarkers();
+  showVolumeRoofGrid(b);
+  drawHintText.textContent = 'Cliquez sur le toit pour poser les sommets du volume supérieur';
+  drawHintEnter.style.display = '';
+  drawHint.classList.add('show');
+  controls.enabled = false;
+  refreshBldgMiniListVisibility();
+}
+
+function askVolumeFloorsThenBuild(b, finalPoints){
+  document.querySelector('#floors-modal h3').textContent = "Volume supérieur — nombre d'étages";
+  document.querySelector('#floors-modal p').textContent = "Choisissez le nombre d'étages de ce volume (modifiable ensuite depuis sa fiche).";
+  document.getElementById('floors-modal-validate').textContent = 'Ajouter';
+  floorsModalInput.value = 3;
+  floorsModalOverlay.classList.remove('hidden');
+  if(window.lucide) lucide.createIcons();
+  function clampVal(){ return Math.max(1, Math.min(60, parseInt(floorsModalInput.value)||3)); }
+  function restoreModalText(){
+    document.querySelector('#floors-modal h3').textContent = "Nombre d'étages";
+    document.querySelector('#floors-modal p').textContent = "Choisissez le nombre d'étages du bâtiment avant sa construction (modifiable ensuite à tout moment).";
+    document.getElementById('floors-modal-validate').textContent = 'Construire';
+  }
+  function cleanup(){
+    floorsModalOverlay.classList.add('hidden');
+    restoreModalText();
+    document.getElementById('floors-modal-minus').removeEventListener('click', onMinus);
+    document.getElementById('floors-modal-plus').removeEventListener('click', onPlus);
+    document.getElementById('floors-modal-validate').removeEventListener('click', onValidate);
+    document.getElementById('floors-modal-cancel').removeEventListener('click', onCancel);
+  }
+  function onMinus(){ floorsModalInput.value = clampVal()-1<1?1:clampVal()-1; }
+  function onPlus(){ floorsModalInput.value = clampVal()+1>60?60:clampVal()+1; }
+  function onValidate(){
+    const floors = clampVal();
+    cleanup();
+    addVolumeToBuilding(b, finalPoints, floors);
+  }
+  function onCancel(){ cleanup(); }
+  document.getElementById('floors-modal-minus').addEventListener('click', onMinus);
+  document.getElementById('floors-modal-plus').addEventListener('click', onPlus);
+  document.getElementById('floors-modal-validate').addEventListener('click', onValidate);
+  document.getElementById('floors-modal-cancel').addEventListener('click', onCancel);
+}
+
+function addVolumeToBuilding(b, pts, floors){
+  let cleaned = cleanPolygonPoints(pts) || pts;
+  // Contrainte des 30% : si le tracé déborde trop du socle (ou de ce qui
+  // était déjà bâti au-dessus), on le rétrécit automatiquement vers son
+  // centre jusqu'à repasser sous la limite, plutôt que de rejeter le tracé.
+  const before = polygonOutsideAreaRatio(cleaned, b.points);
+  cleaned = shrinkPolygonToFitOverlap(cleaned, b.points, 0.30);
+  if(before > 0.30) flashStatus('Volume ajusté : débord ramené à 30% maximum');
+  const v = { id: idCounter++, points: cleaned, floors: Math.max(1, Math.min(60, floors||1)), bands: defaultBands(floors||1) };
+  normalizeBands(v);
+  if(!b.volumes) b.volumes = [];
+  b.volumes.push(v);
+  rebuildMesh(b);
+  renderList();
+  selectedId = b.id;
+  openBldgEditWindow(b.id);
+}
+
+// ---------- Grille de repère flottante au-dessus du toit, pendant le tracé
+// d'un volume supérieur — s'estompe progressivement vers les bords (dégradé
+// radial en alpha) pour ne pas trancher visuellement avec la scène. ----------
+let volumeRoofGridMesh = null;
+function makeFadedGridTexture(){
+  const size = 512, c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,size,size);
+  ctx.strokeStyle = `rgba(${NEON_BLUE_CSS},0.9)`;
+  ctx.lineWidth = 1.5;
+  const step = size/16;
+  for(let i=0;i<=16;i++){
+    const p = i*step;
+    ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p,size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,p); ctx.lineTo(size,p); ctx.stroke();
+  }
+  // Fondu radial vers les bords : on applique un masque alpha (destination-in)
+  // avec un dégradé plein au centre, transparent sur les bords.
+  ctx.globalCompositeOperation = 'destination-in';
+  const grad = ctx.createRadialGradient(size/2,size/2,0, size/2,size/2,size/2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.6, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,size,size);
+  ctx.globalCompositeOperation = 'source-over';
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+function showVolumeRoofGrid(b){
+  hideVolumeRoofGrid();
+  const xs = b.points.map(p=>p.x), zs = b.points.map(p=>p.z);
+  const w = Math.max(...xs)-Math.min(...xs), d = Math.max(...zs)-Math.min(...zs);
+  const cx = (Math.max(...xs)+Math.min(...xs))/2, cz = (Math.max(...zs)+Math.min(...zs))/2;
+  const span = Math.max(w,d) * 1.6 + 6; // marge au-delà de l'emprise pour bien voir où on peut déborder
+  const geo = new THREE.PlaneGeometry(span, span);
+  const mat = new THREE.MeshBasicMaterial({
+    map: makeFadedGridTexture(), transparent:true, depthWrite:false,
+    side:THREE.DoubleSide
+  });
+  volumeRoofGridMesh = new THREE.Mesh(geo, mat);
+  volumeRoofGridMesh.rotation.x = -Math.PI/2;
+  volumeRoofGridMesh.position.set(cx, buildingTotalHeight(b)+0.05, cz);
+  volumeRoofGridMesh.renderOrder = 2;
+  worldRoot.add(volumeRoofGridMesh);
+}
+function hideVolumeRoofGrid(){
+  if(!volumeRoofGridMesh) return;
+  worldRoot.remove(volumeRoofGridMesh);
+  volumeRoofGridMesh.geometry.dispose();
+  volumeRoofGridMesh.material.map.dispose();
+  volumeRoofGridMesh.material.dispose();
+  volumeRoofGridMesh = null;
+}
+
 btnDraw.addEventListener('click', ()=>{
   if(drawing){ cancelDraw(); return; }
   if(!drawMenuOpen){
@@ -2746,7 +2915,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!drawing || drawMode!=='rect' || ev.button!==0) return;
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
-  const start = buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
+  const start = (!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt;
   rectDragging = true;
   rectStartPt = {x:start.x, z:start.z};
   drawPoints = [{x:rectStartPt.x, z:rectStartPt.z}];
@@ -3454,6 +3623,16 @@ function createBuilding(pts, opts={}){
     points: cleaned,
     floors: opts.floors || 6,
     bands: opts.bands || defaultBands(opts.floors || 6),
+    // Volumes supérieurs ("décrochés") : sous-volumes posés sur le toit du
+    // socle, chacun avec son propre polygone/étages/usages — voir
+    // addVolumeToBuilding(). Ils font partie intégrante de ce bâtiment (même
+    // id, même fiche), pas des bâtiments séparés dans buildings[].
+    volumes: (opts.volumes || []).map(v=>({
+      id: idCounter++,
+      points: cleanPolygonPoints(v.points) || v.points,
+      floors: v.floors || 1,
+      bands: v.bands || defaultBands(v.floors || 1)
+    })),
     group: new THREE.Group(),
     open: true,
     // Bâtiments de départ (chargés depuis depart.json, état actuel réel de la
@@ -3463,6 +3642,7 @@ function createBuilding(pts, opts={}){
     noRoofInset: !!opts.noRoofInset
   };
   normalizeBands(b);
+  b.volumes.forEach(v=> normalizeBands(v));
   worldRoot.add(b.group);
   b.group.visible = buildingsVisibleFlag;
   buildings.push(b);
@@ -3597,6 +3777,49 @@ function offsetPolygonInwardXZ(pts, dist){
   return areaA <= areaB ? candA : candB;
 }
 
+// Centroïde (moyenne des sommets) d'un polygone — suffisant pour un point
+// de "rétrécissement" vers l'intérieur, pas besoin du centroïde d'aire exact.
+function polygonCentroidXZ(pts){
+  const c = pts.reduce((s,p)=>({x:s.x+p.x, z:s.z+p.z}), {x:0,z:0});
+  return { x:c.x/pts.length, z:c.z/pts.length };
+}
+// Estime la proportion de la surface de `poly` qui tombe HORS de `basePts`,
+// par échantillonnage sur une grille régulière de sa bbox (simple, robuste
+// aux formes concaves, pas besoin d'un vrai clipping polygone/polygone —
+// largement assez précis pour une contrainte visuelle comme celle-ci).
+function polygonOutsideAreaRatio(poly, basePts, resolution=22){
+  if(!basePts || basePts.length<3) return 0;
+  const xs = poly.map(p=>p.x), zs = poly.map(p=>p.z);
+  const minX=Math.min(...xs), maxX=Math.max(...xs), minZ=Math.min(...zs), maxZ=Math.max(...zs);
+  if(maxX-minX<1e-6 || maxZ-minZ<1e-6) return 0;
+  let total=0, outside=0;
+  for(let i=0;i<resolution;i++){
+    for(let j=0;j<resolution;j++){
+      const x = minX + (i+0.5)/resolution * (maxX-minX);
+      const z = minZ + (j+0.5)/resolution * (maxZ-minZ);
+      if(!pointInPolygon({x,z}, poly, 0)) continue;
+      total++;
+      if(!pointInPolygon({x,z}, basePts, 0)) outside++;
+    }
+  }
+  return total>0 ? outside/total : 0;
+}
+// Si `poly` déborde de `basePts` de plus de `maxRatio`, le rétrécit
+// progressivement vers son propre centre (recherche dichotomique du plus
+// grand facteur d'échelle qui respecte la contrainte) jusqu'à repasser sous
+// la limite — plutôt que de rejeter purement et simplement le tracé.
+function shrinkPolygonToFitOverlap(poly, basePts, maxRatio){
+  if(polygonOutsideAreaRatio(poly, basePts) <= maxRatio) return poly;
+  const c = polygonCentroidXZ(poly);
+  function scaled(s){ return poly.map(p=>({x:c.x+(p.x-c.x)*s, z:c.z+(p.z-c.z)*s})); }
+  let lo=0, hi=1;
+  for(let i=0;i<22;i++){
+    const mid=(lo+hi)/2;
+    if(polygonOutsideAreaRatio(scaled(mid), basePts) <= maxRatio) lo=mid; else hi=mid;
+  }
+  return scaled(lo);
+}
+
 function rebuildMesh(b){
   if(b.constructing){ renderConstructionFrame(b); return; }
   b.group.clear();
@@ -3656,6 +3879,53 @@ function rebuildMesh(b){
       b.group.add(buildRoofCornerSpheres(b.points, totalHeight));
     }
   }
+
+  // ---------- Volumes supérieurs ("décrochés") ----------
+  // Même logique de rendu que le socle ci-dessus (un bloc coloré par étage
+  // si les légendes sont actives, sinon un seul bloc "verre"), simplement
+  // décalés à la hauteur du toit du socle. Ils vivent dans le MÊME groupe
+  // que le socle : ils bougent, se sélectionnent et se (re)construisent avec
+  // lui, comme un seul et même bâtiment.
+  (b.volumes||[]).forEach(v=>{
+    const vShape = new THREE.Shape(v.points.map(p=>new THREE.Vector2(p.x,-p.z)));
+    const baseY = buildingTotalHeight(b);
+    if(legendEnabled){
+      let yCursor = baseY;
+      for(let f=1; f<=v.floors; f++){
+        const usage = usageAtFloor(v, f);
+        const h = floorHeightFor(usage);
+        const geo = new THREE.ExtrudeGeometry(vShape, { depth: h, bevelEnabled:false, curveSegments:1 });
+        geo.rotateX(-Math.PI/2);
+        const mat = new THREE.MeshStandardMaterial({
+          color: USAGE_COLORS[usage], roughness:0.75, metalness:0.05,
+          transparent: editing, opacity: editing ? 0.25 : 1.0
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.y = yCursor;
+        mesh.castShadow = !editing; mesh.receiveShadow = true;
+        b.group.add(mesh);
+        const edges = new THREE.EdgesGeometry(geo, 25);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.35 }));
+        line.position.y = mesh.position.y;
+        b.group.add(line);
+        yCursor += h;
+      }
+    } else {
+      const vHeight = buildingTotalHeight(v);
+      const geo = new THREE.ExtrudeGeometry(vShape, { depth: vHeight, bevelEnabled:false, curveSegments:1 });
+      geo.rotateX(-Math.PI/2);
+      const mat = glassMaterialFor(editing);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = baseY;
+      mesh.castShadow = !editing; mesh.receiveShadow = true;
+      b.group.add(mesh);
+      const edges = new THREE.EdgesGeometry(geo, 25);
+      const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x0b1116, transparent:true, opacity: editing ? 0.15 : 0.4 }));
+      line.position.y = baseY;
+      b.group.add(line);
+      b.group.add(buildRoofCap(v.points, baseY + vHeight, editing, b.noRoofInset));
+    }
+  });
 
   // selection halo — surélevé et depthTest désactivé pour éviter tout
   // z-fighting/scintillement avec le sol juste en dessous (c'était la
@@ -4949,15 +5219,26 @@ function renderBldgEditWindow(b){
   editBtn.className='action-btn edit' + (editingBuildingId===b.id ? ' active' : '');
   editBtn.innerHTML = editingBuildingId===b.id
     ? '<i data-lucide="check"></i> Terminer'
-    : '<i data-lucide="move-3d"></i> Modifier la forme';
+    : '<i data-lucide="move-3d"></i> Modifier la forme au sol';
   editBtn.addEventListener('click', ()=>{
     editingBuildingId===b.id ? stopEditBuildingShape() : startEditBuildingShape(b);
+    renderBldgEditWindow(b);
+  });
+  const addVolumeBtn = document.createElement('button');
+  addVolumeBtn.className='action-btn' + (volumeDrawTargetId===b.id ? ' active' : '');
+  addVolumeBtn.innerHTML = volumeDrawTargetId===b.id
+    ? '<i data-lucide="x"></i> Annuler le tracé'
+    : '<i data-lucide="building"></i> Ajouter un volume supérieur';
+  addVolumeBtn.title = "Trace un nouveau volume sur le toit de ce bâtiment (décroché) — jusqu'à 30% de débord par rapport au socle";
+  addVolumeBtn.addEventListener('click', ()=>{
+    if(volumeDrawTargetId===b.id){ cancelDraw(); }
+    else { startVolumeDraw(b); }
     renderBldgEditWindow(b);
   });
   const delBtn = document.createElement('button');
   delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
   delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
-  actions.append(editBtn, delBtn);
+  actions.append(editBtn, addVolumeBtn, delBtn);
   colLeft.appendChild(actions);
 
   // ---------- Colonne de droite : répartition des usages par étage ----------
@@ -5799,7 +6080,7 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
 document.getElementById('btn-save-json').addEventListener('click', ()=>{
   const data = {
     version: 2,
-    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
+    buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands, volumes:(b.volumes||[]).map(v=>({points:v.points, floors:v.floors, bands:v.bands})) })),
     trees: trees.map(t=>({ x:t.x, z:t.z })),
     grass: grassParts.map(p=> p.canvas.toDataURL('image/png')),
     labels: labels.filter(l=>!l.locked).map(l=>({ x:l.x, z:l.z, text:l.text })),
@@ -5828,7 +6109,7 @@ const btnSaveDepart = document.getElementById('btn-save-depart');
 if(btnSaveDepart){
   btnSaveDepart.addEventListener('click', ()=>{
     const departData = {
-      buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
+      buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands, volumes:(b.volumes||[]).map(v=>({points:v.points, floors:v.floors, bands:v.bands})) })),
       trees: trees.map(t=>({ x:t.x, z:t.z })),
       labels: labels.map(l=>({ x:l.x, z:l.z, text:l.text }))
     };
@@ -5873,7 +6154,7 @@ fileLoad.addEventListener('change', (e)=>{
           pts = repairBuildingPoints(pts, buildZone);
           repairedCount++;
         }
-        createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands});
+        createBuilding(pts, {name:b.name, floors:b.floors, bands:b.bands, volumes:b.volumes});
       });
       selectedId = null;
       updateBldgPanelVisibility();
@@ -6582,7 +6863,7 @@ function tryAutoLoadDepart(){
         pts = repairBuildingPoints(pts, buildZone);
         repairedCount++;
       }
-      createBuilding(pts, { name:b.name, floors:b.floors, bands:b.bands, noRoofInset:true, silent:true });
+      createBuilding(pts, { name:b.name, floors:b.floors, bands:b.bands, volumes:b.volumes, noRoofInset:true, silent:true });
     });
     (data.trees||[]).forEach(t=> addTree({x:t.x, y:0, z:t.z}));
     (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text, { locked:true }));
