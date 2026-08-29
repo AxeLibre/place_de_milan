@@ -5139,12 +5139,20 @@ window.addEventListener('pointermove', (ev)=>{
       const editingBand = editingBandIndex!==null;
       if(gizmoDrag.type==='move'){
         const dx = pt.x-gizmoDrag.startGround.x, dz = pt.z-gizmoDrag.startGround.z;
+        // Aimantation via le gizmo : seulement quand un SEUL sommet est
+        // sélectionné (déplacement rigide identique au glissement direct
+        // d'une sphère). Avec plusieurs sommets sélectionnés, le déplacement
+        // doit rester un bloc rigide (même vecteur pour tous) — aimanter
+        // chaque point séparément casserait la forme du groupe.
+        const singleBandVertex = editingBand && gizmoDrag.startPoints.size===1;
+        const belowFootprint = singleBandVertex ? editTargetBelowFootprint(b) : null;
         gizmoDrag.startPoints.forEach((startP, idx)=>{
           let target = { x:startP.x+dx, z:startP.z+dz };
           // Un décroché ne se contraint pas à la zone d'implantation au sol
           // (il est en l'air) — sa seule limite est la règle des 30% de
           // débord, appliquée une fois au relâchement, pas pendant le glisser.
           if(!editingBand && buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
+          else if(belowFootprint) target = snapToFootprintEdges(target, belowFootprint);
           pts[idx] = target;
           if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, handleY, target.z);
         });
