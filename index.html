@@ -66,6 +66,37 @@
   .tool-btn.ghost:not(.active){ text-shadow:0 1px 4px rgba(0,0,0,.85), 0 0 8px rgba(0,0,0,.55); }
   .tool-btn.ghost svg{ filter:drop-shadow(0 1px 3px rgba(0,0,0,.85)); }
 
+  /* ---------- Mode caméra piéton ---------- */
+  /* En mode piéton, on masque toute l'interface superposée pour ne laisser
+     que la scène 3D à l'écran (utile pour cadrer une capture propre depuis
+     n'importe quel point de vue). Seule la barre de sortie (en haut) reste
+     joignable, et seulement quand la souris touche le bord supérieur. */
+  body.pedestrian-mode #ribbon,
+  body.pedestrian-mode #toolbar-left,
+  body.pedestrian-mode #status-line,
+  body.pedestrian-mode #compass,
+  body.pedestrian-mode #sun-panel,
+  body.pedestrian-mode #legend-window,
+  body.pedestrian-mode #admin-panel,
+  body.pedestrian-mode #site-banner{
+    display:none !important;
+  }
+  #pedestrian-close-bar{
+    position:fixed;top:-64px;left:50%;transform:translateX(-50%);
+    z-index:600;pointer-events:none;transition:top .22s ease;
+  }
+  #pedestrian-close-bar.show{ top:0; pointer-events:auto; }
+  #btn-pedestrian-close{
+    margin-top:0;border-radius:0 0 6px 6px;
+    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;
+    background:var(--ink-2);border:1px solid var(--accent);border-top:none;color:var(--paper);
+    padding:10px 20px;cursor:pointer;display:flex;align-items:center;gap:8px;
+    box-shadow:0 6px 18px rgba(0,0,0,.5);
+  }
+  #btn-pedestrian-close:hover{ background:rgba(46,232,255,.14); color:#fff; }
+  #btn-pedestrian-close svg{width:15px;height:15px;stroke-width:2;}
+  body.pedestrian-mode #app{ cursor: default; }
+
   #status-line{
     position:absolute;top:70px;right:132px;z-index:5;
     font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;
@@ -950,11 +981,15 @@
   </div>
 </div>
 <div id="app">
+  <div id="pedestrian-close-bar">
+    <button id="btn-pedestrian-close" title="Quitter le mode piéton (Échap)"><i data-lucide="x"></i>Quitter le mode piéton</button>
+  </div>
   <div id="viewport">
     <div id="ribbon">
       <div id="brand"><b>LYON PART-DIEU | PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
+      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + flèches + molette/±) pour cadrer une capture depuis n'importe quel point de vue. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
@@ -1431,6 +1466,182 @@ function lockPlanViewForVolumeDraw(b){
 function unlockPlanViewAfterVolumeDraw(){
   if(volumeDrawForcedPlanView && planViewActive) togglePlanView();
   volumeDrawForcedPlanView = false;
+}
+
+// ==== Navigation caméra au clavier (flèches = rotation, WASD = déplacement,
+// +/- = zoom, MAJ = accélération) + Mode caméra piéton ====
+// Deux régimes bien distincts, chacun cohérent avec son propre mode de visée :
+//  - Mode orbite (par défaut) : les touches reproduisent exactement les trois
+//    gestes souris déjà en place (clic gauche = orbiter, clic droit =
+//    déplacer, molette = zoom), combinables au clavier.
+//  - Mode piéton : caméra libre "vol/marche" (regard clavier + déplacement
+//    dans la direction regardée), pour cadrer une capture depuis n'importe
+//    quel point et n'importe quelle direction, indépendamment de la cible
+//    d'orbite habituelle.
+const keysDown = new Set();
+const CAM_NAV_CODES = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','Equal','Minus','NumpadAdd','NumpadSubtract','ShiftLeft','ShiftRight']);
+function isTypingInInput(){
+  const el = document.activeElement;
+  if(!el) return false;
+  return el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable;
+}
+window.addEventListener('keydown', (ev)=>{
+  if(!CAM_NAV_CODES.has(ev.code)) return;
+  if(isTypingInInput()) return;
+  keysDown.add(ev.code);
+  // Empêche le défilement de la page (flèches) et le zoom du navigateur (+/-)
+  // pendant la navigation caméra ; MAJ seule ne doit rien bloquer d'autre.
+  if(ev.code!=='ShiftLeft' && ev.code!=='ShiftRight') ev.preventDefault();
+});
+window.addEventListener('keyup', (ev)=>{ keysDown.delete(ev.code); });
+window.addEventListener('blur', ()=> keysDown.clear());
+
+function updateOrbitKeyboardNav(dt){
+  if(keysDown.size===0) return;
+  if(isTypingInInput()) return;
+  if(!controls.enabled) return; // laisse la main aux outils exclusifs (dessin, gazon, sélection…)
+  const speedMul = (keysDown.has('ShiftLeft')||keysDown.has('ShiftRight')) ? 2.5 : 1;
+  const offset = camera.position.clone().sub(controls.target);
+  const radius = offset.length() || 1;
+
+  // Rotation (flèches) : orbite autour de la cible — équivalent clic-gauche-glisser.
+  let theta = Math.atan2(offset.x, offset.z);
+  let phi = Math.acos(THREE.MathUtils.clamp(offset.y/radius, -1, 1));
+  let rotated = false;
+  const rotateSpeed = 1.1 * speedMul;
+  if(keysDown.has('ArrowLeft')){ theta -= rotateSpeed*dt; rotated = true; }
+  if(keysDown.has('ArrowRight')){ theta += rotateSpeed*dt; rotated = true; }
+  if(keysDown.has('ArrowUp')){ phi -= rotateSpeed*dt; rotated = true; }
+  if(keysDown.has('ArrowDown')){ phi += rotateSpeed*dt; rotated = true; }
+  if(rotated){
+    phi = THREE.MathUtils.clamp(phi, controls.minPolarAngle+0.001, controls.maxPolarAngle-0.001);
+    const newOffset = new THREE.Vector3(
+      radius*Math.sin(phi)*Math.sin(theta),
+      radius*Math.cos(phi),
+      radius*Math.sin(phi)*Math.cos(theta)
+    );
+    camera.position.copy(controls.target).add(newOffset);
+  }
+
+  // Déplacement (WASD) : translate cible + caméra dans le plan horizontal de vue — équivalent clic-droit-glisser.
+  const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const pan = new THREE.Vector3();
+  if(keysDown.has('KeyW')) pan.add(forward);
+  if(keysDown.has('KeyS')) pan.sub(forward);
+  if(keysDown.has('KeyD')) pan.add(right);
+  if(keysDown.has('KeyA')) pan.sub(right);
+  if(pan.lengthSq()>0){
+    pan.normalize().multiplyScalar(radius*0.7*speedMul*dt);
+    camera.position.add(pan);
+    controls.target.add(pan);
+  }
+
+  // Zoom (+/-) : rapproche/éloigne la caméra de la cible — équivalent molette.
+  let zoomDelta = 0;
+  if(keysDown.has('Equal')||keysDown.has('NumpadAdd')) zoomDelta -= radius*0.9*speedMul*dt;
+  if(keysDown.has('Minus')||keysDown.has('NumpadSubtract')) zoomDelta += radius*0.9*speedMul*dt;
+  if(zoomDelta!==0){
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    const newRadius = THREE.MathUtils.clamp(radius+zoomDelta, controls.minDistance, controls.maxDistance);
+    camera.position.copy(controls.target).add(dir.multiplyScalar(newRadius));
+  }
+}
+
+// ---- Mode caméra piéton ----
+let pedestrianModeActive = false;
+let pedestrianYaw = 0, pedestrianPitch = 0;
+let pedestrianSavedState = null;
+const btnPedestrianMode = document.getElementById('btn-pedestrian-mode');
+const pedestrianCloseBar = document.getElementById('pedestrian-close-bar');
+const btnPedestrianClose = document.getElementById('btn-pedestrian-close');
+
+function enterPedestrianMode(){
+  if(pedestrianModeActive) return;
+  // La vue plan (verrouillée à la verticale, caméra orthographique) n'a pas
+  // de sens en piéton : on la referme proprement avant de basculer, et on la
+  // rétablira à la sortie si elle était active.
+  const planViewWasActive = planViewActive;
+  if(planViewActive) togglePlanView();
+  pedestrianSavedState = {
+    position: camera.position.clone(),
+    target: controls.target.clone(),
+    fov: camera.fov,
+    controlsEnabled: controls.enabled,
+    planViewWasActive,
+  };
+  pedestrianModeActive = true;
+  controls.enabled = false; // navigation 100% clavier en piéton, plus d'orbite/pan/zoom souris
+  const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  pedestrianYaw = euler.y;
+  pedestrianPitch = euler.x;
+  document.body.classList.add('pedestrian-mode');
+  btnPedestrianMode.classList.add('active');
+  keysDown.clear();
+}
+function exitPedestrianMode(){
+  if(!pedestrianModeActive) return;
+  pedestrianModeActive = false;
+  document.body.classList.remove('pedestrian-mode');
+  btnPedestrianMode.classList.remove('active');
+  pedestrianCloseBar.classList.remove('show');
+  keysDown.clear();
+  if(pedestrianSavedState){
+    camera.fov = pedestrianSavedState.fov;
+    camera.updateProjectionMatrix();
+    controls.enabled = pedestrianSavedState.controlsEnabled;
+    // Replace la cible de l'orbite juste devant la nouvelle position/direction
+    // de la caméra piétonne, pour que les contrôles souris reprennent la main
+    // sans "sauter" brutalement vers l'ancienne cible restée loin derrière.
+    const lookDir = new THREE.Vector3(); camera.getWorldDirection(lookDir);
+    const prevDist = pedestrianSavedState.position.distanceTo(pedestrianSavedState.target) || 40;
+    const newDist = THREE.MathUtils.clamp(prevDist, 20, 140);
+    controls.target.copy(camera.position).add(lookDir.multiplyScalar(newDist));
+    controls.update();
+    if(pedestrianSavedState.planViewWasActive) togglePlanView();
+  }
+  pedestrianSavedState = null;
+}
+btnPedestrianMode.addEventListener('click', ()=>{ pedestrianModeActive ? exitPedestrianMode() : enterPedestrianMode(); });
+btnPedestrianClose.addEventListener('click', exitPedestrianMode);
+window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && pedestrianModeActive) exitPedestrianMode(); });
+// La barre de sortie glisse depuis le haut dès que la souris touche le rebord
+// supérieur de la page (hystérésis pour éviter un clignotement au pixel près).
+window.addEventListener('mousemove', (ev)=>{
+  if(!pedestrianModeActive) return;
+  if(ev.clientY <= 6) pedestrianCloseBar.classList.add('show');
+  else if(ev.clientY > 90) pedestrianCloseBar.classList.remove('show');
+});
+
+function updatePedestrianMovement(dt){
+  if(isTypingInInput()) return;
+  const speedMul = (keysDown.has('ShiftLeft')||keysDown.has('ShiftRight')) ? 2.6 : 1;
+
+  // Regard (flèches) : yaw/pitch libres, indépendants de toute cible d'orbite.
+  const rotateSpeed = 1.6;
+  if(keysDown.has('ArrowLeft')) pedestrianYaw += rotateSpeed*dt;
+  if(keysDown.has('ArrowRight')) pedestrianYaw -= rotateSpeed*dt;
+  if(keysDown.has('ArrowUp')) pedestrianPitch += rotateSpeed*dt;
+  if(keysDown.has('ArrowDown')) pedestrianPitch -= rotateSpeed*dt;
+  pedestrianPitch = THREE.MathUtils.clamp(pedestrianPitch, -Math.PI/2+0.02, Math.PI/2-0.02);
+  camera.quaternion.setFromEuler(new THREE.Euler(pedestrianPitch, pedestrianYaw, 0, 'YXZ'));
+
+  // Déplacement (WASD) : marche/vol libre dans la direction regardée.
+  const moveSpeed = 32 * speedMul;
+  const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const move = new THREE.Vector3();
+  if(keysDown.has('KeyW')) move.add(forward);
+  if(keysDown.has('KeyS')) move.sub(forward);
+  if(keysDown.has('KeyD')) move.add(right);
+  if(keysDown.has('KeyA')) move.sub(right);
+  if(move.lengthSq()>0){ move.normalize().multiplyScalar(moveSpeed*dt); camera.position.add(move); }
+
+  // Zoom (+/-) : zoom optique (FOV), pratique pour cadrer une capture sans bouger.
+  const zoomSpeed = 22 * speedMul;
+  if(keysDown.has('Equal')||keysDown.has('NumpadAdd')) camera.fov = Math.max(15, camera.fov - zoomSpeed*dt);
+  if(keysDown.has('Minus')||keysDown.has('NumpadSubtract')) camera.fov = Math.min(90, camera.fov + zoomSpeed*dt);
+  camera.updateProjectionMatrix();
 }
 
 // Lighting — soft overcast "plan de présentation" look
@@ -8015,7 +8226,8 @@ setupEyeToggle('eye-btn-labels',
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
-  controls.update();
+  if(pedestrianModeActive){ updatePedestrianMovement(dt); }
+  else { updateOrbitKeyboardNav(dt); controls.update(); }
   if(!simulationPaused) tickAgents(dt);
   updateDemolitions(dt);
   // La construction animée (étages qui "poussent" + grue de chantier) est un
