@@ -78,6 +78,7 @@
   body.pedestrian-mode #sun-panel,
   body.pedestrian-mode #legend-window,
   body.pedestrian-mode #admin-panel,
+  body.pedestrian-mode #bldg-list,
   body.pedestrian-mode #site-banner{
     display:none !important;
   }
@@ -6104,21 +6105,84 @@ skyCanvas.width = 2; skyCanvas.height = 128;
 const skyCtx = skyCanvas.getContext('2d');
 const skyTexture = new THREE.CanvasTexture(skyCanvas);
 skyTexture.colorSpace = THREE.SRGBColorSpace;
-function updateSkyGradient(key){
-  const [top, bottom] = SKY_GRADIENTS[key] || SKY_GRADIENTS.midi;
+// Peint le dégradé à partir de deux couleurs CSS déjà résolues (utilisé aussi
+// bien pour un mode fixe que pour une valeur interpolée pendant une
+// transition — voir updateDayTransition ci-dessous).
+function paintSkyGradient(topCss, bottomCss){
   const g = skyCtx.createLinearGradient(0,0,0,skyCanvas.height);
-  g.addColorStop(0, top);
-  g.addColorStop(0.55, bottom);
-  g.addColorStop(1, bottom);
+  g.addColorStop(0, topCss);
+  g.addColorStop(0.55, bottomCss);
+  g.addColorStop(1, bottomCss);
   skyCtx.fillStyle = g;
   skyCtx.fillRect(0,0,skyCanvas.width, skyCanvas.height);
   skyTexture.needsUpdate = true;
   scene.background = skyTexture;
   // Le brouillard adopte une teinte proche de l'horizon (bas du dégradé) pour
   // que la maquette se fonde dans le ciel plutôt que dans un gris neutre.
-  scene.fog.color.copy(new THREE.Color(top).lerp(new THREE.Color(bottom), 0.6));
+  scene.fog.color.copy(new THREE.Color(topCss).lerp(new THREE.Color(bottomCss), 0.6));
+}
+function updateSkyGradient(key){
+  const [top, bottom] = SKY_GRADIENTS[key] || SKY_GRADIENTS.midi;
+  paintSkyGradient(top, bottom);
+}
+// ---- Transition douce ENTRE LES 5 MOMENTS DE JOUR uniquement ----
+// (l'entrée/sortie du mode Nuit reste instantanée : elle bascule en plus
+// scene.environment et les lampadaires, déjà coûteux — voir applyLightingModeNow).
+// Le soleil se déplace en interpolant directement l'heure décimale (ce qui
+// fait varier sa position, son intensité et sa couleur d'un même mouvement,
+// via positionSunForHour), pendant que le dégradé de ciel interpole ses deux
+// couleurs (haut/bas) indépendamment.
+const DAY_TRANSITION_MS = 1000;
+let dayTransition = null; // {fromHour,toHour,fromTop,fromBottom,toTop,toBottom,elapsed}
+function getCurrentDayVisualState(){
+  if(dayTransition){
+    const t = Math.min(1, dayTransition.elapsed / DAY_TRANSITION_MS);
+    const te = t*t*(3-2*t); // smoothstep : même easing que l'interpolation en cours
+    return {
+      hour: THREE.MathUtils.lerp(dayTransition.fromHour, dayTransition.toHour, te),
+      top: dayTransition.fromTop.clone().lerp(dayTransition.toTop, te),
+      bottom: dayTransition.fromBottom.clone().lerp(dayTransition.toBottom, te),
+    };
+  }
+  const cfg = SUN_TIMES.find(s=>s.key===lightingMode);
+  const [topHex, bottomHex] = SKY_GRADIENTS[lightingMode] || SKY_GRADIENTS.midi;
+  return { hour: cfg ? cfg.hour : 12, top: new THREE.Color(topHex), bottom: new THREE.Color(bottomHex) };
+}
+function startDayTransition(targetMode){
+  const cfg = SUN_TIMES.find(s=>s.key===targetMode);
+  if(!cfg){ applyLightingModeNow(targetMode); return; } // sécurité : mode inconnu, jamais atteint en pratique
+  // Repart de l'état visuel ACTUEL (même si une transition précédente était
+  // encore en cours) pour ne jamais faire de saut brusque si on reclique vite.
+  const from = getCurrentDayVisualState();
+  const [toTopHex, toBottomHex] = SKY_GRADIENTS[targetMode];
+  dayTransition = {
+    fromHour: from.hour, toHour: cfg.hour,
+    fromTop: from.top, fromBottom: from.bottom,
+    toTop: new THREE.Color(toTopHex), toBottom: new THREE.Color(toBottomHex),
+    elapsed: 0,
+  };
+  lightingMode = targetMode; // le mode "actif" (UI du panneau soleil) change dès le clic
+  refreshSunPanelUI();
+}
+function updateDayTransition(dt){
+  if(!dayTransition) return;
+  dayTransition.elapsed += dt*1000;
+  const t = Math.min(1, dayTransition.elapsed / DAY_TRANSITION_MS);
+  const te = t*t*(3-2*t); // smoothstep : doux au départ et à l'arrivée, pas de à-coup
+  positionSunForHour(THREE.MathUtils.lerp(dayTransition.fromHour, dayTransition.toHour, te));
+  const top = dayTransition.fromTop.clone().lerp(dayTransition.toTop, te);
+  const bottom = dayTransition.fromBottom.clone().lerp(dayTransition.toBottom, te);
+  paintSkyGradient('#'+top.getHexString(), '#'+bottom.getHexString());
+  if(t>=1){
+    dayTransition = null;
+    // Recale exactement sur les valeurs nominales du mode cible pour éviter
+    // toute micro-dérive d'arrondi accumulée pendant l'interpolation.
+    positionSunForHour(SUN_TIMES.find(s=>s.key===lightingMode).hour);
+    updateSkyGradient(lightingMode);
+  }
 }
 function applyLightingModeNow(mode){
+  dayTransition = null; // un changement instantané (nuit ↔ jour) annule toute transition douce en cours
   lightingMode = mode;
   isNight = (mode === 'nuit');
   if(isNight){
@@ -6150,6 +6214,14 @@ function applyLightingModeNow(mode){
 // navigateur peindre ce spinner avant de lancer le travail bloquant.
 const loadingSpinner = document.getElementById('loading-spinner');
 function setLightingMode(mode){
+  // Jour → jour (parmi les 5 moments) : transition douce d'1s (soleil +
+  // dégradé de ciel), sans le spinner ni le coût du changement nuit/jour
+  // (pas de bascule scene.environment, pas de lampadaires à (re)basculer).
+  const isDayToDay = !isNight && mode!=='nuit' && SUN_TIMES.some(s=>s.key===mode);
+  if(isDayToDay){
+    startDayTransition(mode);
+    return;
+  }
   loadingSpinner.classList.add('show');
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
@@ -8246,6 +8318,7 @@ function animate(){
   // est lancée pendant une pause, elle reste figée à son état de départ
   // (grue posée, aucun étage encore sorti de terre) jusqu'au "Reprendre".
   if(!simulationPaused) updateConstructions(dt);
+  updateDayTransition(dt);
   updateCompass();
   updateLabelPositions();
   updateDrawAreaLabel();
