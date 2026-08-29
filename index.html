@@ -989,7 +989,7 @@
       <div id="brand"><b>LYON PART-DIEU | PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
-      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + flèches + molette/±) pour cadrer une capture depuis n'importe quel point de vue. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
+      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + flèches + ±) pour cadrer une capture depuis n'importe quel point de vue. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
@@ -1479,19 +1479,29 @@ function unlockPlanViewAfterVolumeDraw(){
 //    quel point et n'importe quelle direction, indépendamment de la cible
 //    d'orbite habituelle.
 const keysDown = new Set();
-const CAM_NAV_CODES = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','Equal','Minus','NumpadAdd','NumpadSubtract','ShiftLeft','ShiftRight']);
+const CAM_NAV_CODES = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','Equal','Minus','NumpadAdd','NumpadSubtract','ShiftLeft','ShiftRight','ControlLeft','ControlRight']);
+const CAM_NAV_MODIFIER_CODES = new Set(['ShiftLeft','ShiftRight','ControlLeft','ControlRight']);
 function isTypingInInput(){
   const el = document.activeElement;
   if(!el) return false;
   return el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable;
+}
+// MAJ accélère, CTRL ralentit pour un cadrage précis (ex. juste avant une
+// capture) ; combinables avec les touches de rotation/déplacement/zoom.
+function camSpeedMultiplier(){
+  let m = 1;
+  if(keysDown.has('ShiftLeft')||keysDown.has('ShiftRight')) m *= 2.5;
+  if(keysDown.has('ControlLeft')||keysDown.has('ControlRight')) m *= 0.35;
+  return m;
 }
 window.addEventListener('keydown', (ev)=>{
   if(!CAM_NAV_CODES.has(ev.code)) return;
   if(isTypingInInput()) return;
   keysDown.add(ev.code);
   // Empêche le défilement de la page (flèches) et le zoom du navigateur (+/-)
-  // pendant la navigation caméra ; MAJ seule ne doit rien bloquer d'autre.
-  if(ev.code!=='ShiftLeft' && ev.code!=='ShiftRight') ev.preventDefault();
+  // pendant la navigation caméra ; les touches modificatrices (MAJ/CTRL)
+  // seules ne doivent rien bloquer d'autre côté navigateur.
+  if(!CAM_NAV_MODIFIER_CODES.has(ev.code)) ev.preventDefault();
 });
 window.addEventListener('keyup', (ev)=>{ keysDown.delete(ev.code); });
 window.addEventListener('blur', ()=> keysDown.clear());
@@ -1500,7 +1510,7 @@ function updateOrbitKeyboardNav(dt){
   if(keysDown.size===0) return;
   if(isTypingInInput()) return;
   if(!controls.enabled) return; // laisse la main aux outils exclusifs (dessin, gazon, sélection…)
-  const speedMul = (keysDown.has('ShiftLeft')||keysDown.has('ShiftRight')) ? 2.5 : 1;
+  const speedMul = camSpeedMultiplier();
   const offset = camera.position.clone().sub(controls.target);
   const radius = offset.length() || 1;
 
@@ -1508,7 +1518,7 @@ function updateOrbitKeyboardNav(dt){
   let theta = Math.atan2(offset.x, offset.z);
   let phi = Math.acos(THREE.MathUtils.clamp(offset.y/radius, -1, 1));
   let rotated = false;
-  const rotateSpeed = 1.1 * speedMul;
+  const rotateSpeed = 0.42 * speedMul;
   if(keysDown.has('ArrowLeft')){ theta -= rotateSpeed*dt; rotated = true; }
   if(keysDown.has('ArrowRight')){ theta += rotateSpeed*dt; rotated = true; }
   if(keysDown.has('ArrowUp')){ phi -= rotateSpeed*dt; rotated = true; }
@@ -1532,15 +1542,15 @@ function updateOrbitKeyboardNav(dt){
   if(keysDown.has('KeyD')) pan.add(right);
   if(keysDown.has('KeyA')) pan.sub(right);
   if(pan.lengthSq()>0){
-    pan.normalize().multiplyScalar(radius*0.7*speedMul*dt);
+    pan.normalize().multiplyScalar(radius*0.26*speedMul*dt);
     camera.position.add(pan);
     controls.target.add(pan);
   }
 
   // Zoom (+/-) : rapproche/éloigne la caméra de la cible — équivalent molette.
   let zoomDelta = 0;
-  if(keysDown.has('Equal')||keysDown.has('NumpadAdd')) zoomDelta -= radius*0.9*speedMul*dt;
-  if(keysDown.has('Minus')||keysDown.has('NumpadSubtract')) zoomDelta += radius*0.9*speedMul*dt;
+  if(keysDown.has('Equal')||keysDown.has('NumpadAdd')) zoomDelta -= radius*0.35*speedMul*dt;
+  if(keysDown.has('Minus')||keysDown.has('NumpadSubtract')) zoomDelta += radius*0.35*speedMul*dt;
   if(zoomDelta!==0){
     const dir = camera.position.clone().sub(controls.target).normalize();
     const newRadius = THREE.MathUtils.clamp(radius+zoomDelta, controls.minDistance, controls.maxDistance);
@@ -1615,10 +1625,10 @@ window.addEventListener('mousemove', (ev)=>{
 
 function updatePedestrianMovement(dt){
   if(isTypingInInput()) return;
-  const speedMul = (keysDown.has('ShiftLeft')||keysDown.has('ShiftRight')) ? 2.6 : 1;
+  const speedMul = camSpeedMultiplier();
 
   // Regard (flèches) : yaw/pitch libres, indépendants de toute cible d'orbite.
-  const rotateSpeed = 1.6;
+  const rotateSpeed = 0.6 * speedMul;
   if(keysDown.has('ArrowLeft')) pedestrianYaw += rotateSpeed*dt;
   if(keysDown.has('ArrowRight')) pedestrianYaw -= rotateSpeed*dt;
   if(keysDown.has('ArrowUp')) pedestrianPitch += rotateSpeed*dt;
@@ -1627,7 +1637,7 @@ function updatePedestrianMovement(dt){
   camera.quaternion.setFromEuler(new THREE.Euler(pedestrianPitch, pedestrianYaw, 0, 'YXZ'));
 
   // Déplacement (WASD) : marche/vol libre dans la direction regardée.
-  const moveSpeed = 32 * speedMul;
+  const moveSpeed = 12 * speedMul;
   const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
   const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
   const move = new THREE.Vector3();
@@ -1638,7 +1648,7 @@ function updatePedestrianMovement(dt){
   if(move.lengthSq()>0){ move.normalize().multiplyScalar(moveSpeed*dt); camera.position.add(move); }
 
   // Zoom (+/-) : zoom optique (FOV), pratique pour cadrer une capture sans bouger.
-  const zoomSpeed = 22 * speedMul;
+  const zoomSpeed = 9 * speedMul;
   if(keysDown.has('Equal')||keysDown.has('NumpadAdd')) camera.fov = Math.max(15, camera.fov - zoomSpeed*dt);
   if(keysDown.has('Minus')||keysDown.has('NumpadSubtract')) camera.fov = Math.min(90, camera.fov + zoomSpeed*dt);
   camera.updateProjectionMatrix();
