@@ -263,6 +263,15 @@
   .floor-cell.selected{border-color:#0b1116;box-shadow:inset 0 0 0 1px rgba(255,255,255,.6);}
   .floor-cell .fc-label{opacity:.85;overflow:hidden;text-overflow:ellipsis;}
   .floor-cell .fc-area{opacity:.7;font-weight:500;overflow:hidden;text-overflow:ellipsis;}
+  /* Case "fantôme" (+ Volume supérieur), toujours au-dessus du dernier
+     étage : pointillé plutôt que remplie, pour la lire comme une action et
+     non comme un bloc de données déjà construit. */
+  .floor-cell.fc-ghost{
+    flex:0 0 28px;border:2px dashed rgba(255,255,255,.28)!important;background:transparent!important;
+    color:var(--muted);justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:10.5px;
+  }
+  .floor-cell.fc-ghost:hover{border-color:var(--accent)!important;color:var(--accent);background:rgba(46,232,255,.08)!important;}
+  .floor-cell.fc-ghost.active{border-style:solid;border-color:var(--com)!important;color:var(--com);background:rgba(229,72,77,.1)!important;}
   .bew-hint{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--muted);text-align:center;margin:0;}
   /* ---------- Bandeau compact de stats (emprise/surface/hauteur) ---------- */
   .bew-stats{
@@ -1384,8 +1393,13 @@ function lockPlanViewForVolumeDraw(b){
   volumeDrawForcedPlanView = !planViewActive;
   if(!planViewActive) togglePlanView();
   const dist = Math.max(60, span * 2.6);
-  camera.position.set(cx, dist, cz + 0.01);
-  controls.target.set(cx, 0, cz);
+  // La caméra doit rester `dist` AU-DESSUS du toit (volumeDrawRoofY), pas
+  // au-dessus du sol (y=0) : sur un bâtiment déjà haut, une caméra positionnée
+  // à `dist` tout court se retrouvait sous, ou juste au ras, du toit — trop
+  // près pour voir la grille de repère et le curseur de tracé. La cible suit
+  // la même hauteur, pour un vrai aplomb vertical (vue plan) sans angle.
+  camera.position.set(cx, volumeDrawRoofY + dist, cz + 0.01);
+  controls.target.set(cx, volumeDrawRoofY, cz);
   controls.update();
 }
 function unlockPlanViewAfterVolumeDraw(){
@@ -2419,6 +2433,28 @@ function snapPointToZone(pt, zone){
   }
   return clampPointToPolygon(pt, zone);
 }
+// Même mécanisme d'aimantation (sommet à portée -> copie exacte, sinon bord à
+// portée -> projection exacte dessus) mais SANS le clamp final à l'intérieur
+// du contour de référence : un volume supérieur (décroché) doit pouvoir
+// légitimement déborder de son support (jusqu'à 30%, voir
+// shrinkPolygonToFitOverlap) — seul l'alignement sur les sommets/bords du
+// volume inférieur nous intéresse ici, pas la contrainte "rester dedans".
+function snapToFootprintEdges(pt, footprint){
+  if(!footprint || footprint.length<3) return {x:pt.x, z:pt.z};
+  const vertex = nearestZoneVertex(pt, footprint, VERTEX_SNAP_RADIUS);
+  if(vertex) return vertex;
+  if(distanceToPolygonBoundary(pt, footprint) <= EDGE_SNAP_RADIUS){
+    let best=null, bestDist=Infinity;
+    for(let i=0;i<footprint.length;i++){
+      const a=footprint[i], b=footprint[(i+1)%footprint.length];
+      const proj = closestPointOnSegment(pt,a,b);
+      const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
+      if(d<bestDist){ bestDist=d; best=proj; }
+    }
+    return best;
+  }
+  return {x:pt.x, z:pt.z};
+}
 // Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
 // reste dans le polygone d'implantation, en échantillonnant chaque arête.
 function polygonFullyInsideZone(pts, zone){
@@ -2709,11 +2745,25 @@ function flashStatus(msg){
   clearTimeout(flashStatus._t);
   flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
 }
+// Contour de référence pour aimanter les sommets pendant le TRACÉ d'un
+// nouveau volume supérieur (pas pendant l'édition d'un décroché existant,
+// voir editTargetBelowFootprint pour ce cas-là) : le sommet actuel du
+// bâtiment ciblé.
+function volumeDrawBelowFootprint(){
+  if(volumeDrawTargetId===null) return null;
+  const b = buildings.find(x=>x.id===volumeDrawTargetId);
+  return b ? footprintForBand(b, b.bands[b.bands.length-1]) : null;
+}
 function addDrawPoint(pt){
   // Aimantation directe sur un sommet/bord du polygone si on clique à
   // proximité — même mécanisme fiable que "Emprise pleine" (copie/projection
-  // exacte des coordonnées, jamais un point "presque" dessus).
-  const target = (!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt;
+  // exacte des coordonnées, jamais un point "presque" dessus). Pour un volume
+  // supérieur, on aimante sur le contour du volume INFÉRIEUR (pas la zone
+  // d'implantation au sol) — pour que les façades continues restent
+  // parfaitement alignées d'un décroché à l'autre, sans décalage parasite.
+  const belowFootprint = volumeDrawBelowFootprint();
+  const target = belowFootprint ? snapToFootprintEdges(pt, belowFootprint)
+    : ((!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt);
   // Étape 2 : hugue IMMÉDIATEMENT le segment reliant le point précédent à
   // celui-ci contre le bord réel du polygone — pas seulement à la fermeture
   // du tracé (finishDraw). Ainsi le contour est correct dès la pose, sans
@@ -2993,7 +3043,9 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!drawing || drawMode!=='rect' || ev.button!==0) return;
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
-  const start = (!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt;
+  const belowFootprint = volumeDrawBelowFootprint();
+  const start = belowFootprint ? snapToFootprintEdges(pt, belowFootprint)
+    : ((!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt);
   rectDragging = true;
   rectStartPt = {x:start.x, z:start.z};
   drawPoints = [{x:rectStartPt.x, z:rectStartPt.z}];
@@ -3003,7 +3055,9 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   if(!drawing || drawMode!=='rect' || !rectDragging) return;
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
-  const x0=rectStartPt.x, z0=rectStartPt.z, x1=pt.x, z1=pt.z;
+  const belowFootprint = volumeDrawBelowFootprint();
+  const snapped = belowFootprint ? snapToFootprintEdges(pt, belowFootprint) : pt;
+  const x0=rectStartPt.x, z0=rectStartPt.z, x1=snapped.x, z1=snapped.z;
   drawPoints = [ {x:x0,z:z0}, {x:x1,z:z0}, {x:x1,z:z1}, {x:x0,z:z1} ];
   refreshPreview();
 });
@@ -5098,10 +5152,13 @@ window.addEventListener('pointermove', (ev)=>{
     const handleY = editTargetHandleY(b);
     let target;
     if(editingBandIndex!==null){
-      // Décroché : pas d'accrochage/clamp sur la zone d'implantation au sol
-      // (aucun sens en l'air) — le point suit librement la souris ; la règle
-      // des 30% de débord est appliquée une seule fois, au relâchement.
-      target = { x: pt.x, z: pt.z };
+      // Décroché : pas d'accrochage sur la zone d'implantation au sol (aucun
+      // sens en l'air) — en revanche on aimante sur le contour du volume
+      // JUSTE EN DESSOUS (sommet/bord), pour garder des façades continues
+      // bien alignées d'un décroché à l'autre. La règle des 30% de débord
+      // reste appliquée une seule fois, au relâchement.
+      const belowFootprint = editTargetBelowFootprint(b);
+      target = belowFootprint ? snapToFootprintEdges(pt, belowFootprint) : { x: pt.x, z: pt.z };
     } else {
       // Aimantation légère sur un sommet du polygone si on approche, sinon
       // simple clamp dans l'emprise — même logique que snapPointToZone mais
@@ -5409,6 +5466,22 @@ function renderBldgEditWindow(b){
     });
     floorStack.appendChild(cell);
   });
+  // ---------- Case "fantôme" en pointillé, TOUJOURS au-dessus du dernier
+  // étage (voir plus bas : ajoutée en dernier, donc affichée tout en haut
+  // grâce au column-reverse) — repère visuel évident pour ajouter un volume
+  // supérieur, plutôt qu'un bouton texte perdu au milieu des actions. ----------
+  const isDrawingVolume = volumeDrawTargetId===b.id;
+  const ghost = document.createElement('div');
+  ghost.className = 'floor-cell fc-ghost' + (isDrawingVolume ? ' active' : '');
+  ghost.title = isDrawingVolume
+    ? 'Tracé en cours sur le toit — cliquer pour annuler'
+    : "Ajouter un volume supérieur : trace un nouveau décroché sur le toit — jusqu'à 30% de débord max par rapport au dessous";
+  ghost.innerHTML = `<span class="fc-label">${isDrawingVolume ? '✕ Annuler le tracé' : '+ Volume supérieur'}</span>`;
+  ghost.addEventListener('click', ()=>{
+    if(volumeDrawTargetId===b.id){ cancelDraw(); } else { startVolumeDraw(b); }
+    renderBldgEditWindow(b);
+  });
+  floorStack.appendChild(ghost);
   body.appendChild(floorStack);
   const hint = document.createElement('div');
   hint.className = 'bew-hint';
@@ -5439,7 +5512,9 @@ function renderBldgEditWindow(b){
     body.appendChild(usageField);
   }
 
-  // ---------- 6. Actions générales du bâtiment ----------
+  // ---------- 6. Actions générales du bâtiment (l'ajout de volume vit
+  // maintenant dans le graphique lui-même, juste au-dessus — voir "ghost"
+  // plus haut) ----------
   const actions = document.createElement('div');
   actions.className='btn-row';
   actions.style.marginTop = '2px';
@@ -5454,21 +5529,10 @@ function renderBldgEditWindow(b){
     editingSocle ? stopEditBuildingShape() : startEditBuildingShape(b, null);
     renderBldgEditWindow(b);
   });
-  const addVolumeBtn = document.createElement('button');
-  addVolumeBtn.className='action-btn' + (volumeDrawTargetId===b.id ? ' active' : '');
-  addVolumeBtn.innerHTML = volumeDrawTargetId===b.id
-    ? '<i data-lucide="x"></i> Annuler'
-    : '<i data-lucide="building"></i> + Volume';
-  addVolumeBtn.title = "Ajouter un volume supérieur : trace un nouveau volume sur le toit de ce bâtiment (décroché) — jusqu'à 30% de débord par rapport au socle";
-  addVolumeBtn.addEventListener('click', ()=>{
-    if(volumeDrawTargetId===b.id){ cancelDraw(); }
-    else { startVolumeDraw(b); }
-    renderBldgEditWindow(b);
-  });
   const delBtn = document.createElement('button');
   delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
   delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
-  actions.append(editBtn, addVolumeBtn, delBtn);
+  actions.append(editBtn, delBtn);
   body.appendChild(actions);
 
   if(window.lucide) lucide.createIcons();
@@ -5877,6 +5941,32 @@ document.addEventListener('click', (ev)=>{
   if(!sunPanel.contains(ev.target) && ev.target.id!=='btn-sun-panel' && !ev.target.closest('#btn-sun-panel')){
     sunPanel.classList.remove('show');
   }
+});
+// Ferme la fiche bâtiment dès qu'on clique un BOUTON d'un autre menu de
+// l'interface (barre d'outils, panneau soleil, aide…) — pas seulement en
+// cliquant dans le vide de la scène 3D (déjà géré séparément, plus haut, par
+// le clic sur le canvas lui-même). On exclut tout ce qui fait partie du
+// travail EN COURS sur ce bâtiment (le menu bâtiment lui-même, la modale
+// "nombre d'étages", le bandeau et la barre de sélection de sommets pendant
+// une modification de forme) : cliquer là ne doit jamais fermer la fiche
+// qu'on est justement en train d'utiliser. On ignore aussi tout clic pendant
+// un tracé en cours, pour ne jamais l'interrompre par erreur. Un
+// cliqué-glissé de déplacement de caméra sur la scène 3D ne passe de toute
+// façon jamais par ce chemin : il ne cible ni un bouton, ni un clic hors du
+// canvas.
+document.addEventListener('click', (ev)=>{
+  if(selectedId===null || drawing) return;
+  if(bldgPanel.contains(ev.target)) return;
+  if(renderer.domElement===ev.target || renderer.domElement.contains(ev.target)) return;
+  if(document.getElementById('floors-modal-overlay').contains(ev.target)) return;
+  if(document.getElementById('edit-banner').contains(ev.target)) return;
+  if(document.getElementById('vertex-select-bar').contains(ev.target)) return;
+  if(document.getElementById('draw-mode-popout').contains(ev.target)) return;
+  if(!ev.target.closest('button')) return;
+  selectedId = null;
+  updateBldgPanelVisibility();
+  rebuildAll();
+  renderList();
 });
 // État initial : midi, soleil déjà positionné à l'ouverture (pas de spinner
 // nécessaire ici, rien n'a encore été rendu).
