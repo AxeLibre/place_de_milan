@@ -760,19 +760,41 @@
   }
   #ext-gare-hint button.ghost{background:transparent;border:1px solid rgba(255,255,255,.35);}
   #label-lines{position:absolute;inset:0;pointer-events:none;z-index:3;width:100%;height:100%;}
+  /* ---------- Label "pilule" moderne : fond flouté, pastille colorée, coins
+     arrondis — reste juste du HTML/CSS (aucun rendu 3D par label), donc
+     toujours aussi léger CPU/GPU quel que soit le nombre de labels posés. ---------- */
   .label-chip{
     position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:grab;
-    background:rgba(21,29,36,0.92);border:1px solid #2a3946;border-radius:3px;padding:4px 8px;
-    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--paper);white-space:nowrap;
-    touch-action:none;user-select:none;
+    display:flex;align-items:center;gap:6px;
+    background:rgba(15,22,29,.82);backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:5px 11px 5px 8px;
+    font-family:'Space Grotesk',sans-serif;font-size:11.5px;font-weight:600;color:var(--paper);
+    white-space:nowrap;touch-action:none;user-select:none;
+    box-shadow:0 4px 14px rgba(0,0,0,.35);
+    transition:border-color .12s ease, transform .12s ease, box-shadow .12s ease;
   }
-  .label-chip:hover{border-color:var(--accent);}
-  .label-chip.dragging{cursor:grabbing;border-color:var(--accent);opacity:.85;}
+  .label-chip::before{
+    content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0;
+    box-shadow:0 0 6px var(--accent);
+  }
+  .label-chip:hover{border-color:var(--accent);transform:translate(-50%,-100%) translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.45);}
+  .label-chip.dragging{cursor:grabbing;border-color:var(--accent);opacity:.85;transform:translate(-50%,-100%) scale(1.04);}
   .label-chip.locked{cursor:default;border-style:dashed;opacity:.85;}
+  .label-chip.locked::before{background:#8a8f96;box-shadow:none;}
   .label-chip.locked:hover{border-color:#8a8f96;}
+  /* Label collé à un bâtiment (mode "bâtiment") : pastille carrée plutôt que
+     ronde, pour le distinguer d'un coup d'œil d'un label planté au sol. */
+  .label-chip.on-building::before{border-radius:2px;}
   body.is-admin .label-chip.locked{cursor:grab;opacity:1;}
   body.is-admin .label-chip.locked:hover{border-color:var(--accent);}
   body.is-admin .label-chip.locked.dragging{cursor:grabbing;}
+
+  /* ---------- Popout mode de pose (à droite du bouton "Label"), même
+     mécanique que #grass-brush-popout : position "fixed" calculée en JS ---------- */
+  #label-mode-popout{
+    position:fixed;z-index:30;display:none;gap:6px;
+  }
+  #label-mode-popout.show{display:flex;}
 
   /* ---------- Fenêtre de légende flottante (visible seulement si activée) ---------- */
   #legend-window{
@@ -1012,6 +1034,10 @@
       <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
       <button class="brush-btn active" id="brush-medium" title="Pinceau moyen"><i data-lucide="circle" style="width:11px;height:11px;"></i></button>
       <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
+    </div>
+    <div id="label-mode-popout">
+      <button class="brush-btn active" id="label-mode-ground" title="Poser au sol"><i data-lucide="map-pin"></i></button>
+      <button class="brush-btn" id="label-mode-building" title="Coller sur un bâtiment (façade ou toit, socle ou volume supérieur)"><i data-lucide="building-2"></i></button>
     </div>
     <div id="sun-panel">
       <div id="sun-arc">
@@ -5994,23 +6020,51 @@ let labels = [];
 let labelIdCounter = 1;
 let labelsVisible = true;
 let labelPlacing = false;
+// Mode de pose : 'ground' (au sol, comportement d'origine) ou 'building'
+// (collé sur une face ou un toit de bâtiment — socle ou volume supérieur,
+// peu importe : on raycast directement contre les meshes réels du bâtiment,
+// donc ça marche identiquement pour les deux).
+let labelMode = 'ground';
 const labelGroup = new THREE.Group(); worldRoot.add(labelGroup);
 const labelLayer = document.getElementById('label-layer');
 const labelLinesSvg = document.getElementById('label-lines');
 const btnLabel = document.getElementById('btn-label');
+const labelModePopout = document.getElementById('label-mode-popout');
+const labelModeBtns = {
+  ground: document.getElementById('label-mode-ground'),
+  building: document.getElementById('label-mode-building'),
+};
+function setLabelMode(mode){
+  labelMode = mode;
+  Object.entries(labelModeBtns).forEach(([k,btn])=> btn.classList.toggle('active', k===mode));
+}
+labelModeBtns.ground.addEventListener('click', ()=> setLabelMode('ground'));
+labelModeBtns.building.addEventListener('click', ()=> setLabelMode('building'));
+function positionLabelModePopout(){
+  const r = btnLabel.getBoundingClientRect();
+  labelModePopout.style.left = (r.right + 8) + 'px';
+  labelModePopout.style.top = r.top + 'px';
+}
+window.addEventListener('resize', ()=>{ if(labelPlacing) positionLabelModePopout(); });
 
 function addLabel(x, z, text, opts={}){
   const id = labelIdCounter++;
   const locked = !!opts.locked;
+  const onBuilding = !!opts.onBuilding;
+  // Hauteur du point d'ancrage : 0.3 au-dessus du sol par défaut (labels
+  // classiques), sinon l'altitude EXACTE du point cliqué sur la façade/le
+  // toit (voir buildingSurfaceHitFromEvent) — c'est ce qui permet à un label
+  // "bâtiment" de rester posé en hauteur, pile sur la surface visée.
+  const y = opts.y!==undefined ? opts.y : 0.3;
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(0.5,12,12),
-    new THREE.MeshBasicMaterial({color: locked ? 0x8a8f96 : 0xe0663f})
+    new THREE.MeshBasicMaterial({color: locked ? 0x8a8f96 : NEON_BLUE})
   );
-  marker.position.set(x, 0.3, z);
+  marker.position.set(x, y, z);
   labelGroup.add(marker);
 
   const chip = document.createElement('div');
-  chip.className = 'label-chip';
+  chip.className = 'label-chip' + (onBuilding ? ' on-building' : '');
   if(locked) chip.classList.add('locked');
   chip.textContent = text;
   const isAdminNow = document.body.classList.contains('is-admin');
@@ -6020,12 +6074,12 @@ function addLabel(x, z, text, opts={}){
   labelLayer.appendChild(chip);
 
   const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-  line.setAttribute('stroke', locked ? '#8a8f96' : '#e0663f');
+  line.setAttribute('stroke', locked ? 'rgba(138,143,150,.65)' : `rgba(${NEON_BLUE_CSS},.65)`);
   line.setAttribute('stroke-width', '1.2');
-  line.setAttribute('stroke-dasharray', '3,2');
+  line.setAttribute('stroke-dasharray', '2,3');
   labelLinesSvg.appendChild(line);
 
-  const rec = { id, x, z, text, marker, chip, line, anchorX:0, anchorY:0, screenX:0, screenY:0, behind:false, locked };
+  const rec = { id, x, y, z, text, marker, chip, line, anchorX:0, anchorY:0, screenX:0, screenY:0, behind:false, locked, onBuilding };
   wireLabelChipInteractions(rec);
   labels.push(rec);
   updateLabelPositions();
@@ -6061,8 +6115,11 @@ function wireLabelChipInteractions(rec){
     let target = pt;
     const isAdmin = document.body.classList.contains('is-admin');
     if(!isAdmin && buildZone.length>=3) target = clampPointToPolygon(pt, buildZone);
-    rec.x = target.x; rec.z = target.z;
-    rec.marker.position.set(rec.x, 0.3, rec.z);
+    rec.x = target.x; rec.z = target.z; rec.y = 0.3;
+    // Un glissement se fait toujours au sol : un label "bâtiment" qu'on
+    // déplace ainsi redevient un label au sol classique (pastille ronde).
+    if(rec.onBuilding){ rec.onBuilding = false; rec.chip.classList.remove('on-building'); }
+    rec.marker.position.set(rec.x, rec.y, rec.z);
     updateLabelPositions();
   });
   rec.chip.addEventListener('pointerup', (ev)=>{
@@ -6090,7 +6147,7 @@ function updateLabelPositions(){
   const activeCam = planViewActive ? orthoCamera : camera;
   const placedRects = [];
   labels.forEach(l=>{
-    _labelProjVec.set(l.x, 0.3, l.z).project(activeCam);
+    _labelProjVec.set(l.x, l.y!==undefined ? l.y : 0.3, l.z).project(activeCam);
     const behind = _labelProjVec.z > 1;
     const sx = (_labelProjVec.x*0.5+0.5) * rect.width;
     const sy = (1-(_labelProjVec.y*0.5+0.5)) * rect.height;
@@ -6123,6 +6180,8 @@ function stopLabelTool(){
   labelPlacing = false;
   btnLabel.classList.remove('active');
   if(labelPlantHalo) labelPlantHalo.visible = false;
+  if(labelSurfaceHalo) labelSurfaceHalo.visible = false;
+  labelModePopout.classList.remove('show');
 }
 btnLabel.addEventListener('click', ()=>{
   if(!labelPlacing){
@@ -6135,13 +6194,43 @@ btnLabel.addEventListener('click', ()=>{
   }
   labelPlacing = !labelPlacing;
   btnLabel.classList.toggle('active', labelPlacing);
-  flashStatus(labelPlacing ? 'Cliquez sur la maquette pour poser un label (Échap pour annuler)' : 'Pose de label annulée');
+  if(labelPlacing){
+    positionLabelModePopout();
+    labelModePopout.classList.add('show');
+  } else {
+    labelModePopout.classList.remove('show');
+  }
+  flashStatus(labelPlacing
+    ? (labelMode==='building'
+        ? "Cliquez sur une façade ou un toit de bâtiment pour y coller un label (Échap pour annuler)"
+        : "Cliquez sur la maquette pour poser un label (Échap pour annuler)")
+    : 'Pose de label annulée');
 });
 window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Escape' && labelPlacing) stopLabelTool();
 });
+// Raycast contre les VRAIS meshes des bâtiments (socle ET volumes
+// supérieurs — tous logés dans le même b.group, voir rebuildMesh) : renvoie
+// le point 3D exact d'impact sur une façade ou un toit, à sa vraie hauteur.
+function buildingSurfaceHitFromEvent(ev){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
+  pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  const meshes = [];
+  buildings.forEach(b=> b.group.children.forEach(o=>{ if(o.isMesh) meshes.push(o); }));
+  const hit = raycaster.intersectObjects(meshes, false)[0];
+  return hit ? hit.point : null;
+}
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!labelPlacing) return;
+  if(labelMode==='building'){
+    const hit = buildingSurfaceHitFromEvent(ev);
+    if(!hit){ flashStatus("Cliquez sur une façade ou un toit de bâtiment pour y coller un label"); return; }
+    stopLabelTool();
+    openLabelEditModal(null, { x:hit.x, y:hit.y, z:hit.z, onBuilding:true });
+    return;
+  }
   const pt = siteGroundHitFromEvent(ev);
   if(!pt){ flashStatus("Cliquez sur la maquette pour poser un label"); return; }
   const isAdmin = document.body.classList.contains('is-admin');
@@ -6154,10 +6243,13 @@ renderer.domElement.addEventListener('click', (ev)=>{
 });
 
 /* ------------------------------------------------------------
-   Repère au sol pendant la pose d'un label — même mécanisme que le halo de
-   plantation des arbres (ensureTreePlantHalo) : suit le curseur, bleu si le
-   point est dans le polygone d'implantation (pose autorisée), rouge sinon
-   (pose refusée, sauf en mode admin où la contrainte est levée).
+   Repère pendant la pose d'un label :
+   - mode "sol" : décalque au sol, même mécanisme que le halo de plantation
+     des arbres (ensureTreePlantHalo) — bleu si le point est dans le polygone
+     d'implantation (pose autorisée), rouge sinon.
+   - mode "bâtiment" : petite sphère qui suit le point d'impact EXACT sur la
+     façade/le toit visé (pas de notion d'autorisé/refusé ici : n'importe
+     quelle surface de bâtiment convient).
    ------------------------------------------------------------ */
 const LABEL_PLANT_COLOR = NEON_BLUE_CSS;
 const LABEL_BLOCKED_COLOR = '224,71,63';
@@ -6170,8 +6262,34 @@ function ensureLabelPlantHalo(){
   worldRoot.add(labelPlantHalo);
   return labelPlantHalo;
 }
+let labelSurfaceHalo = null;
+function ensureLabelSurfaceHalo(){
+  if(labelSurfaceHalo) return labelSurfaceHalo;
+  labelSurfaceHalo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55,14,14),
+    new THREE.MeshBasicMaterial({ color:NEON_BLUE, depthTest:false, transparent:true, opacity:0.9 })
+  );
+  labelSurfaceHalo.renderOrder = 50;
+  labelSurfaceHalo.visible = false;
+  worldRoot.add(labelSurfaceHalo);
+  return labelSurfaceHalo;
+}
 renderer.domElement.addEventListener('pointermove', (ev)=>{
-  if(!labelPlacing){ if(labelPlantHalo) labelPlantHalo.visible = false; return; }
+  if(!labelPlacing){
+    if(labelPlantHalo) labelPlantHalo.visible = false;
+    if(labelSurfaceHalo) labelSurfaceHalo.visible = false;
+    return;
+  }
+  if(labelMode==='building'){
+    if(labelPlantHalo) labelPlantHalo.visible = false;
+    ensureLabelSurfaceHalo();
+    const hit = buildingSurfaceHitFromEvent(ev);
+    if(!hit){ labelSurfaceHalo.visible = false; return; }
+    labelSurfaceHalo.position.copy(hit);
+    labelSurfaceHalo.visible = true;
+    return;
+  }
+  if(labelSurfaceHalo) labelSurfaceHalo.visible = false;
   ensureLabelPlantHalo();
   const pt = siteGroundHitFromEvent(ev);
   if(!pt){ labelPlantHalo.visible = false; return; }
@@ -6214,7 +6332,11 @@ function saveLabelEditModal(){
     rec.text = text;
     rec.chip.textContent = text;
   } else if(pos){
-    addLabel(pos.x, pos.z, text);
+    // Un point venant du mode "bâtiment" porte `onBuilding` et sa hauteur
+    // exacte d'impact ; un point du mode "sol" (Vector3 brut) garde le
+    // comportement d'origine : marqueur légèrement flottant à 0.3m (défaut
+    // d'addLabel), pas la hauteur brute du raycast au sol.
+    addLabel(pos.x, pos.z, text, pos.onBuilding ? { y: pos.y, onBuilding: true } : {});
   }
   closeLabelEditModal();
 }
@@ -6402,7 +6524,7 @@ document.getElementById('btn-save-json').addEventListener('click', ()=>{
     buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
     trees: trees.map(t=>({ x:t.x, z:t.z })),
     grass: grassParts.map(p=> p.canvas.toDataURL('image/png')),
-    labels: labels.filter(l=>!l.locked).map(l=>({ x:l.x, z:l.z, text:l.text })),
+    labels: labels.filter(l=>!l.locked).map(l=>({ x:l.x, z:l.z, y:l.y, text:l.text, onBuilding:l.onBuilding||false })),
     extensionGare: extHallSlices.map(s=>({
       id:s.id, parentId:s.parentId, faceC:s.faceC, center:s.center,
       angle:s.angle, width:s.width, height:s.height, yBase:s.yBase
@@ -6430,7 +6552,7 @@ if(btnSaveDepart){
     const departData = {
       buildings: buildings.map(b=>({ name:b.name, points:b.points, floors:b.floors, bands:b.bands })),
       trees: trees.map(t=>({ x:t.x, z:t.z })),
-      labels: labels.map(l=>({ x:l.x, z:l.z, text:l.text }))
+      labels: labels.map(l=>({ x:l.x, z:l.z, y:l.y, text:l.text, onBuilding:l.onBuilding||false }))
     };
     const blob = new Blob([JSON.stringify(departData,null,2)], {type:'application/json'});
     const link = document.createElement('a');
@@ -6500,7 +6622,7 @@ fileLoad.addEventListener('change', (e)=>{
       // labels normaux ici, pour ne pas les faire disparaître au chargement).
       labels.filter(l=>!l.locked).forEach(l=> removeLabel(l.id));
       labels = labels.filter(l=>l.locked);
-      (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text));
+      (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text, { y:l.y, onBuilding:l.onBuilding }));
 
       // Gazon peint (une entrée par fragment de sol, dans le même ordre que
       // grassParts — reconstitué au chargement du .glb, donc déjà présent).
@@ -7185,7 +7307,7 @@ function tryAutoLoadDepart(){
       createBuilding(pts, { name:b.name, floors:b.floors, bands:b.bands, noRoofInset:true, silent:true });
     });
     (data.trees||[]).forEach(t=> addTree({x:t.x, y:0, z:t.z}));
-    (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text, { locked:true }));
+    (data.labels||[]).forEach(l=> addLabel(l.x, l.z, l.text, { locked:true, y:l.y, onBuilding:l.onBuilding }));
     if(data.buildings && data.buildings.length){ rebuildAll(); renderList(); }
     console.info(`[Place de Milan] État de départ chargé (${DEPART_JSON_URL}) : ${(data.buildings||[]).length} bâtiment(s)${repairedCount?` (${repairedCount} recalé(s) sur le polygone)`:''}, ${(data.trees||[]).length} arbre(s), ${(data.labels||[]).length} label(s) admin.`);
   }).catch(()=>{
