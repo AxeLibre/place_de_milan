@@ -940,7 +940,7 @@
     <p>Choisissez le nombre d'étages du bâtiment avant sa construction (modifiable ensuite à tout moment).</p>
     <div class="stepper">
       <button id="floors-modal-minus"><i data-lucide="minus"></i></button>
-      <input type="number" id="floors-modal-input" min="1" max="60" value="6">
+      <input type="number" id="floors-modal-input" min="1" max="120" value="6">
       <button id="floors-modal-plus"><i data-lucide="plus"></i></button>
     </div>
     <div id="floors-modal-actions">
@@ -959,7 +959,7 @@
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
       <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
-      <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
+      <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons, constructions en cours)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
       <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
       <div id="ribbon-sep"></div>
       <div id="bottom-left-menu">
@@ -2853,7 +2853,7 @@ function askFloorsThenBuild(finalPoints){
   floorsModalInput.value = 6;
   floorsModalOverlay.classList.remove('hidden');
   if(window.lucide) lucide.createIcons();
-  function clampVal(){ return Math.max(1, Math.min(60, parseInt(floorsModalInput.value)||6)); }
+  function clampVal(){ return Math.max(1, Math.min(MAX_BUILDING_FLOORS, parseInt(floorsModalInput.value)||6)); }
   function cleanup(){
     floorsModalOverlay.classList.add('hidden');
     document.getElementById('floors-modal-minus').removeEventListener('click', onMinus);
@@ -2862,7 +2862,7 @@ function askFloorsThenBuild(finalPoints){
     document.getElementById('floors-modal-cancel').removeEventListener('click', onCancel);
   }
   function onMinus(){ floorsModalInput.value = clampVal()-1<1?1:clampVal()-1; }
-  function onPlus(){ floorsModalInput.value = clampVal()+1>60?60:clampVal()+1; }
+  function onPlus(){ floorsModalInput.value = clampVal()+1>MAX_BUILDING_FLOORS?MAX_BUILDING_FLOORS:clampVal()+1; }
   function onValidate(){
     const floors = clampVal();
     cleanup();
@@ -2914,7 +2914,7 @@ function askVolumeFloorsThenBuild(b, finalPoints){
   floorsModalInput.value = 3;
   floorsModalOverlay.classList.remove('hidden');
   if(window.lucide) lucide.createIcons();
-  function clampVal(){ return Math.max(1, Math.min(60, parseInt(floorsModalInput.value)||3)); }
+  function clampVal(){ return Math.max(1, Math.min(MAX_BUILDING_FLOORS, parseInt(floorsModalInput.value)||3)); }
   function restoreModalText(){
     document.querySelector('#floors-modal h3').textContent = "Nombre d'étages";
     document.querySelector('#floors-modal p').textContent = "Choisissez le nombre d'étages du bâtiment avant sa construction (modifiable ensuite à tout moment).";
@@ -2929,7 +2929,7 @@ function askVolumeFloorsThenBuild(b, finalPoints){
     document.getElementById('floors-modal-cancel').removeEventListener('click', onCancel);
   }
   function onMinus(){ floorsModalInput.value = clampVal()-1<1?1:clampVal()-1; }
-  function onPlus(){ floorsModalInput.value = clampVal()+1>60?60:clampVal()+1; }
+  function onPlus(){ floorsModalInput.value = clampVal()+1>MAX_BUILDING_FLOORS?MAX_BUILDING_FLOORS:clampVal()+1; }
   function onValidate(){
     const floors = clampVal();
     cleanup();
@@ -2952,7 +2952,11 @@ function addVolumeToBuilding(b, pts, floors){
   const before = polygonOutsideAreaRatio(cleaned, belowFootprint);
   cleaned = shrinkPolygonToFitOverlap(cleaned, belowFootprint, 0.30);
   if(before > 0.30) flashStatus('Volume ajusté : débord ramené à 30% maximum');
-  const extraFloors = Math.max(1, Math.min(30, floors||1));
+  // Le nombre d'étages de CE volume reste plafonné à 30 (un décroché reste un
+  // décroché, pas un second gratte-ciel), et le TOTAL du bâtiment ne dépasse
+  // jamais MAX_BUILDING_FLOORS non plus (garde-fou de bon sens, voir sa
+  // définition) — sans jamais retomber en dessous de ce qui existe déjà.
+  const extraFloors = Math.max(1, Math.min(30, MAX_BUILDING_FLOORS - b.floors, floors||1));
   const newFrom = b.floors + 1;
   b.floors = b.floors + extraFloors;
   // Nouvelle tranche au sommet, avec SON PROPRE contour (le décroché) — un
@@ -3731,6 +3735,16 @@ updateBrushRowState();
 /* ============================================================
    BUILDING MODEL
    ============================================================ */
+// Plafond du nombre d'étages TOTAL d'un bâtiment (socle + tous ses volumes
+// supérieurs empilés confondus) — une seule constante partagée partout où ce
+// total est saisi ou limité, pour ne plus jamais avoir deux limites
+// différentes qui se contredisent (c'était le bug : le stepper "Étages au
+// total" retombait brutalement à son ancien plafond de 60 dès qu'on cliquait
+// "+" sur un bâtiment qui le dépassait déjà via un volume supérieur — ce qui
+// supprimait instantanément tout ce qui dépassait). 120 reste un garde-fou
+// de bon sens (éviter une saisie absurde/un champ vide interprété comme
+// Infinity), pas une limite qu'on s'attend à approcher en usage normal.
+const MAX_BUILDING_FLOORS = 120;
 function defaultBands(floors){
   return [{from:1, to:floors, usage:'bureaux'}];
 }
@@ -5451,10 +5465,10 @@ function renderBldgEditWindow(b){
   stepper.className = 'stepper';
   const minus = document.createElement('button'); minus.innerHTML = '<i data-lucide="minus"></i>';
   const floorsInput = document.createElement('input');
-  floorsInput.type='number'; floorsInput.min=1; floorsInput.max=60; floorsInput.value=b.floors;
+  floorsInput.type='number'; floorsInput.min=1; floorsInput.max=MAX_BUILDING_FLOORS; floorsInput.value=b.floors;
   const plus = document.createElement('button'); plus.innerHTML = '<i data-lucide="plus"></i>';
   function setFloors(v){
-    v = Math.max(1, Math.min(60, v));
+    v = Math.max(1, Math.min(MAX_BUILDING_FLOORS, v));
     b.floors = v; floorsInput.value = v;
     normalizeBands(b);
     rebuildMesh(b); renderList(); renderBldgEditWindow(b);
@@ -8004,7 +8018,12 @@ function animate(){
   controls.update();
   if(!simulationPaused) tickAgents(dt);
   updateDemolitions(dt);
-  updateConstructions(dt);
+  // La construction animée (étages qui "poussent" + grue de chantier) est un
+  // type d'animation de la simulation au même titre que les véhicules/piétons
+  // — elle doit donc geler exactement pareil en pause : si une construction
+  // est lancée pendant une pause, elle reste figée à son état de départ
+  // (grue posée, aucun étage encore sorti de terre) jusqu'au "Reprendre".
+  if(!simulationPaused) updateConstructions(dt);
   updateCompass();
   updateLabelPositions();
   updateDrawAreaLabel();
