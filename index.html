@@ -5942,27 +5942,31 @@ document.addEventListener('click', (ev)=>{
     sunPanel.classList.remove('show');
   }
 });
-// Ferme la fiche bâtiment dès qu'on clique un BOUTON d'un autre menu de
-// l'interface (barre d'outils, panneau soleil, aide…) — pas seulement en
-// cliquant dans le vide de la scène 3D (déjà géré séparément, plus haut, par
-// le clic sur le canvas lui-même). On exclut tout ce qui fait partie du
-// travail EN COURS sur ce bâtiment (le menu bâtiment lui-même, la modale
-// "nombre d'étages", le bandeau et la barre de sélection de sommets pendant
-// une modification de forme) : cliquer là ne doit jamais fermer la fiche
-// qu'on est justement en train d'utiliser. On ignore aussi tout clic pendant
-// un tracé en cours, pour ne jamais l'interrompre par erreur. Un
-// cliqué-glissé de déplacement de caméra sur la scène 3D ne passe de toute
-// façon jamais par ce chemin : il ne cible ni un bouton, ni un clic hors du
-// canvas.
+// Ferme la fiche bâtiment dès qu'on clique un BOUTON du menu "outils" (barre
+// de gauche) — et seulement lui, pas les autres menus de l'interface. On
+// exclut tout ce qui fait partie du travail EN COURS sur ce bâtiment (le
+// menu bâtiment lui-même, la modale "nombre d'étages", le bandeau et la
+// barre de sélection de sommets pendant une modification de forme) : cliquer
+// là ne doit jamais fermer la fiche qu'on est justement en train d'utiliser.
+// On ignore aussi tout clic pendant un tracé en cours, pour ne jamais
+// l'interrompre par erreur.
+// Distinction clic / glissement : un cliqué-glissé de déplacement de caméra
+// (bouton gauche) peut commencer sur la scène 3D et, une fois relâché,
+// aboutir visuellement sur un bouton de la barre d'outils qui la recouvre —
+// on ne peut pas se fier à "l'élément cliqué" seul pour l'exclure. On mesure
+// donc la distance entre l'appui et le relâchement : au-delà de quelques
+// pixels, c'est un glissement de caméra, jamais un vrai clic sur un bouton.
+let toolbarClickDownPos = null;
+document.addEventListener('pointerdown', (ev)=>{ toolbarClickDownPos = {x:ev.clientX, y:ev.clientY}; }, true);
 document.addEventListener('click', (ev)=>{
   if(selectedId===null || drawing) return;
+  const downPos = toolbarClickDownPos;
+  toolbarClickDownPos = null;
+  if(downPos && Math.hypot(ev.clientX-downPos.x, ev.clientY-downPos.y) > 6) return;
+  const toolbarLeft = document.getElementById('toolbar-left');
+  const btn = ev.target.closest('button');
+  if(!btn || !toolbarLeft.contains(btn)) return;
   if(bldgPanel.contains(ev.target)) return;
-  if(renderer.domElement===ev.target || renderer.domElement.contains(ev.target)) return;
-  if(document.getElementById('floors-modal-overlay').contains(ev.target)) return;
-  if(document.getElementById('edit-banner').contains(ev.target)) return;
-  if(document.getElementById('vertex-select-bar').contains(ev.target)) return;
-  if(document.getElementById('draw-mode-popout').contains(ev.target)) return;
-  if(!ev.target.closest('button')) return;
   selectedId = null;
   updateBldgPanelVisibility();
   rebuildAll();
