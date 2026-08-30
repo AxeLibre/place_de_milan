@@ -78,7 +78,7 @@
   body.pedestrian-mode #sun-panel,
   body.pedestrian-mode #legend-window,
   body.pedestrian-mode #admin-panel,
-  body.pedestrian-mode #bldg-list,
+  body.pedestrian-mode #bldg-panel,
   body.pedestrian-mode #site-banner{
     display:none !important;
   }
@@ -1606,7 +1606,11 @@ function exitPedestrianMode(){
     // sans "sauter" brutalement vers l'ancienne cible restée loin derrière.
     const lookDir = new THREE.Vector3(); camera.getWorldDirection(lookDir);
     const prevDist = pedestrianSavedState.position.distanceTo(pedestrianSavedState.target) || 40;
-    const newDist = THREE.MathUtils.clamp(prevDist, 20, 140);
+    // Bornes réelles de l'orbite (et non un plafond arbitraire trop bas) :
+    // sinon la cible recalée trop près rendait ensuite le panoramique/zoom
+    // souris beaucoup plus "lent" (proportionnels à cette distance dans
+    // OrbitControls) que la distance de travail habituelle sur la maquette.
+    const newDist = THREE.MathUtils.clamp(prevDist, controls.minDistance, controls.maxDistance);
     controls.target.copy(camera.position).add(lookDir.multiplyScalar(newDist));
     controls.update();
     if(pedestrianSavedState.planViewWasActive) togglePlanView();
