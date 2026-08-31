@@ -101,7 +101,7 @@
   #status-line{
     position:absolute;top:70px;right:132px;z-index:5;
     font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;
-    color:#eafeff;letter-spacing:.01em;text-align:right;max-width:320px;
+    color:#8fd9ff;letter-spacing:.01em;text-align:right;max-width:320px;
     background:rgba(16,24,32,.72);border:1px solid rgba(46,232,255,.35);
     border-radius:6px;padding:7px 12px;
     text-shadow:0 1px 4px rgba(0,0,0,.85);
@@ -109,6 +109,11 @@
     pointer-events:none;
   }
   #status-line b{color:var(--accent);text-shadow:var(--accent-glow);}
+  /* Message d'alerte (erreur / refus / avertissement) : bascule le panneau
+     en rouge tant que le message est affiché ; retour au bleu clair habituel
+     une fois le message d'aide par défaut restauré (voir flashStatus()). */
+  #status-line.is-alert{border-color:rgba(255,90,90,.5);box-shadow:0 0 14px rgba(255,90,90,.2);}
+  #status-line.is-alert b{color:#ff6b6b;text-shadow:0 0 8px rgba(255,90,90,.5);}
 
   /* ---------- Défilement : un seul conteneur scrollable pour toute la
      colonne de gauche (#left-stack), avec la vraie barre native du
@@ -513,6 +518,42 @@
   }
   #draw-hint.show{display:flex;}
   #draw-hint kbd{background:#0b1116;border:1px solid #2a3946;border-radius:2px;padding:1px 6px;font-size:11px;}
+  .draw-hint-actions{display:none;gap:8px;}
+  .draw-hint-actions button{
+    font-family:'IBM Plex Mono',monospace;font-weight:800;font-size:12px;letter-spacing:.03em;
+    border-radius:3px;padding:6px 12px;cursor:pointer;border:1.5px solid #111;
+  }
+  #btn-construction-validate{background:#f5c518;color:#111;}
+  #btn-construction-validate:hover{background:#ffd93d;}
+  #btn-construction-cancel{background:#2a2a2a;color:#f5c518;border-color:#f5c518;}
+  #btn-construction-cancel:hover{background:#3a3a3a;}
+
+  /* ---------- Mode "construction" : cache toute l'UI sauf la boussole et le
+     bandeau de tracé, affiche un cadre chantier chevron jaune/noir autour de
+     la fenêtre ---------- */
+  body.construction-mode #ribbon,
+  body.construction-mode #left-stack,
+  body.construction-mode #legend-window,
+  body.construction-mode #sun-panel,
+  body.construction-mode #admin-panel,
+  body.construction-mode #status-line,
+  body.construction-mode #edit-banner,
+  body.construction-mode #pedestrian-close-bar{ display:none !important; }
+  body.construction-mode #draw-hint{
+    background:#181818;border:2px solid #f5c518;
+    font-family:'IBM Plex Mono',monospace;font-weight:700;
+    box-shadow:0 0 0 3px #111, 0 6px 20px rgba(0,0,0,.6);
+  }
+  body.construction-mode #draw-hint kbd{background:#000;border-color:#f5c518;color:#f5c518;}
+  body.construction-mode .draw-hint-actions{display:flex;}
+  #construction-frame{position:fixed;inset:0;z-index:39;pointer-events:none;display:none;}
+  body.construction-mode #construction-frame{display:block;}
+  .cf-bar{position:absolute;background:repeating-linear-gradient(45deg,#f5c518 0 14px,#111 14px 28px);
+    box-shadow:0 0 14px rgba(0,0,0,.5) inset;}
+  .cf-top{top:0;left:0;right:0;height:10px;}
+  .cf-bottom{bottom:0;left:0;right:0;height:10px;}
+  .cf-left{top:0;bottom:0;left:0;width:10px;}
+  .cf-right{top:0;bottom:0;right:0;width:10px;}
 
   /* ---------- Side panel (fenêtre coulissante, masquée par défaut : gestion
      avancée — bâtiments/arbres/circulation/sauvegarde — plutôt qu'une colonne
@@ -557,6 +598,7 @@
     font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--paper);
   }
   #legend-total-row b{font-size:13px;color:var(--accent);}
+  #legend-site-stats{margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.12);}
   .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
 
   /* ---------- Pastilles de couleur cliquables dans "Options d'affichage" :
@@ -999,7 +1041,7 @@
       <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
       <div id="ribbon-sep"></div>
       <div id="bottom-left-menu">
-        <button id="btn-help" class="mini-fab" title="À propos">?</button>
+        <button id="btn-help" class="mini-fab" title="À propos"><i data-lucide="info"></i></button>
         <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i></button>
         <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
         <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
@@ -1106,6 +1148,11 @@
       <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
       <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
       <div id="legend-total-row"><span>Total opération</span><b id="legend-m2-total">0 m²</b></div>
+      <div id="legend-site-stats">
+        <div class="legend-item"><span>Emprise bâtie / parcelle</span><span class="legend-m2" id="legend-built-pct">0 %</span></div>
+        <div class="legend-item"><span>Espaces verts / parcelle</span><span class="legend-m2" id="legend-green-pct">0 %</span></div>
+        <div class="legend-item"><span>Arbres plantés</span><span class="legend-m2" id="legend-tree-count">0</span></div>
+      </div>
     </div>
     <div id="admin-panel">
       <div class="section-title">Éléments visibles sur la maquette</div>
@@ -1188,6 +1235,16 @@
       <span id="draw-hint-text">Cliquez sur le sol pour poser les sommets du bâtiment</span>
       <span id="draw-hint-enter"><kbd>Entrée</kbd> valider</span>
       <span><kbd>Échap</kbd> annuler</span>
+      <span class="draw-hint-actions">
+        <button id="btn-construction-validate" type="button">✓ VALIDER</button>
+        <button id="btn-construction-cancel" type="button">✕ ANNULER</button>
+      </span>
+    </div>
+    <div id="construction-frame">
+      <div class="cf-bar cf-top"></div>
+      <div class="cf-bar cf-bottom"></div>
+      <div class="cf-bar cf-left"></div>
+      <div class="cf-bar cf-right"></div>
     </div>
     <input type="file" id="file-load" accept="application/json">
     <input type="file" id="file-glb" accept=".glb,.gltf">
@@ -1467,6 +1524,104 @@ function lockPlanViewForVolumeDraw(b){
 function unlockPlanViewAfterVolumeDraw(){
   if(volumeDrawForcedPlanView && planViewActive) togglePlanView();
   volumeDrawForcedPlanView = false;
+}
+
+/* ------------------------------------------------------------
+   MODE "CONSTRUCTION" — chrome plein écran affiché pendant le tracé d'un
+   nouveau bâtiment ou d'un volume supérieur : masque toute l'UI (sauf la
+   boussole), cadre chevron jaune/noir façon chantier, et pour un volume
+   supérieur, désature tout le reste de la maquette pour faire ressortir le
+   bâtiment édité (dont le contour de toit reste déjà mis en avant par
+   showVolumeRoofGrid — voir volumeRoofOutline).
+   ------------------------------------------------------------ */
+let constructionModeActive = false;
+function enterConstructionMode(){
+  constructionModeActive = true;
+  document.body.classList.add('construction-mode');
+}
+function exitConstructionMode(){
+  constructionModeActive = false;
+  document.body.classList.remove('construction-mode');
+  hideZoneHazardOutline();
+  restoreConstructionGrayscale();
+}
+
+// Bande zébrée jaune/noir tout le long du polygone d'implantation (parcelle
+// constructible), affichée par-dessus la ligne discontinue orange habituelle
+// (ilotOutline) tant que le mode construction est actif.
+let zoneHazardOutline = null;
+function showZoneHazardOutline(){
+  hideZoneHazardOutline();
+  if(buildZone.length<3) return;
+  zoneHazardOutline = makeHazardStripeOutline(buildZone, 0.7);
+  groundGroup.add(zoneHazardOutline);
+}
+function hideZoneHazardOutline(){
+  if(!zoneHazardOutline) return;
+  groundGroup.remove(zoneHazardOutline);
+  zoneHazardOutline.traverse(o=>{
+    if(o.isMesh){ o.geometry.dispose(); if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
+  });
+  zoneHazardOutline = null;
+}
+
+// Recadre la vue plan (orthographique) sur l'ENSEMBLE du périmètre
+// constructible — utilisé à l'entrée en mode construction pour un NOUVEAU
+// bâtiment (contrairement à lockPlanViewForVolumeDraw, centrée sur un seul
+// bâtiment). Le déverrouillage en sortie réutilise unlockPlanViewAfterVolumeDraw().
+function lockPlanViewForZoneDraw(){
+  if(buildZone.length<3) return;
+  const xs = buildZone.map(p=>p.x), zs = buildZone.map(p=>p.z);
+  const cx = (Math.max(...xs)+Math.min(...xs))/2, cz = (Math.max(...zs)+Math.min(...zs))/2;
+  const w = Math.max(...xs)-Math.min(...xs), d = Math.max(...zs)-Math.min(...zs);
+  const span = Math.max(w, d, 20);
+  volumeDrawForcedPlanView = !planViewActive;
+  if(!planViewActive) togglePlanView();
+  const dist = Math.max(60, span * 1.35);
+  camera.position.set(cx, dist, cz + 0.01);
+  controls.target.set(cx, 0, cz);
+  controls.update();
+}
+
+// Désaturation temporaire de tout ce qui n'est PAS le bâtiment ciblé (sol,
+// quartier/hall importés, autres bâtiments, arbres, gazon peint) — chaque
+// matériau concerné est unique par bâtiment (recréé à chaque rebuildMesh,
+// jamais partagé), donc modifiable en place puis restauré sans risque de
+// contaminer un autre objet.
+let _grayscaleStash = [];
+function _grayscaleTargetRoots(exceptGroup){
+  const roots = [];
+  if(typeof siteRoot!=='undefined' && siteRoot) roots.push(siteRoot);
+  if(typeof buildings!=='undefined') buildings.forEach(b=>{ if(b.group!==exceptGroup) roots.push(b.group); });
+  if(typeof treesGroup!=='undefined' && treesGroup) roots.push(treesGroup);
+  if(typeof grassParts!=='undefined') grassParts.forEach(g=>{ if(g.overlayMesh) roots.push(g.overlayMesh); });
+  return roots;
+}
+function applyConstructionGrayscale(exceptGroup){
+  restoreConstructionGrayscale();
+  _grayscaleTargetRoots(exceptGroup).forEach(root=>{
+    root.traverse(o=>{
+      if(!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m=>{
+        if(!m || m.userData._grayApplied || !m.color) return;
+        const entry = { mat:m, color:m.color.clone(), emissive: m.emissive ? m.emissive.clone() : null };
+        _grayscaleStash.push(entry);
+        const g = m.color.r*0.299 + m.color.g*0.587 + m.color.b*0.114;
+        m.color.setRGB(g*0.6+0.08, g*0.6+0.08, g*0.6+0.08); // légèrement éclairci pour rester lisible
+        if(m.emissive){ const ge = m.emissive.r*0.299 + m.emissive.g*0.587 + m.emissive.b*0.114; m.emissive.setRGB(ge,ge,ge); }
+        m.userData._grayApplied = true;
+      });
+    });
+  });
+}
+function restoreConstructionGrayscale(){
+  _grayscaleStash.forEach(({mat, color, emissive})=>{
+    mat.color.copy(color);
+    if(emissive) mat.emissive.copy(emissive);
+    delete mat.userData._grayApplied;
+  });
+  _grayscaleStash = [];
 }
 
 // ==== Navigation caméra au clavier (flèches = rotation, WASD = déplacement,
@@ -2518,11 +2673,14 @@ function startDraw(mode){
   btnDraw.classList.add('active');
   btnDraw.querySelector('.tool-btn-label').textContent = drawMode==='rect' ? 'Dessin en cours (rectangle)…' : 'Dessin en cours…';
   drawHintText.textContent = drawMode==='rect'
-    ? 'Cliquez-glissez sur le sol pour tracer le rectangle du bâtiment'
+    ? 'Cliquez-glissez sur le sol pour tracer le rectangle du bâtiment, Échap annuler, Entrée valider'
     : 'Cliquez sur le sol pour poser les sommets du bâtiment';
   drawHintEnter.style.display = drawMode==='rect' ? 'none' : '';
   drawHint.classList.add('show');
-  controls.enabled = false; // left click reserved for placing points while drawing
+  controls.enableRotate = false; // clic gauche réservé au tracé ; clic droit (déplacement) et molette (zoom) restent actifs
+  enterConstructionMode();
+  lockPlanViewForZoneDraw();
+  showZoneHazardOutline();
   refreshBldgMiniListVisibility();
 }
 function cancelDraw(){
@@ -2535,10 +2693,12 @@ function cancelDraw(){
   drawHint.classList.remove('show');
   drawHintEnter.style.display = '';
   controls.enabled = true;
+  controls.enableRotate = true;
   closeDrawMenu();
   volumeDrawTargetId = null;
   hideVolumeRoofGrid();
   unlockPlanViewAfterVolumeDraw();
+  exitConstructionMode();
   refreshBldgMiniListVisibility();
 }
 function clearMarkers(){
@@ -2991,11 +3151,12 @@ function repairClosedPolygonAgainstZone(points, zone){
   }
   return result;
 }
-function flashStatus(msg){
+function flashStatus(msg, isAlert){
   statusLine.dataset.orig = statusLine.dataset.orig || statusLine.textContent;
   statusLine.innerHTML = `<b>${msg}</b>`;
+  statusLine.classList.toggle('is-alert', !!isAlert);
   clearTimeout(flashStatus._t);
-  flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; }, 1800);
+  flashStatus._t = setTimeout(()=>{ statusLine.textContent = statusLine.dataset.orig; statusLine.classList.remove('is-alert'); }, 1800);
 }
 // Contour de référence pour aimanter les sommets pendant le TRACÉ d'un
 // nouveau volume supérieur (pas pendant l'édition d'un décroché existant,
@@ -3129,7 +3290,9 @@ function startVolumeDraw(b){
   drawHintText.textContent = 'Cliquez sur le toit pour poser les sommets du volume supérieur';
   drawHintEnter.style.display = '';
   drawHint.classList.add('show');
-  controls.enabled = false;
+  controls.enableRotate = false;
+  enterConstructionMode();
+  applyConstructionGrayscale(b.group);
   refreshBldgMiniListVisibility();
 }
 
@@ -3177,7 +3340,7 @@ function addVolumeToBuilding(b, pts, floors){
   const belowFootprint = footprintForBand(b, belowBand);
   const before = polygonOutsideAreaRatio(cleaned, belowFootprint);
   cleaned = shrinkPolygonToFitOverlap(cleaned, belowFootprint, 0.30);
-  if(before > 0.30) flashStatus('Volume ajusté : débord ramené à 30% maximum');
+  if(before > 0.30) flashStatus('Volume ajusté : débord ramené à 30% maximum', true);
   // Le nombre d'étages de CE volume reste plafonné à 30 (un décroché reste un
   // décroché, pas un second gratte-ciel), et le TOTAL du bâtiment ne dépasse
   // jamais MAX_BUILDING_FLOORS non plus (garde-fou de bon sens, voir sa
@@ -3291,6 +3454,11 @@ window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Enter' && drawMode==='polygon') finishDraw();
   if(ev.key==='Escape') cancelDraw();
 });
+document.getElementById('btn-construction-validate').addEventListener('click', ()=>{
+  if(!drawing) return;
+  if(drawMode==='polygon') finishDraw(); // le rectangle se valide déjà tout seul au relâchement de la souris
+});
+document.getElementById('btn-construction-cancel').addEventListener('click', ()=>{ if(drawing) cancelDraw(); });
 
 // ---- Mode rectangle : cliquer-glisser-lâcher trace un rectangle au sol,
 // contraint au polygone d'implantation via le même pipeline (finishDraw) que
@@ -3539,6 +3707,7 @@ function addTree(pt){
   treesGroup.add(obj);
   trees.push({ id: treeIdCounter++, mesh: obj, x:pt.x, z:pt.z });
   renderTreeCount();
+  updateSiteStats();
 }
 function removeTree(id){
   const t = trees.find(x=>x.id===id);
@@ -3546,11 +3715,13 @@ function removeTree(id){
   treesGroup.remove(t.mesh);
   trees = trees.filter(x=>x.id!==id);
   renderTreeCount();
+  updateSiteStats();
 }
 function clearAllTrees(){
   trees.forEach(t=> treesGroup.remove(t.mesh));
   trees = [];
   renderTreeCount();
+  updateSiteStats();
 }
 function renderTreeCount(){
   document.getElementById('tree-count').textContent = trees.length ? `(${trees.length})` : '';
@@ -3578,9 +3749,9 @@ renderer.domElement.addEventListener('click', (ev)=>{
   }
 
   const hit = treeGroundHit(raycaster);
-  if(!hit){ flashStatus("Cliquez dans le polygone d'implantation"); return; }
+  if(!hit){ flashStatus("Cliquez dans le polygone d'implantation", true); return; }
   if(buildZone.length>=3 && !pointInPolygon({x:hit.point.x, z:hit.point.z}, buildZone)){
-    flashStatus("Les arbres ne peuvent être plantés que dans le polygone d'implantation");
+    flashStatus("Les arbres ne peuvent être plantés que dans le polygone d'implantation", true);
     return;
   }
   addTree(hit.point);
@@ -3932,8 +4103,10 @@ window.addEventListener('pointermove', (ev)=>{
   paintGrassAt(ev, ev.buttons===2);
 });
 window.addEventListener('pointerup', ()=>{
+  const wasPainting = grassPointerActive;
   grassPointerActive = false;
   if(grassPainting) controls.enabled = true;
+  if(wasPainting) updateSiteStats(); // recalcul une seule fois en fin de trait (getImageData coûteux)
 });
 renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting) ev.preventDefault(); });
 
@@ -4586,6 +4759,54 @@ function updateLegendTotals(){
   });
   const totalEl = document.getElementById('legend-m2-total');
   if(totalEl) totalEl.textContent = `${grandTotal.toFixed(0)} m²`;
+  updateSiteStats();
+}
+
+// Surface peinte en gazon (m²) : lecture du canal alpha de chaque canvas de
+// peinture (voir setupGrassPaintOverlay) — un pixel avec alpha>0 compte comme
+// peint, converti en m² via le ratio worldSpan/1024 déjà utilisé ailleurs
+// (grassBrushWorldRadius) pour passer du repère pixel au repère monde.
+function computeGrassAreaM2(){
+  let total = 0;
+  grassParts.forEach(part=>{
+    let data;
+    try{ data = part.ctx.getImageData(0,0,part.canvas.width,part.canvas.height).data; }
+    catch(e){ return; } // canvas potentiellement "tainted" — on ignore silencieusement
+    let painted = 0;
+    for(let i=3;i<data.length;i+=4){ if(data[i]>10) painted++; }
+    const m2PerPx = (part.worldSpan/part.canvas.width) * (part.worldSpan/part.canvas.height);
+    total += painted * m2PerPx;
+  });
+  return total;
+}
+
+// Emprise au sol bâtie (m²) : le socle (footprint de base) de chaque
+// bâtiment, sans compter les étages — c'est la vraie surface "occupée au
+// sol", pas la SDP cumulée (déjà affichée dans le total par usage ci-dessus).
+function computeBuiltFootprintM2(){
+  let total = 0;
+  buildings.forEach(b=>{ total += polygonAreaXZ(b.points); });
+  return total;
+}
+
+// Met à jour les 3 indicateurs "parcelle" du panneau de légende : % emprise
+// bâtie, % espaces verts et nombre d'arbres — tous rapportés à la surface du
+// polygone d'implantation (buildZone), la parcelle constructible réelle.
+function updateSiteStats(){
+  const builtEl = document.getElementById('legend-built-pct');
+  const greenEl = document.getElementById('legend-green-pct');
+  const treeEl = document.getElementById('legend-tree-count');
+  if(!builtEl || !greenEl || !treeEl) return;
+  const parcelArea = buildZone.length>=3 ? polygonAreaXZ(buildZone) : 0;
+  if(parcelArea<=0){
+    builtEl.textContent = '—'; greenEl.textContent = '—'; treeEl.textContent = `${trees.length}`;
+    return;
+  }
+  const builtPct = (computeBuiltFootprintM2() / parcelArea) * 100;
+  const greenPct = (computeGrassAreaM2() / parcelArea) * 100;
+  builtEl.textContent = `${builtPct.toFixed(0)} %`;
+  greenEl.textContent = `${greenPct.toFixed(0)} %`;
+  treeEl.textContent = `${trees.length}`;
 }
 
 // Bande zébrée noir/jaune façon barrière de chantier, le long d'un contour
@@ -5476,7 +5697,7 @@ window.addEventListener('pointerup', (ev)=>{
         const belowFootprint = editTargetBelowFootprint(b);
         const before = polygonOutsideAreaRatio(finalPts, belowFootprint);
         finalPts = shrinkPolygonToFitOverlap(finalPts, belowFootprint, 0.30);
-        if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum');
+        if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum', true);
       } else {
         const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
         const cleaned = (cleanPolygonPoints(repaired) || repaired);
@@ -5527,7 +5748,7 @@ window.addEventListener('pointerup', (ev)=>{
       const belowFootprint = editTargetBelowFootprint(b);
       const before = polygonOutsideAreaRatio(finalPts, belowFootprint);
       finalPts = shrinkPolygonToFitOverlap(finalPts, belowFootprint, 0.30);
-      if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum');
+      if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum', true);
     } else {
       const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
       const cleaned = (cleanPolygonPoints(repaired) || repaired);
@@ -6545,7 +6766,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   if(!labelPlacing) return;
   if(labelMode==='building'){
     const hit = buildingSurfaceHitFromEvent(ev);
-    if(!hit){ flashStatus("Cliquez sur une façade ou un toit de bâtiment pour y coller un label"); return; }
+    if(!hit){ flashStatus("Cliquez sur une façade ou un toit de bâtiment pour y coller un label", true); return; }
     stopLabelTool();
     openLabelEditModal(null, { x:hit.x, y:hit.y, z:hit.z, onBuilding:true });
     return;
@@ -6554,7 +6775,7 @@ renderer.domElement.addEventListener('click', (ev)=>{
   if(!pt){ flashStatus("Cliquez sur la maquette pour poser un label"); return; }
   const isAdmin = document.body.classList.contains('is-admin');
   if(!isAdmin && buildZone.length>=3 && !pointInPolygon({x:pt.x, z:pt.z}, buildZone)){
-    flashStatus("Les labels ne peuvent être posés que dans le polygone d'implantation");
+    flashStatus("Les labels ne peuvent être posés que dans le polygone d'implantation", true);
     return;
   }
   stopLabelTool();
@@ -6954,6 +7175,7 @@ fileLoad.addEventListener('change', (e)=>{
             part.ctx.clearRect(0,0,part.canvas.width,part.canvas.height);
             part.ctx.drawImage(img, 0, 0, part.canvas.width, part.canvas.height);
             part.texture.needsUpdate = true;
+            updateSiteStats();
           };
           img.src = dataUrl;
         });
@@ -8043,11 +8265,11 @@ function startExtensionGareTool(){
   if(labelPlacing) stopLabelTool();
   if(editingBuildingId) stopEditBuildingShape();
   const hallParts = extHallParts();
-  if(!hallParts.length){ flashStatus("Hall de gare introuvable dans la maquette chargée"); return; }
+  if(!hallParts.length){ flashStatus("Hall de gare introuvable dans la maquette chargée", true); return; }
   extToolActive = true;
   btnExtensionGare.classList.add('active');
   const edge = extOutwardEdgeFromObject(hallParts, hallFacadeWorldNormal);
-  if(!edge){ flashStatus("Impossible de déterminer la façade du hall"); extToolActive=false; return; }
+  if(!edge){ flashStatus("Impossible de déterminer la façade du hall", true); extToolActive=false; return; }
   // Léger recouvrement (quelques cm) vers l'intérieur du hall : la façade
   // détectée par enveloppe convexe est une approximation qui peut être
   // décalée de quelques centimètres du vrai mesh du hall — sans marge, ça
