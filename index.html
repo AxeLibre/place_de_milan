@@ -795,6 +795,7 @@
   #vertex-select-bar .vsel-btn svg{width:15px;height:15px;stroke-width:2;}
   #vertex-select-bar .vsel-btn:hover{color:var(--paper);}
   #vertex-select-bar .vsel-btn.active{background:var(--accent);color:#08141a;}
+  #vertex-select-bar .vsel-btn:disabled{opacity:.32;cursor:not-allowed;pointer-events:none;}
   #vertex-select-bar .vsel-sep{width:1px;background:#2a3946;margin:2px 4px;}
   #edit-banner{
     display:none;align-items:center;gap:12px;
@@ -1139,6 +1140,8 @@
       <div class="vsel-sep"></div>
       <button class="vsel-btn" id="btn-select-all" title="Sélectionner tous les sommets"><i data-lucide="check-check"></i><span>Tout sélectionner</span></button>
       <button class="vsel-btn" id="btn-select-none" title="Désélectionner tous les sommets"><i data-lucide="x"></i><span>Tout désélectionner</span></button>
+      <div class="vsel-sep"></div>
+      <button class="vsel-btn" id="btn-split-edge" title="Sélectionnez exactement 2 sommets adjacents (une façade) pour insérer un sommet à mi-chemin" disabled><i data-lucide="scissors"></i><span>Couper la façade en 2</span></button>
     </div>
     <div id="legend-window">
       <div class="section-title">Légende des usages</div>
@@ -4108,7 +4111,7 @@ window.addEventListener('pointerup', ()=>{
   if(grassPainting) controls.enabled = true;
   if(wasPainting) updateSiteStats(); // recalcul une seule fois en fin de trait (getImageData coûteux)
 });
-renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting) ev.preventDefault(); });
+renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting || movingBuildingId) ev.preventDefault(); });
 
 const brushBtns = {
   small: document.getElementById('brush-small'),
@@ -4857,6 +4860,7 @@ function deleteBuilding(id, opts={}){
   const b = buildings.find(x=>x.id===id);
   if(!b) return;
   if(editingBuildingId===id) stopEditBuildingShape();
+  if(movingBuildingId===id) stopMoveBuilding();
   buildings = buildings.filter(x=>x.id!==id);
   if(selectedId===id){ selectedId = null; updateBldgPanelVisibility(); }
   // Le halo de sélection (pourtour bleu clair à la base) a pu être ajouté à
@@ -5379,6 +5383,7 @@ function stopEditBuildingShape(){
   bldgVertexHover = null;
   bldgSelected.clear();
   bldgSelectionRingGroup.clear();
+  updateSplitEdgeButtonState();
   bldgVertexDrag = null;
   gizmoDrag = null;
   gizmoGroup.visible = false;
@@ -5391,6 +5396,100 @@ function stopEditBuildingShape(){
   if(b) rebuildMesh(b);
   renderList();
 }
+
+/* ------------------------------------------------------------
+   OUTIL "DÉPLACER" — translation et rotation RIGIDES de tout le bâtiment
+   (socle + tous les volumes supérieurs/décrochés), en un bloc. Contrairement
+   à l'édition de forme (sommet par sommet), ceci translate/pivote l'ensemble
+   des contours autour d'un même pivot, sans jamais changer leur géométrie
+   relative les uns aux autres.
+   Interaction : clic gauche glissé = déplacer · clic droit glissé = pivoter
+   (autour du centre du socle) · Échap ou reclic sur "Terminer" = sortir.
+   ------------------------------------------------------------ */
+let movingBuildingId = null;
+let buildingMoveDrag = null; // {mode:'translate'|'rotate', startGround, pivot, startAngle, snapshot}
+function startMoveBuilding(b){
+  if(movingBuildingId && movingBuildingId!==b.id) stopMoveBuilding();
+  if(editingBuildingId) stopEditBuildingShape();
+  if(drawing) cancelDraw();
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+  movingBuildingId = b.id;
+  controls.enabled = false;
+  renderer.domElement.style.cursor = 'grab';
+  flashStatus('Clic gauche glissé : déplacer · Clic droit glissé : pivoter · Échap : terminer');
+}
+function stopMoveBuilding(){
+  const id = movingBuildingId;
+  movingBuildingId = null;
+  buildingMoveDrag = null;
+  controls.enabled = true;
+  renderer.domElement.style.cursor = '';
+  const b = buildings.find(x=>x.id===id);
+  if(b){ rebuildMesh(b); renderBldgEditWindow(b); }
+  renderList();
+}
+function rotatePointAround(p, pivot, angle){
+  const dx = p.x-pivot.x, dz = p.z-pivot.z;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  return { x: pivot.x + dx*cos - dz*sin, z: pivot.z + dz*cos + dx*sin };
+}
+function snapshotBuildingContours(b){
+  return {
+    base: b.points.map(p=>({x:p.x, z:p.z})),
+    bands: b.bands.map((band,i)=> (band.points && band.points.length>=3)
+      ? { idx:i, pts: band.points.map(p=>({x:p.x, z:p.z})) } : null).filter(Boolean)
+  };
+}
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!movingBuildingId) return;
+  const b = buildings.find(x=>x.id===movingBuildingId);
+  if(!b) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  ev.preventDefault();
+  const pivot = polygonCentroidXZ(b.points);
+  buildingMoveDrag = {
+    mode: ev.button===2 ? 'rotate' : 'translate',
+    startGround: { x:pt.x, z:pt.z },
+    pivot,
+    startAngle: Math.atan2(pt.z-pivot.z, pt.x-pivot.x),
+    snapshot: snapshotBuildingContours(b)
+  };
+  renderer.domElement.style.cursor = buildingMoveDrag.mode==='rotate' ? 'crosshair' : 'grabbing';
+});
+window.addEventListener('pointermove', (ev)=>{
+  if(!buildingMoveDrag || !movingBuildingId) return;
+  const b = buildings.find(x=>x.id===movingBuildingId);
+  if(!b) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  if(buildingMoveDrag.mode==='translate'){
+    const dx = pt.x-buildingMoveDrag.startGround.x, dz = pt.z-buildingMoveDrag.startGround.z;
+    b.points = buildingMoveDrag.snapshot.base.map(p=>({x:p.x+dx, z:p.z+dz}));
+    buildingMoveDrag.snapshot.bands.forEach(({idx,pts})=>{
+      if(b.bands[idx]) b.bands[idx].points = pts.map(p=>({x:p.x+dx, z:p.z+dz}));
+    });
+  } else {
+    const angle = Math.atan2(pt.z-buildingMoveDrag.pivot.z, pt.x-buildingMoveDrag.pivot.x) - buildingMoveDrag.startAngle;
+    const rot = p=> rotatePointAround(p, buildingMoveDrag.pivot, angle);
+    b.points = buildingMoveDrag.snapshot.base.map(rot);
+    buildingMoveDrag.snapshot.bands.forEach(({idx,pts})=>{
+      if(b.bands[idx]) b.bands[idx].points = pts.map(rot);
+    });
+  }
+  rebuildMesh(b);
+}, { passive:true });
+window.addEventListener('pointerup', ()=>{
+  if(!buildingMoveDrag) return;
+  buildingMoveDrag = null;
+  renderer.domElement.style.cursor = movingBuildingId ? 'grab' : '';
+  const b = buildings.find(x=>x.id===movingBuildingId);
+  if(b) renderList();
+});
+window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && movingBuildingId) stopMoveBuilding(); });
 const BLDG_HANDLE_COLOR = 0xe0663f, BLDG_HANDLE_HOVER = 0xffab7a, BLDG_HANDLE_DRAG = 0xffffff, BLDG_HANDLE_SELECTED = NEON_BLUE;
 // Rayon réduit + liseré blanc en coque inversée (BackSide) pour retrouver le
 // même rendu "boule orange qualitative" que les poignées de l'extension gare
@@ -5436,6 +5535,7 @@ function refreshBldgHandleColors(){
 }
 // Cercles au sol indiquant les sommets sélectionnés.
 function rebuildBldgSelectionVisuals(){
+  updateSplitEdgeButtonState();
   bldgSelectionRingGroup.clear();
   const b = buildings.find(x=>x.id===editingBuildingId);
   if(!b) return;
@@ -5451,6 +5551,41 @@ function rebuildBldgSelectionVisuals(){
   refreshBldgHandleColors();
   updateGizmoForSelection();
 }
+
+// Bouton "Couper la façade en 2" : dégrisé UNIQUEMENT quand exactement 2
+// sommets sont sélectionnés (peu importe qu'ils soient adjacents ou non —
+// l'adjacence n'est vérifiée qu'à l'action, voir splitSelectedFacadeEdge()).
+function updateSplitEdgeButtonState(){
+  const btn = document.getElementById('btn-split-edge');
+  if(!btn) return;
+  btn.disabled = !(editingBuildingId!==null && bldgSelected.size===2);
+}
+// Insère un nouveau sommet au milieu de l'arête (façade) reliant les 2
+// sommets sélectionnés — ils doivent être consécutifs dans le contour édité
+// (socle ou volume/décroché en cours d'édition) pour former une vraie façade.
+function splitSelectedFacadeEdge(){
+  const b = buildings.find(x=>x.id===editingBuildingId);
+  if(!b || bldgSelected.size!==2) return;
+  const pts = editTargetPoints(b);
+  const [i1, i2] = Array.from(bldgSelected);
+  const n = pts.length;
+  let from = -1;
+  if((i1+1)%n === i2) from = i1;
+  else if((i2+1)%n === i1) from = i2;
+  if(from===-1){ flashStatus('Les 2 sommets sélectionnés doivent être adjacents (une même façade)', true); return; }
+  const a = pts[from], c = pts[(from+1)%n];
+  const mid = { x:(a.x+c.x)/2, z:(a.z+c.z)/2 };
+  const newPts = pts.slice();
+  newPts.splice(from+1, 0, mid);
+  setEditTargetPoints(b, newPts);
+  bldgSelected = new Set([from+1]); // le nouveau sommet reste sélectionné, prêt à être ajusté
+  rebuildBldgVertexHandles(b);
+  rebuildBldgSelectionVisuals();
+  rebuildMesh(b);
+  renderList();
+  flashStatus('Façade coupée en 2');
+}
+document.getElementById('btn-split-edge').addEventListener('click', splitSelectedFacadeEdge);
 
 /* ---------------- GIZMO déplacement / échelle ---------------- */
 let gizmoGroup = new THREE.Group(); worldRoot.add(gizmoGroup);
@@ -6024,10 +6159,21 @@ function renderBldgEditWindow(b){
     editingSocle ? stopEditBuildingShape() : startEditBuildingShape(b, null);
     renderBldgEditWindow(b);
   });
+  const moveBtn = document.createElement('button');
+  const isMovingThis = movingBuildingId === b.id;
+  moveBtn.className = 'action-btn' + (isMovingThis ? ' active' : '');
+  moveBtn.innerHTML = isMovingThis
+    ? '<i data-lucide="check"></i> Terminer'
+    : '<i data-lucide="move"></i> Déplacer';
+  moveBtn.title = 'Déplacer et pivoter tout le bâtiment (socle + volumes supérieurs) : clic gauche glissé = déplacer, clic droit glissé = pivoter';
+  moveBtn.addEventListener('click', ()=>{
+    isMovingThis ? stopMoveBuilding() : startMoveBuilding(b);
+    renderBldgEditWindow(b);
+  });
   const delBtn = document.createElement('button');
   delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
   delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
-  actions.append(editBtn, delBtn);
+  actions.append(editBtn, moveBtn, delBtn);
   body.appendChild(actions);
 
   if(window.lucide) lucide.createIcons();
@@ -6113,10 +6259,14 @@ function buildBandEditor(b, idx){
   splitBtn.addEventListener('click', ()=>{
     const mid = Math.floor((band.from + band.to) / 2);
     const splitAt = Math.max(band.from, Math.min(mid, band.to-1));
-    // La nouvelle moitié du haut hérite du MÊME contour (juste un usage à
-    // choisir) : scinder ne doit jamais faire réapparaître le plein socle
-    // au-dessus d'un décroché déjà rétréci.
-    const newBand = { from: splitAt+1, to: band.to, usage: band.usage, points: band.points || null };
+    // La nouvelle moitié du haut devient un VOLUME MODIFIABLE (décroché) à
+    // part entière, avec ses propres sommets — même si le bloc scindé n'en
+    // avait pas encore (plein socle) : on clone le contour actuel du bloc
+    // (footprintForBand, qui retombe sur le socle b.points si besoin) pour
+    // que le bouton "Forme" apparaisse aussitôt et permette de le redessiner
+    // librement, sans jamais faire réapparaître un plein-socle implicite.
+    const inheritedFootprint = footprintForBand(b, band).map(p=>({x:p.x, z:p.z}));
+    const newBand = { from: splitAt+1, to: band.to, usage: band.usage, points: inheritedFootprint };
     band.to = splitAt;
     b.bands.splice(idx+1, 0, newBand);
     normalizeBands(b);
