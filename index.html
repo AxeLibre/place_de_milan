@@ -79,6 +79,9 @@
   body.pedestrian-mode #legend-window,
   body.pedestrian-mode #admin-panel,
   body.pedestrian-mode #bldg-panel,
+  body.pedestrian-mode #draw-mode-popout,
+  body.pedestrian-mode #grass-brush-popout,
+  body.pedestrian-mode #label-mode-popout,
   body.pedestrian-mode #site-banner{
     display:none !important;
   }
@@ -179,6 +182,16 @@
   }
   .draw-mode-btn:hover{border-color:var(--accent);color:#fff;}
   .draw-mode-btn svg{width:16px;height:16px;stroke-width:2;}
+  /* Bouton "X" rouge de fermeture — popout "Nouveau bâtiment" et panneau
+     éclairage : un petit rond rouge assumé, cohérent partout où on l'utilise. */
+  .panel-x-btn{
+    width:22px;height:22px;flex-shrink:0;border-radius:50%;
+    background:#e5484d;color:#2a0808;border:1px solid #ff7a7d;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:all .12s ease;
+    box-shadow:0 4px 12px rgba(229,72,77,.4);
+  }
+  .panel-x-btn:hover{background:#f0605f;transform:scale(1.08);box-shadow:0 4px 14px rgba(229,72,77,.6);}
+  .panel-x-btn svg{width:13px;height:13px;stroke-width:3;}
 
   /* ---------- Popout tailles de pinceau (à droite du bouton "Gazon"), même
      mécanique que #draw-mode-popout : position "fixed" calculée en JS ---------- */
@@ -501,10 +514,10 @@
 
   /* ---------- Surface au sol en direct (au centre du tracé) ---------- */
   #draw-area-label{
-    position:absolute;left:0;top:0;transform:translate(-50%,-50%);
+    position:fixed;top:16px;left:50%;transform:translateX(-50%);
     background:rgba(11,17,22,.92);border:1.5px solid var(--accent,#5b8ab0);border-radius:6px;
     padding:8px 16px;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:20px;
-    color:#fff;pointer-events:none;display:none;z-index:6;white-space:nowrap;
+    color:#fff;pointer-events:none;display:none;z-index:41;white-space:nowrap;
     box-shadow:0 4px 18px rgba(0,0,0,.4);letter-spacing:.02em;
   }
   #draw-area-label.show{display:block;}
@@ -528,16 +541,14 @@
   #btn-construction-cancel{background:#2a2a2a;color:#f5c518;border-color:#f5c518;}
   #btn-construction-cancel:hover{background:#3a3a3a;}
 
-  /* ---------- Mode "construction" : cache toute l'UI sauf la boussole et le
-     bandeau de tracé, affiche un cadre chantier chevron jaune/noir autour de
-     la fenêtre ---------- */
-  body.construction-mode #ribbon,
+  /* ---------- Mode "construction" : cache toute l'UI sauf la boussole, les
+     boutons Vue plan/Grille/Voir PLU, et le bandeau de tracé/édition — cadre
+     chantier chevron jaune/noir autour de la fenêtre ---------- */
+  body.construction-mode #ribbon > *:not(#btn-plan-view):not(#btn-toggle-grid):not(#btn-toggle-plu){ display:none !important; }
   body.construction-mode #left-stack,
   body.construction-mode #legend-window,
   body.construction-mode #sun-panel,
   body.construction-mode #admin-panel,
-  body.construction-mode #status-line,
-  body.construction-mode #edit-banner,
   body.construction-mode #pedestrian-close-bar{ display:none !important; }
   body.construction-mode #draw-hint{
     background:#181818;border:2px solid #f5c518;
@@ -883,7 +894,7 @@
 
   /* ---------- Panneau circulaire "Éclairage" (jour/nuit) ---------- */
   #sun-panel{
-    position:absolute;top:70px;right:210px;z-index:8;width:260px;height:auto;
+    position:absolute;top:184px;right:16px;z-index:8;width:260px;height:auto;
     background:rgba(24,36,48,.95);border:1px solid #2a3946;border-radius:10px;
     padding:14px 10px 12px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.45);
     display:none;
@@ -950,7 +961,7 @@
     #bldg-panel-list{width:150px;}
     #bldg-edit-window{width:100%;}
     #legend-window{right:8px;bottom:8px;width:min(260px, calc(100vw - 16px));}
-    #sun-panel{right:8px;top:64px;width:min(260px, calc(100vw - 16px));}
+    #sun-panel{right:8px;top:156px;width:min(260px, calc(100vw - 16px));}
     #ribbon{padding:8px 10px;gap:8px;}
     #status-line{display:none;}
     #compass{top:64px;right:8px;width:84px;height:84px;}
@@ -1108,6 +1119,7 @@
     <div id="draw-mode-popout">
       <button class="draw-mode-btn" id="btn-mode-rect" title="Rectangle (cliquer-glisser-lâcher)"><i data-lucide="square"></i></button>
       <button class="draw-mode-btn" id="btn-mode-poly" title="Polygone (clics successifs)"><i data-lucide="pentagon"></i></button>
+      <button class="panel-x-btn" id="btn-draw-menu-close" title="Fermer"><i data-lucide="x"></i></button>
     </div>
     <div id="grass-brush-popout">
       <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
@@ -1119,6 +1131,7 @@
       <button class="brush-btn" id="label-mode-building" title="Coller sur un bâtiment (façade ou toit, socle ou volume supérieur)"><i data-lucide="building-2"></i></button>
     </div>
     <div id="sun-panel">
+      <button class="panel-x-btn" id="sun-panel-close" title="Fermer" style="position:absolute;top:8px;right:8px;z-index:2;"><i data-lucide="x"></i></button>
       <div id="sun-arc">
         <button class="sun-btn" data-time="lever" style="left:2%;top:62%;" title="Lever du soleil"><i data-lucide="sunrise"></i></button>
         <button class="sun-btn" data-time="matin" style="left:20%;top:20%;" title="Milieu de matinée"><i data-lucide="sun"></i></button>
@@ -1406,6 +1419,10 @@ controls.dampingFactor = 0.08;
 controls.maxPolarAngle = Math.PI*0.49;
 controls.minDistance = 15;
 controls.maxDistance = 700;
+// Le clic molette orbite la caméra, exactement comme le clic gauche (donne
+// une alternative toujours disponible, y compris en mode construction quand
+// le clic gauche est réservé au tracé/à l'édition — voir enterConstructionMode()).
+controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
 
 // ==== Vue plan (quasi-orthographique) ====
 // Avec une SEULE caméra en perspective partagée par tout le code (raycaster,
@@ -1541,10 +1558,14 @@ let constructionModeActive = false;
 function enterConstructionMode(){
   constructionModeActive = true;
   document.body.classList.add('construction-mode');
+  controls.mouseButtons.LEFT = -1; // libère le clic gauche pour le tracé/l'édition ; le clic molette (mappé sur ROTATE dès le démarrage) continue d'orbiter
+  labelGroup.visible = false; // les labels de bâtiments sont masqués pendant tout le mode construction
 }
 function exitConstructionMode(){
   constructionModeActive = false;
   document.body.classList.remove('construction-mode');
+  controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+  labelGroup.visible = labelsVisible;
   hideZoneHazardOutline();
   restoreConstructionGrayscale();
 }
@@ -2623,15 +2644,9 @@ function updateDrawAreaLabel(){
     drawAreaLabel.classList.remove('show');
     return;
   }
-  const rect = renderer.domElement.getBoundingClientRect();
-  if(!rect.width || !rect.height){ drawAreaLabel.classList.remove('show'); return; }
-  const activeCam = planViewActive ? orthoCamera : camera;
-  _drawAreaProjVec.set(currentDrawLiveCentroid.x, 0.4, currentDrawLiveCentroid.z).project(activeCam);
-  if(_drawAreaProjVec.z > 1){ drawAreaLabel.classList.remove('show'); return; }
-  const sx = (_drawAreaProjVec.x*0.5+0.5) * rect.width;
-  const sy = (1-(_drawAreaProjVec.y*0.5+0.5)) * rect.height;
-  drawAreaLabel.style.left = sx+'px';
-  drawAreaLabel.style.top = sy+'px';
+  // Affichage fixe en haut au centre de l'écran (voir CSS #draw-area-label) —
+  // ne suit plus le tracé en 3D : plus simple à lire, et jamais caché par un
+  // bâtiment ou un angle de caméra défavorable.
   drawAreaLabel.textContent = `${currentDrawLiveArea.toFixed(0)} m² au sol`;
   drawAreaLabel.classList.add('show');
 }
@@ -2680,7 +2695,6 @@ function startDraw(mode){
     : 'Cliquez sur le sol pour poser les sommets du bâtiment';
   drawHintEnter.style.display = drawMode==='rect' ? 'none' : '';
   drawHint.classList.add('show');
-  controls.enableRotate = false; // clic gauche réservé au tracé ; clic droit (déplacement) et molette (zoom) restent actifs
   enterConstructionMode();
   lockPlanViewForZoneDraw();
   showZoneHazardOutline();
@@ -2696,7 +2710,6 @@ function cancelDraw(){
   drawHint.classList.remove('show');
   drawHintEnter.style.display = '';
   controls.enabled = true;
-  controls.enableRotate = true;
   closeDrawMenu();
   volumeDrawTargetId = null;
   hideVolumeRoofGrid();
@@ -2869,6 +2882,39 @@ function snapToFootprintEdges(pt, footprint){
     return best;
   }
   return {x:pt.x, z:pt.z};
+}
+// Aimantation sur les sommets/arêtes des AUTRES bâtiments déjà posés — utilisé
+// UNIQUEMENT pendant le tracé d'un NOUVEAU bâtiment au sol (pas pour un volume
+// supérieur, qui s'aimante déjà sur le bâtiment support via snapToFootprintEdges).
+// Même logique priorité sommet > bord que snapPointToZone, mais balayée sur
+// tous les bâtiments existants à la fois (le plus proche gagne).
+function snapPointToOtherBuildings(pt, excludeId){
+  let bestVertex = null, bestVertexDist = VERTEX_SNAP_RADIUS;
+  let bestEdge = null, bestEdgeDist = EDGE_SNAP_RADIUS;
+  buildings.forEach(b=>{
+    if(excludeId!=null && b.id===excludeId) return;
+    const poly = b.points;
+    if(!poly || poly.length<2) return;
+    poly.forEach(v=>{
+      const d = Math.hypot(v.x-pt.x, v.z-pt.z);
+      if(d<bestVertexDist){ bestVertexDist=d; bestVertex={x:v.x, z:v.z}; }
+    });
+    for(let i=0;i<poly.length;i++){
+      const a=poly[i], c=poly[(i+1)%poly.length];
+      const proj = closestPointOnSegment(pt,a,c);
+      const d = Math.hypot(proj.x-pt.x, proj.z-pt.z);
+      if(d<bestEdgeDist){ bestEdgeDist=d; bestEdge=proj; }
+    }
+  });
+  return bestVertex || bestEdge || null;
+}
+// Résout la position d'un point posé pendant le tracé d'un NOUVEAU bâtiment :
+// priorité à l'aimantation sur un bâtiment voisin, sinon comportement habituel
+// (sommets/bords de la parcelle constructible, ou simple clamp dedans).
+function resolveNewBuildingPoint(pt){
+  const otherSnap = snapPointToOtherBuildings(pt);
+  if(otherSnap) return buildZone.length>=3 ? clampPointToPolygon(otherSnap, buildZone) : otherSnap;
+  return buildZone.length>=3 ? snapPointToZone(pt, buildZone) : pt;
 }
 // Vérifie que l'intégralité du contour du bâtiment (pas seulement ses sommets)
 // reste dans le polygone d'implantation, en échantillonnant chaque arête.
@@ -3179,7 +3225,7 @@ function addDrawPoint(pt){
   // parfaitement alignées d'un décroché à l'autre, sans décalage parasite.
   const belowFootprint = volumeDrawBelowFootprint();
   const target = belowFootprint ? snapToFootprintEdges(pt, belowFootprint)
-    : ((!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt);
+    : ((!volumeDrawTargetId && buildZone.length>=3) ? resolveNewBuildingPoint(pt) : pt);
   // Étape 2 : hugue IMMÉDIATEMENT le segment reliant le point précédent à
   // celui-ci contre le bord réel du polygone — pas seulement à la fermeture
   // du tracé (finishDraw). Ainsi le contour est correct dès la pose, sans
@@ -3293,7 +3339,6 @@ function startVolumeDraw(b){
   drawHintText.textContent = 'Cliquez sur le toit pour poser les sommets du volume supérieur';
   drawHintEnter.style.display = '';
   drawHint.classList.add('show');
-  controls.enableRotate = false;
   enterConstructionMode();
   applyConstructionGrayscale(b.group);
   refreshBldgMiniListVisibility();
@@ -3446,6 +3491,7 @@ btnDraw.addEventListener('click', ()=>{
 });
 btnModePoly.addEventListener('click', ()=>{ closeDrawMenu(); startDraw('polygon'); });
 btnModeRect.addEventListener('click', ()=>{ closeDrawMenu(); startDraw('rect'); });
+document.getElementById('btn-draw-menu-close').addEventListener('click', closeDrawMenu);
 
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!drawing || drawMode!=='polygon') return;
@@ -3472,7 +3518,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!pt) return;
   const belowFootprint = volumeDrawBelowFootprint();
   const start = belowFootprint ? snapToFootprintEdges(pt, belowFootprint)
-    : ((!volumeDrawTargetId && buildZone.length>=3) ? snapPointToZone(pt, buildZone) : pt);
+    : ((!volumeDrawTargetId && buildZone.length>=3) ? resolveNewBuildingPoint(pt) : pt);
   rectDragging = true;
   rectStartPt = {x:start.x, z:start.z};
   drawPoints = [{x:rectStartPt.x, z:rectStartPt.z}];
@@ -3483,7 +3529,8 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
   const belowFootprint = volumeDrawBelowFootprint();
-  const snapped = belowFootprint ? snapToFootprintEdges(pt, belowFootprint) : pt;
+  const snapped = belowFootprint ? snapToFootprintEdges(pt, belowFootprint)
+    : (!volumeDrawTargetId ? resolveNewBuildingPoint(pt) : pt);
   const x0=rectStartPt.x, z0=rectStartPt.z, x1=snapped.x, z1=snapped.z;
   drawPoints = [ {x:x0,z:z0}, {x:x1,z:z0}, {x:x1,z:z1}, {x:x0,z:z1} ];
   refreshPreview();
@@ -3669,6 +3716,7 @@ function buildRoofCornerSpheres(points, topY){
 
 function startTreeTool(){
   if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
@@ -3907,6 +3955,31 @@ let grassParts = []; // [{mesh, overlayMesh, canvas, ctx, texture}]
 let grassVisibleFlag = true; // oeil "Gazon"
 let grassBrushRadius = 12; // px, sur un canvas de 1024 — "moyen" par défaut (réduit à nouveau : la tache peinte réelle restait bien plus grande que ce que son cercle-guide au sol laissait penser)
 
+// Aire exacte (m², repère monde) d'une géométrie de mesh : somme des aires de
+// triangles après application de sa matrice monde — fiable quelle que soit
+// l'échelle/rotation héritée de la chaîne de parents, contrairement à une
+// simple bounding box.
+function computeMeshWorldArea(mesh){
+  const geo = mesh.geometry;
+  const pos = geo.attributes && geo.attributes.position;
+  if(!pos) return 0;
+  mesh.updateWorldMatrix(true, false);
+  const m = mesh.matrixWorld;
+  const idx = geo.index;
+  const triCount = idx ? Math.floor(idx.count/3) : Math.floor(pos.count/3);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  let area = 0;
+  for(let i=0;i<triCount;i++){
+    let ia, ib, ic;
+    if(idx){ ia=idx.getX(i*3); ib=idx.getX(i*3+1); ic=idx.getX(i*3+2); }
+    else { ia=i*3; ib=i*3+1; ic=i*3+2; }
+    a.fromBufferAttribute(pos, ia).applyMatrix4(m);
+    b.fromBufferAttribute(pos, ib).applyMatrix4(m);
+    c.fromBufferAttribute(pos, ic).applyMatrix4(m);
+    area += new THREE.Triangle(a,b,c).getArea();
+  }
+  return area;
+}
 function setupGrassPaintOverlay(parts){
   grassParts = [];
   parts.forEach(mesh=>{
@@ -3950,7 +4023,15 @@ function setupGrassPaintOverlay(parts){
     if(!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
     const bbRel = mesh.geometry.boundingBox.clone().applyMatrix4(relMatrix);
     const worldSpan = (Math.abs(bbRel.max.x-bbRel.min.x) + Math.abs(bbRel.max.z-bbRel.min.z)) / 2;
-    grassParts.push({ mesh, overlayMesh, canvas, ctx, texture, worldSpan: worldSpan || 60 });
+    // Surface RÉELLE (m², dans le repère monde) de ce fragment de sol — calculée
+    // en sommant l'aire de chaque triangle de la géométrie transformée par sa
+    // matrice monde. Contrairement à `worldSpan` (une moyenne largeur/hauteur
+    // de la bounding box, pratique pour convertir un RAYON de pinceau mais
+    // fausse dès que le fragment n'est pas carré ou que sa silhouette n'occupe
+    // pas tout son rectangle englobant), ceci donne l'aire exacte, utilisée
+    // uniquement pour le calcul du % d'espaces verts (voir computeGrassAreaM2).
+    const worldArea = computeMeshWorldArea(mesh);
+    grassParts.push({ mesh, overlayMesh, canvas, ctx, texture, worldSpan: worldSpan || 60, worldArea: worldArea || 0 });
   });
 }
 
@@ -4011,6 +4092,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
 
 function startGrassTool(){
   if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
   if(treePlacing) stopTreeTool();
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
@@ -4776,9 +4858,12 @@ function computeGrassAreaM2(){
     try{ data = part.ctx.getImageData(0,0,part.canvas.width,part.canvas.height).data; }
     catch(e){ return; } // canvas potentiellement "tainted" — on ignore silencieusement
     let painted = 0;
+    const totalPx = part.canvas.width * part.canvas.height;
     for(let i=3;i<data.length;i+=4){ if(data[i]>10) painted++; }
-    const m2PerPx = (part.worldSpan/part.canvas.width) * (part.worldSpan/part.canvas.height);
-    total += painted * m2PerPx;
+    // Fraction du canvas peinte × aire monde EXACTE du fragment (voir
+    // computeMeshWorldArea) — ne dépend d'aucune hypothèse de forme carrée ou
+    // de bounding box, donc fiable même pour un fragment de sol irrégulier.
+    total += (painted/totalPx) * (part.worldArea||0);
   });
   return total;
 }
@@ -5353,12 +5438,15 @@ document.getElementById('edit-banner-cancel').addEventListener('click', ()=>{
 function startEditBuildingShape(b, bandIndex=null){
   if(editingBuildingId && editingBuildingId!==b.id) stopEditBuildingShape();
   if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   editingBuildingId = b.id;
   editingBandIndex = bandIndex;
+  enterConstructionMode();
+  applyConstructionGrayscale(b.group);
   bldgEditSnapshot = { id:b.id, points: b.points.map(p=>({x:p.x,z:p.z})), floors:b.floors, bands: JSON.parse(JSON.stringify(b.bands||[])) };
   bldgSelected.clear();
   rebuildBldgVertexHandles(b);
@@ -5376,6 +5464,7 @@ function stopEditBuildingShape(){
   const id = editingBuildingId;
   editingBuildingId = null;
   editingBandIndex = null;
+  exitConstructionMode();
   bldgEditSnapshot = null;
   unregisterScreenSizedMarkersOf(bldgVertexGroup);
   bldgVertexGroup.clear();
@@ -5412,12 +5501,15 @@ function startMoveBuilding(b){
   if(movingBuildingId && movingBuildingId!==b.id) stopMoveBuilding();
   if(editingBuildingId) stopEditBuildingShape();
   if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   movingBuildingId = b.id;
   controls.enabled = false;
+  enterConstructionMode();
+  applyConstructionGrayscale(b.group);
   renderer.domElement.style.cursor = 'grab';
   flashStatus('Clic gauche glissé : déplacer · Clic droit glissé : pivoter · Échap : terminer');
 }
@@ -5426,6 +5518,7 @@ function stopMoveBuilding(){
   movingBuildingId = null;
   buildingMoveDrag = null;
   controls.enabled = true;
+  exitConstructionMode();
   renderer.domElement.style.cursor = '';
   const b = buildings.find(x=>x.id===id);
   if(b){ rebuildMesh(b); renderBldgEditWindow(b); }
@@ -6649,15 +6742,14 @@ document.getElementById('btn-sun-panel').addEventListener('click', (ev)=>{
   ev.stopPropagation();
   sunPanel.classList.toggle('show');
 });
+document.getElementById('sun-panel-close').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  sunPanel.classList.remove('show');
+});
 document.querySelectorAll('#sun-arc .sun-btn').forEach(btn=>{
   btn.addEventListener('click', ()=> setLightingMode(btn.dataset.time));
 });
 document.getElementById('sun-btn-night').addEventListener('click', ()=> setLightingMode('nuit'));
-document.addEventListener('click', (ev)=>{
-  if(!sunPanel.contains(ev.target) && ev.target.id!=='btn-sun-panel' && !ev.target.closest('#btn-sun-panel')){
-    sunPanel.classList.remove('show');
-  }
-});
 // Ferme la fiche bâtiment dès qu'on clique un BOUTON du menu "outils" (barre
 // de gauche) — et seulement lui, pas les autres menus de l'interface. On
 // exclut tout ce qui fait partie du travail EN COURS sur ce bâtiment (le
@@ -6877,6 +6969,7 @@ btnLabel.addEventListener('click', ()=>{
   if(!labelPlacing){
     // Comme les autres outils : n'en garder qu'un seul actif à la fois.
     if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
     if(treePlacing) stopTreeTool();
     if(grassPainting) stopGrassTool();
     if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
@@ -8410,6 +8503,7 @@ function extPropagateChainFrom(index){
 /* ---- démarrage / chaînage / validation ---------------------------- */
 function startExtensionGareTool(){
   if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
@@ -8457,6 +8551,7 @@ function extHideExtension(){
 }
 function extShowExtensionForEditing(){
   if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
   if(treePlacing) stopTreeTool();
   if(grassPainting) stopGrassTool();
   if(labelPlacing) stopLabelTool();
