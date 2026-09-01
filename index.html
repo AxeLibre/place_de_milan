@@ -4630,6 +4630,7 @@ function rebuildMesh(b){
       mesh.castShadow = !editing; mesh.receiveShadow = true;
       mesh.userData.isVolumeFace = true;
       mesh.userData.usage = usage;
+      mesh.userData.bandIndex = band ? b.bands.indexOf(band) : -1;
       b.group.add(mesh);
 
       // slab edge line for a clean architectural-model look
@@ -4670,6 +4671,7 @@ function rebuildMesh(b){
       mesh.castShadow = !editing; mesh.receiveShadow = true;
       mesh.userData.isVolumeFace = true;
       mesh.userData.usage = band.usage || DEFAULT_USAGE;
+      mesh.userData.bandIndex = idx;
       b.group.add(mesh);
 
       const edges = new THREE.EdgesGeometry(geo, 25);
@@ -4711,46 +4713,37 @@ function rebuildMesh(b){
     halo.name = 'selectionHalo';
     b.group.add(halo);
 
-    // Surbrillance du volume entier sélectionné : léger remplissage
-    // semi-transparent sur toutes les faces (tous les étages/tranches, y
-    // compris le socle) + un fin liseré sur toutes les arêtes de ce volume —
-    // pour repérer l'emprise complète du bâtiment sélectionné même depuis un
-    // angle où le simple pourtour au sol serait masqué ou peu lisible.
-    // Couleur : celle du type d'usage de CHAQUE volume concerné (donc un
-    // bâtiment multi-usages affiche une surbrillance différente par tranche/
-    // étage, cohérente avec la légende), pas une couleur neutre unique — un
-    // matériau distinct par usage rencontré, réutilisé pour tous les volumes
-    // partageant le même usage au sein de ce même bâtiment.
-    const highlightMatsByUsage = {};
-    function highlightFillMatFor(usage){
-      if(!highlightMatsByUsage[usage]){
-        highlightMatsByUsage[usage] = {
-          fill: new THREE.MeshBasicMaterial({
-            color: USAGE_COLORS[usage] || USAGE_COLORS[DEFAULT_USAGE], transparent:true, opacity:0.22,
-            depthWrite:false, side:THREE.DoubleSide,
-            polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1
-          }),
-          line: new THREE.LineBasicMaterial({ color: USAGE_COLORS[usage] || USAGE_COLORS[DEFAULT_USAGE], transparent:true, opacity:0.95 })
-        };
-      }
-      return highlightMatsByUsage[usage];
-    }
-    b.group.children
-      .filter(o=>o.userData && o.userData.isVolumeFace)
-      .forEach(mesh=>{
-        const mats = highlightFillMatFor(mesh.userData.usage || DEFAULT_USAGE);
-        const fill = new THREE.Mesh(mesh.geometry, mats.fill);
-        fill.position.copy(mesh.position);
-        fill.renderOrder = 37;
-        fill.name = 'selectionHighlight';
-        b.group.add(fill);
-        const outlineEdges = new THREE.EdgesGeometry(mesh.geometry, 25);
-        const outline = new THREE.LineSegments(outlineEdges, mats.line);
-        outline.position.copy(mesh.position);
-        outline.renderOrder = 38;
-        outline.name = 'selectionHighlight';
-        b.group.add(outline);
+    // Surbrillance du BLOC/VOLUME choisi dans le graphique du panneau
+    // d'édition (bewSelectedBandIndex) — pas de tout le bâtiment : la
+    // légende sert déjà à voir les usages de l'ensemble de la maquette,
+    // ici on veut juste repérer où se trouve, en 3D, le bloc actuellement
+    // ouvert pour édition. Léger remplissage + fin liseré sur toutes les
+    // arêtes de CE volume (tous ses étages, y compris sa base propre s'il
+    // s'agit d'un décroché en hauteur), dans la couleur de son usage.
+    if(bewSelectedForBuildingId === b.id && bewSelectedBandIndex!==null && b.bands[bewSelectedBandIndex]){
+      const usage = b.bands[bewSelectedBandIndex].usage || DEFAULT_USAGE;
+      const highlightFillMat = new THREE.MeshBasicMaterial({
+        color: USAGE_COLORS[usage] || USAGE_COLORS[DEFAULT_USAGE], transparent:true, opacity:0.28,
+        depthWrite:false, side:THREE.DoubleSide,
+        polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1
       });
+      const highlightLineMat = new THREE.LineBasicMaterial({ color: USAGE_COLORS[usage] || USAGE_COLORS[DEFAULT_USAGE], transparent:true, opacity:0.95 });
+      b.group.children
+        .filter(o=>o.userData && o.userData.isVolumeFace && o.userData.bandIndex===bewSelectedBandIndex)
+        .forEach(mesh=>{
+          const fill = new THREE.Mesh(mesh.geometry, highlightFillMat);
+          fill.position.copy(mesh.position);
+          fill.renderOrder = 37;
+          fill.name = 'selectionHighlight';
+          b.group.add(fill);
+          const outlineEdges = new THREE.EdgesGeometry(mesh.geometry, 25);
+          const outline = new THREE.LineSegments(outlineEdges, highlightLineMat);
+          outline.position.copy(mesh.position);
+          outline.renderOrder = 38;
+          outline.name = 'selectionHighlight';
+          b.group.add(outline);
+        });
+    }
   }
 
   // Bâtiment en cours de tracé/édition : petite bande zébrée noir/jaune type
@@ -6417,6 +6410,7 @@ function openBldgEditWindow(id){
 function closeBldgEditWindow(){
   if(editingBuildingId) stopEditBuildingShape();
   if(selectedId !== null){ selectedId = null; rebuildAll(); renderList(); }
+  bewSelectedForBuildingId = null; bewSelectedBandIndex = null;
   updateBldgPanelVisibility();
 }
 // Mémorise quel bloc du graphique est actuellement "ouvert" pour édition
@@ -6500,6 +6494,7 @@ function renderBldgEditWindow(b){
     cell.innerHTML = `<span class="fc-label">${rangeLabel}${isSetback?' ◆':''}</span><span class="fc-area">${(bandArea*nFloors).toFixed(0)} m²</span>`;
     cell.addEventListener('click', ()=>{
       bewSelectedBandIndex = (bewSelectedBandIndex===idx) ? null : idx;
+      rebuildMesh(b); // met à jour la surbrillance 3D du bloc choisi
       renderBldgEditWindow(b);
     });
     floorStack.appendChild(cell);
