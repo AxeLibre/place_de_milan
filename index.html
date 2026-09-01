@@ -25,6 +25,7 @@
     --com:#d95a6c;    /* commerces — rouge brique */
     --hot:#a06bd9;    /* hôtel — violet */
     --ser:#4fae8f;    /* services — vert sarcelle */
+    --non:#9aa0a6;    /* non défini — gris neutre */
 
     --panel-w: 330px;
   }
@@ -82,6 +83,7 @@
   body.pedestrian-mode #draw-mode-popout,
   body.pedestrian-mode #grass-brush-popout,
   body.pedestrian-mode #label-mode-popout,
+  body.pedestrian-mode #label-layer,
   body.pedestrian-mode #site-banner{
     display:none !important;
   }
@@ -1161,6 +1163,7 @@
       <div class="legend-item"><div class="swatch" style="background:var(--com)"></div><span>Commerces</span><span class="legend-m2" id="legend-m2-commerces">0 m²</span></div>
       <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
       <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
+      <div class="legend-item"><div class="swatch" style="background:var(--non)"></div><span>Non défini</span><span class="legend-m2" id="legend-m2-nondefini">0 m²</span></div>
       <div id="legend-total-row"><span>Total opération</span><b id="legend-m2-total">0 m²</b></div>
       <div id="legend-site-stats">
         <div class="legend-item"><span>Emprise bâtie / parcelle</span><span class="legend-m2" id="legend-built-pct">0 %</span></div>
@@ -1308,15 +1311,18 @@ const USAGE_COLORS = {
   bureaux:     0x5b8ab0,
   commerces:   0xd95a6c,
   hotel:       0xa06bd9,
-  services:    0x4fae8f
+  services:    0x4fae8f,
+  nondefini:   0x9aa0a6
 };
 const USAGE_LABELS = {
   residentiel: "Résidentiel",
   bureaux: "Bureaux",
   commerces: "Commerces",
   hotel: "Hôtel",
-  services: "Services"
+  services: "Services",
+  nondefini: "Non défini"
 };
+const DEFAULT_USAGE = 'nondefini'; // usage par défaut de tout nouveau bâtiment/volume
 const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
 
 // Légende des usages : quand désactivée, tous les bâtiments sont affichés avec
@@ -1829,7 +1835,10 @@ function enterPedestrianMode(){
   // Le pourtour bleu néon de sélection n'a pas sa place en vue piéton (trop
   // "outil de conception", casse l'immersion) — masqué sans toucher à la
   // sélection elle-même, restauré à la sortie.
-  buildings.forEach(b=>{ const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = false; });
+  buildings.forEach(b=>{
+    const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = false;
+    b.group.children.forEach(o=>{ if(o.name==='selectionHighlight') o.visible = false; });
+  });
 }
 function exitPedestrianMode(){
   if(!pedestrianModeActive) return;
@@ -1840,7 +1849,10 @@ function exitPedestrianMode(){
   keysDown.clear();
   pedestrianDragging = false; pedestrianLastMouse = null;
   renderer.domElement.style.cursor = '';
-  buildings.forEach(b=>{ const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = true; });
+  buildings.forEach(b=>{
+    const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = true;
+    b.group.children.forEach(o=>{ if(o.name==='selectionHighlight') o.visible = true; });
+  });
   if(pedestrianSavedState){
     camera.fov = pedestrianSavedState.fov;
     camera.updateProjectionMatrix();
@@ -3490,7 +3502,7 @@ function addVolumeToBuilding(b, pts, floors){
   // Nouvelle tranche au sommet, avec SON PROPRE contour (le décroché) — un
   // seul et même compteur d'étages pour tout le bâtiment, donc surface et
   // répartition des usages restent automatiquement exactes.
-  b.bands.push({ from:newFrom, to:b.floors, usage: belowBand.usage || 'residentiel', points: cleaned });
+  b.bands.push({ from:newFrom, to:b.floors, usage: belowBand.usage || DEFAULT_USAGE, points: cleaned });
   normalizeBands(b);
   rebuildMesh(b);
   renderList();
@@ -4336,7 +4348,7 @@ updateBrushRowState();
 // Infinity), pas une limite qu'on s'attend à approcher en usage normal.
 const MAX_BUILDING_FLOORS = 120;
 function defaultBands(floors){
-  return [{from:1, to:floors, usage:'bureaux'}];
+  return [{from:1, to:floors, usage:DEFAULT_USAGE}];
 }
 
 // ============================================================
@@ -4366,11 +4378,11 @@ function normalizeBands(b){
     // `points` (contour propre à cette tranche, pour un décroché) est
     // conservé tel quel s'il existe — sinon `undefined`/`null`, ce qui veut
     // dire "même emprise que le socle" (voir footprintForBand()).
-    out.push({ from, to, usage: band.usage || 'bureaux', points: band.points || null });
+    out.push({ from, to, usage: band.usage || DEFAULT_USAGE, points: band.points || null });
     from = to+1;
   }
   if(!out.length){
-    out.push({from:1, to:b.floors, usage:'bureaux', points:null});
+    out.push({from:1, to:b.floors, usage:DEFAULT_USAGE, points:null});
   } else if(out[out.length-1].to < b.floors){
     // Le nombre d'étages a augmenté (ou une tranche manquait) : la tranche
     // du haut absorbe automatiquement les nouveaux étages — jamais de
@@ -4470,7 +4482,7 @@ function buildRoofCap(points, topY, editing, noInset){
 }
 function usageAtFloor(b, floor){
   const band = b.bands.find(bd=>floor>=bd.from && floor<=bd.to);
-  return band ? band.usage : 'bureaux';
+  return band ? band.usage : DEFAULT_USAGE;
 }
 // Hauteur cumulée en bas de l'étage `floor` (1-indexé) — chaque étage a sa
 // propre hauteur selon son usage (voir FLOOR_HEIGHTS), donc les étages ne
@@ -4602,7 +4614,7 @@ function rebuildMesh(b){
     let yCursor = 0;
     for(let f=1; f<=b.floors; f++){
       const band = b.bands.find(bd=>f>=bd.from && f<=bd.to);
-      const usage = band ? band.usage : 'bureaux';
+      const usage = band ? band.usage : DEFAULT_USAGE;
       const footprint = footprintForBand(b, band);
       const shape = new THREE.Shape(footprint.map(p=>new THREE.Vector2(p.x,-p.z)));
       const h = floorHeightFor(usage);
@@ -4616,6 +4628,8 @@ function rebuildMesh(b){
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.y = yCursor;
       mesh.castShadow = !editing; mesh.receiveShadow = true;
+      mesh.userData.isVolumeFace = true;
+      mesh.userData.usage = usage;
       b.group.add(mesh);
 
       // slab edge line for a clean architectural-model look
@@ -4654,6 +4668,8 @@ function rebuildMesh(b){
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.y = yCursor;
       mesh.castShadow = !editing; mesh.receiveShadow = true;
+      mesh.userData.isVolumeFace = true;
+      mesh.userData.usage = band.usage || DEFAULT_USAGE;
       b.group.add(mesh);
 
       const edges = new THREE.EdgesGeometry(geo, 25);
@@ -4680,13 +4696,61 @@ function rebuildMesh(b){
   // z-fighting/scintillement avec le sol juste en dessous (c'était la
   // "ligne scintillante à la base des nouveaux bâtiments" : à 0.06 elle
   // était quasi coplanaire avec le sol et clignotait selon l'angle caméra).
-  if(b.id === selectedId){
+  // Le halo de sélection ET la surbrillance de volume n'ont pas leur place en
+  // vue piéton (trop "outil de conception") — on ne les crée simplement pas
+  // tant que le mode piéton est actif, plutôt que de compter uniquement sur
+  // le masquage fait à l'entrée/sortie (qui ne suffisait pas : un rebuild
+  // déclenché pendant le mode piéton — changement de sélection, etc. —
+  // recréait un halo/surbrillance visibles par défaut, sans jamais être
+  // re-masqués tant qu'on ne ressortait pas et rerentrait pas du mode).
+  if(b.id === selectedId && !pedestrianModeActive){
     const outlinePts = b.points.map(p=>new THREE.Vector3(p.x,0.18,p.z));
     outlinePts.push(outlinePts[0].clone());
     const halo = new THREE.Line(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({color:NEON_BLUE, depthTest:false, transparent:true}));
     halo.renderOrder = 39;
     halo.name = 'selectionHalo';
     b.group.add(halo);
+
+    // Surbrillance du volume entier sélectionné : léger remplissage
+    // semi-transparent sur toutes les faces (tous les étages/tranches, y
+    // compris le socle) + un fin liseré sur toutes les arêtes de ce volume —
+    // pour repérer l'emprise complète du bâtiment sélectionné même depuis un
+    // angle où le simple pourtour au sol serait masqué ou peu lisible.
+    // Couleur : celle du type d'usage de CHAQUE volume concerné (donc un
+    // bâtiment multi-usages affiche une surbrillance différente par tranche/
+    // étage, cohérente avec la légende), pas une couleur neutre unique — un
+    // matériau distinct par usage rencontré, réutilisé pour tous les volumes
+    // partageant le même usage au sein de ce même bâtiment.
+    const highlightMatsByUsage = {};
+    function highlightFillMatFor(usage){
+      if(!highlightMatsByUsage[usage]){
+        highlightMatsByUsage[usage] = {
+          fill: new THREE.MeshBasicMaterial({
+            color: USAGE_COLORS[usage] || USAGE_COLORS[DEFAULT_USAGE], transparent:true, opacity:0.22,
+            depthWrite:false, side:THREE.DoubleSide,
+            polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1
+          }),
+          line: new THREE.LineBasicMaterial({ color: USAGE_COLORS[usage] || USAGE_COLORS[DEFAULT_USAGE], transparent:true, opacity:0.95 })
+        };
+      }
+      return highlightMatsByUsage[usage];
+    }
+    b.group.children
+      .filter(o=>o.userData && o.userData.isVolumeFace)
+      .forEach(mesh=>{
+        const mats = highlightFillMatFor(mesh.userData.usage || DEFAULT_USAGE);
+        const fill = new THREE.Mesh(mesh.geometry, mats.fill);
+        fill.position.copy(mesh.position);
+        fill.renderOrder = 37;
+        fill.name = 'selectionHighlight';
+        b.group.add(fill);
+        const outlineEdges = new THREE.EdgesGeometry(mesh.geometry, 25);
+        const outline = new THREE.LineSegments(outlineEdges, mats.line);
+        outline.position.copy(mesh.position);
+        outline.renderOrder = 38;
+        outline.name = 'selectionHighlight';
+        b.group.add(outline);
+      });
   }
 
   // Bâtiment en cours de tracé/édition : petite bande zébrée noir/jaune type
@@ -4925,12 +4989,12 @@ function updateConstructions(dt){
 // Surface totale (m²) par usage, cumulée sur tous les bâtiments dessinés
 // (chaque étage compte sa propre emprise au sol pour l'usage de sa tranche),
 // affichée dans le panneau "Légende des usages" + le total tous usages.
-const USAGE_LEGEND_IDS = { residentiel:'legend-m2-residentiel', bureaux:'legend-m2-bureaux', commerces:'legend-m2-commerces', hotel:'legend-m2-hotel', services:'legend-m2-services' };
+const USAGE_LEGEND_IDS = { residentiel:'legend-m2-residentiel', bureaux:'legend-m2-bureaux', commerces:'legend-m2-commerces', hotel:'legend-m2-hotel', services:'legend-m2-services', nondefini:'legend-m2-nondefini' };
 // Calcule les m² par usage cumulés sur tous les bâtiments — factorisé pour
 // être réutilisé à la fois par le panneau flottant (updateLegendTotals) et
 // par la nomenclature dessinée sur la capture d'écran exportée.
 function computeUsageTotals(){
-  const totals = { residentiel:0, bureaux:0, commerces:0, hotel:0, services:0 };
+  const totals = { residentiel:0, bureaux:0, commerces:0, hotel:0, services:0, nondefini:0 };
   buildings.forEach(b=>{
     b.bands.forEach(band=>{
       const nFloors = Math.max(0, band.to - band.from + 1);
@@ -5606,7 +5670,7 @@ function stopEditBuildingShape(){
    (autour du centre du socle) · Échap ou reclic sur "Terminer" = sortir.
    ------------------------------------------------------------ */
 let movingBuildingId = null;
-let buildingMoveDrag = null; // {mode:'translate'|'rotate', startGround, pivot, startAngle, snapshot}
+let buildingMoveDrag = null; // {mode:'translate'|'rotate', startGround, pivot, startClientX, snapshot}
 let moveOriginalSnapshot = null; // état complet AVANT le début du déplacement, pour "ANNULER"
 function startMoveBuilding(b){
   if(movingBuildingId && movingBuildingId!==b.id) stopMoveBuilding();
@@ -5665,7 +5729,7 @@ function cancelMoveBuilding(){
 let cloningBuildingId = null;
 let clonePivot = null;      // centre courant du clone (suit le curseur)
 let cloneRotating = false;
-let cloneRotateStart = null; // {angle, snapshot}
+let cloneRotateStart = null; // {startClientX, snapshot}
 function startCloneBuilding(source){
   if(movingBuildingId) stopMoveBuilding();
   if(editingBuildingId) stopEditBuildingShape();
@@ -5723,7 +5787,10 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   const pt = groundPointFromEvent(ev);
   if(!pt) return;
   if(cloneRotating && cloneRotateStart){
-    const angle = Math.atan2(pt.z-clonePivot.z, pt.x-clonePivot.x) - cloneRotateStart.angle;
+    // Même logique de rotation par delta souris horizontal en pixels que
+    // l'outil "Déplacer" (voir BUILDING_ROTATE_SENSITIVITY) — fluide et
+    // prévisible, indépendante de la distance entre le curseur et le pivot.
+    const angle = (ev.clientX - cloneRotateStart.startClientX) * BUILDING_ROTATE_SENSITIVITY;
     const rot = p=> rotatePointAround(p, clonePivot, angle);
     b.points = cloneRotateStart.snapshot.base.map(rot);
     cloneRotateStart.snapshot.bands.forEach(({idx,pts})=>{
@@ -5746,7 +5813,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!pt) return;
   ev.preventDefault();
   cloneRotating = true;
-  cloneRotateStart = { angle: Math.atan2(pt.z-clonePivot.z, pt.x-clonePivot.x), snapshot: snapshotBuildingContours(b) };
+  cloneRotateStart = { startClientX: ev.clientX, snapshot: snapshotBuildingContours(b) };
 });
 window.addEventListener('pointerup', (ev)=>{
   if(cloningBuildingId && cloneRotating && ev.button===2){ cloneRotating = false; cloneRotateStart = null; }
@@ -5786,25 +5853,34 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
     mode: ev.button===2 ? 'rotate' : 'translate',
     startGround: { x:pt.x, z:pt.z },
     pivot,
-    startAngle: Math.atan2(pt.z-pivot.z, pt.x-pivot.x),
+    // Rotation pilotée par le déplacement horizontal de la SOURIS À L'ÉCRAN
+    // (pixels), pas par l'angle absolu (souris → pivot) : cette dernière
+    // méthode était instable près du pivot (un tout petit mouvement de
+    // souris à faible rayon du centre du bâtiment produit un angle qui varie
+    // violemment — d'où les à-coups au début du glissement) et peu
+    // intuitive (la sensibilité de rotation dépendait de la distance au
+    // centre). Un delta écran pur donne une rotation prévisible et fluide
+    // quel que soit l'endroit où le clic droit démarre.
+    startClientX: ev.clientX,
     snapshot: snapshotBuildingContours(b)
   };
   renderer.domElement.style.cursor = buildingMoveDrag.mode==='rotate' ? 'crosshair' : 'grabbing';
 });
+const BUILDING_ROTATE_SENSITIVITY = 0.006; // radians par pixel de glissement horizontal
 window.addEventListener('pointermove', (ev)=>{
   if(!buildingMoveDrag || !movingBuildingId) return;
   const b = buildings.find(x=>x.id===movingBuildingId);
   if(!b) return;
-  const pt = groundPointFromEvent(ev);
-  if(!pt) return;
   if(buildingMoveDrag.mode==='translate'){
+    const pt = groundPointFromEvent(ev);
+    if(!pt) return;
     const dx = pt.x-buildingMoveDrag.startGround.x, dz = pt.z-buildingMoveDrag.startGround.z;
     b.points = buildingMoveDrag.snapshot.base.map(p=>({x:p.x+dx, z:p.z+dz}));
     buildingMoveDrag.snapshot.bands.forEach(({idx,pts})=>{
       if(b.bands[idx]) b.bands[idx].points = pts.map(p=>({x:p.x+dx, z:p.z+dz}));
     });
   } else {
-    const angle = Math.atan2(pt.z-buildingMoveDrag.pivot.z, pt.x-buildingMoveDrag.pivot.x) - buildingMoveDrag.startAngle;
+    const angle = (ev.clientX - buildingMoveDrag.startClientX) * BUILDING_ROTATE_SENSITIVITY;
     const rot = p=> rotatePointAround(p, buildingMoveDrag.pivot, angle);
     b.points = buildingMoveDrag.snapshot.base.map(rot);
     buildingMoveDrag.snapshot.bands.forEach(({idx,pts})=>{
