@@ -552,6 +552,8 @@
     font-family:'IBM Plex Mono',monospace;font-weight:700;
     box-shadow:0 0 0 3px #111, 0 6px 20px rgba(0,0,0,.6);
   }
+  #draw-hint.zone-error{border-color:#ff3b3b !important;box-shadow:0 0 0 3px #111, 0 0 22px rgba(255,59,59,.45) !important;}
+  #draw-hint.zone-error #draw-hint-text{color:#ff8080;font-weight:700;}
   body.construction-mode #draw-hint kbd{background:#000;border-color:#f5c518;color:#f5c518;}
   body.construction-mode .draw-hint-actions{display:flex;}
   #construction-frame{position:fixed;inset:0;z-index:39;pointer-events:none;display:none;}
@@ -1041,12 +1043,12 @@
       <div id="brand"><b>LYON PART-DIEU | PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
-      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + flèches + ±) pour cadrer une capture depuis n'importe quel point de vue. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
       <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
       <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
       <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons, constructions en cours)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
+      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + flèches + ±) pour cadrer une capture depuis n'importe quel point de vue. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
       <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
       <div id="ribbon-sep"></div>
       <div id="bottom-left-menu">
@@ -1563,6 +1565,8 @@ function exitConstructionMode(){
   controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
   labelGroup.visible = labelsVisible;
   hideZoneHazardOutline();
+  hideZoneOverflowOutline();
+  drawHint.classList.remove('zone-error');
   restoreConstructionGrayscale();
 }
 
@@ -1583,6 +1587,52 @@ function hideZoneHazardOutline(){
     if(o.isMesh){ o.geometry.dispose(); if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
   });
   zoneHazardOutline = null;
+}
+
+/* ------------------------------------------------------------
+   BLOCAGE HORS PÉRIMÈTRE — pendant un déplacement/clonage de bâtiment, si un
+   sommet (socle OU un volume supérieur) sort du polygone d'implantation :
+   pourtour de sélection en rouge, ligne rouge en tirets autour de la
+   parcelle (même style que la ligne orange habituelle), message d'erreur, et
+   la pose/validation est refusée tant que ce n'est pas rentré dans les clous.
+   ------------------------------------------------------------ */
+function buildingExceedsZone(b){
+  if(buildZone.length<3) return false;
+  const outside = pts => pts.some(p => !pointInPolygon(p, buildZone, 0.03));
+  if(outside(b.points)) return true;
+  return (b.bands||[]).some(band => band.points && band.points.length>=3 && outside(band.points));
+}
+let zoneOverflowOutline = null;
+function showZoneOverflowOutline(){
+  hideZoneOverflowOutline();
+  if(buildZone.length<3) return;
+  const pts = buildZone.map(p=>new THREE.Vector3(p.x, 0.08, p.z));
+  pts.push(pts[0].clone());
+  zoneOverflowOutline = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineDashedMaterial({ color:0xff2d2d, dashSize:2, gapSize:1.2, linewidth:2 })
+  );
+  zoneOverflowOutline.computeLineDistances();
+  groundGroup.add(zoneOverflowOutline);
+}
+function hideZoneOverflowOutline(){
+  if(!zoneOverflowOutline) return;
+  groundGroup.remove(zoneOverflowOutline);
+  zoneOverflowOutline.geometry.dispose();
+  zoneOverflowOutline.material.dispose();
+  zoneOverflowOutline = null;
+}
+// Applique/retire le retour visuel de dépassement pour le bâtiment `b` en
+// cours de déplacement/clonage. `baseHintText` est réaffiché tel quel dès que
+// tout redevient valide (le message d'erreur ne fait que le remplacer).
+function setZoneViolationVisuals(b, exceeds, baseHintText){
+  const halo = b.group.getObjectByName('selectionHalo');
+  if(halo) halo.material.color.set(exceeds ? 0xff2d2d : NEON_BLUE);
+  if(exceeds) showZoneOverflowOutline(); else hideZoneOverflowOutline();
+  drawHint.classList.toggle('zone-error', exceeds);
+  drawHintText.textContent = exceeds
+    ? '⚠ Hors du polygone d\'implantation — impossible de poser ici'
+    : baseHintText;
 }
 
 // Recadre la vue plan (orthographique) sur l'ENSEMBLE du périmètre
@@ -1775,6 +1825,11 @@ function enterPedestrianMode(){
   document.body.classList.add('pedestrian-mode');
   btnPedestrianMode.classList.add('active');
   keysDown.clear();
+  renderer.domElement.style.cursor = 'grab';
+  // Le pourtour bleu néon de sélection n'a pas sa place en vue piéton (trop
+  // "outil de conception", casse l'immersion) — masqué sans toucher à la
+  // sélection elle-même, restauré à la sortie.
+  buildings.forEach(b=>{ const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = false; });
 }
 function exitPedestrianMode(){
   if(!pedestrianModeActive) return;
@@ -1783,6 +1838,9 @@ function exitPedestrianMode(){
   btnPedestrianMode.classList.remove('active');
   pedestrianCloseBar.classList.remove('show');
   keysDown.clear();
+  pedestrianDragging = false; pedestrianLastMouse = null;
+  renderer.domElement.style.cursor = '';
+  buildings.forEach(b=>{ const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = true; });
   if(pedestrianSavedState){
     camera.fov = pedestrianSavedState.fov;
     camera.updateProjectionMatrix();
@@ -1812,6 +1870,32 @@ window.addEventListener('mousemove', (ev)=>{
   if(!pedestrianModeActive) return;
   if(ev.clientY <= 6) pedestrianCloseBar.classList.add('show');
   else if(ev.clientY > 90) pedestrianCloseBar.classList.remove('show');
+});
+// Navigation souris en mode piéton : clic gauche glissé = regarder autour de
+// soi (yaw/pitch), en complément des flèches clavier — les deux alimentent
+// les mêmes variables pedestrianYaw/pedestrianPitch, appliquées chaque frame
+// dans updatePedestrianMovement().
+let pedestrianDragging = false;
+let pedestrianLastMouse = null;
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!pedestrianModeActive || ev.button!==0) return;
+  pedestrianDragging = true;
+  pedestrianLastMouse = {x:ev.clientX, y:ev.clientY};
+  renderer.domElement.style.cursor = 'grabbing';
+});
+window.addEventListener('pointermove', (ev)=>{
+  if(!pedestrianModeActive || !pedestrianDragging || !pedestrianLastMouse) return;
+  const dx = ev.clientX - pedestrianLastMouse.x, dy = ev.clientY - pedestrianLastMouse.y;
+  pedestrianLastMouse = {x:ev.clientX, y:ev.clientY};
+  const sensitivity = 0.0028;
+  pedestrianYaw -= dx*sensitivity;
+  pedestrianPitch = THREE.MathUtils.clamp(pedestrianPitch - dy*sensitivity, -Math.PI/2+0.02, Math.PI/2-0.02);
+});
+window.addEventListener('pointerup', ()=>{
+  if(!pedestrianDragging) return;
+  pedestrianDragging = false;
+  pedestrianLastMouse = null;
+  if(pedestrianModeActive) renderer.domElement.style.cursor = 'grab';
 });
 
 function updatePedestrianMovement(dt){
@@ -3509,8 +3593,20 @@ window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Enter' && drawMode==='polygon') finishDraw();
   if(ev.key==='Escape') cancelDraw();
 });
+// Tente de valider un déplacement/pivot en cours : refuse (message d'erreur)
+// si le bâtiment dépasse encore le polygone d'implantation. Utilisé par le
+// bouton VALIDER du bandeau ET le bouton "Terminer" du panneau bâtiment.
+function tryValidateMove(){
+  const b = buildings.find(x=>x.id===movingBuildingId);
+  if(b && buildingExceedsZone(b)){
+    flashStatus('Hors du polygone d\'implantation — ramenez le bâtiment dans la parcelle avant de valider', true);
+    return false;
+  }
+  stopMoveBuilding();
+  return true;
+}
 document.getElementById('btn-construction-validate').addEventListener('click', ()=>{
-  if(movingBuildingId){ stopMoveBuilding(); return; }
+  if(movingBuildingId){ tryValidateMove(); return; }
   if(!drawing) return;
   if(drawMode==='polygon') finishDraw(); // le rectangle se valide déjà tout seul au relâchement de la souris
 });
@@ -5585,6 +5681,8 @@ function startCloneBuilding(source){
     name: `${source.name} (copie)`, floors: source.floors, bands: bandsClone, silent:true
   });
   cloningBuildingId = clone.id;
+  selectedId = clone.id; // pour que le pourtour de sélection (bleu/rouge) existe pendant le placement
+  rebuildAll();
   clonePivot = polygonCentroidXZ(clone.points);
   controls.enabled = false;
   enterConstructionMode();
@@ -5638,6 +5736,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
     clonePivot = { x:pt.x, z:pt.z };
   }
   rebuildMesh(b);
+  setZoneViolationVisuals(b, buildingExceedsZone(b), 'Déplacez la souris pour positionner le clone · Clic gauche : poser · Clic droit glissé : pivoter');
 }, { passive:true });
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   if(!cloningBuildingId || ev.button!==2) return;
@@ -5654,6 +5753,11 @@ window.addEventListener('pointerup', (ev)=>{
 });
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!cloningBuildingId || cloneRotating) return;
+  const b = buildings.find(x=>x.id===cloningBuildingId);
+  if(b && buildingExceedsZone(b)){
+    flashStatus('Hors du polygone d\'implantation — impossible de poser le clone ici', true);
+    return; // blocage : on ne pose pas, le clone reste attaché au curseur
+  }
   finishCloneBuilding();
 });
 window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && cloningBuildingId) cancelCloneBuilding(); });
@@ -5708,6 +5812,7 @@ window.addEventListener('pointermove', (ev)=>{
     });
   }
   rebuildMesh(b);
+  setZoneViolationVisuals(b, buildingExceedsZone(b), 'Clic gauche glissé : déplacer · Clic droit glissé : pivoter');
 }, { passive:true });
 window.addEventListener('pointerup', ()=>{
   if(!buildingMoveDrag) return;
@@ -6394,7 +6499,7 @@ function renderBldgEditWindow(b){
     : '<i data-lucide="move"></i> Déplacer';
   moveBtn.title = 'Déplacer et pivoter tout le bâtiment (socle + volumes supérieurs) : clic gauche glissé = déplacer, clic droit glissé = pivoter';
   moveBtn.addEventListener('click', ()=>{
-    isMovingThis ? stopMoveBuilding() : startMoveBuilding(b);
+    isMovingThis ? tryValidateMove() : startMoveBuilding(b);
     renderBldgEditWindow(b);
   });
   const cloneBtn = document.createElement('button');
