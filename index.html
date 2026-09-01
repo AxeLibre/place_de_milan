@@ -944,29 +944,35 @@
   }
   #sun-slider.is-night::-webkit-slider-thumb{border-color:#8fa6c9;box-shadow:0 0 10px rgba(143,166,201,.55);}
   #sun-slider.is-night::-moz-range-thumb{border-color:#8fa6c9;box-shadow:0 0 10px rgba(143,166,201,.55);}
-  /* Icônes fixes sous la piste : nuit | (tampon) | lever ... coucher | (tampon) | nuit */
-  #sun-slider-icons{position:relative;width:100%;height:20px;margin-top:2px;}
-  #sun-slider-icons i{
+  /* Icônes fixes sous la piste : nuit | (tampon) | lever ... coucher | (tampon) | nuit.
+     Ciblage à la fois de <i> et <svg> car lucide.createIcons() remplace les <i
+     data-lucide> par du <svg>, qui perdrait sinon ce positionnement/cette taille. */
+  #sun-slider-icons{position:relative;width:100%;height:20px;margin-top:6px;}
+  #sun-slider-icons i,#sun-slider-icons svg{
     position:absolute;top:0;transform:translateX(-50%);width:14px;height:14px;color:var(--muted);
+    stroke-width:2;
   }
   #sun-panel-sep{height:1px;background:#2a3946;margin:12px 4px 10px;}
   #sun-season-row{display:flex;gap:6px;}
   .sun-season-btn{
-    flex:1;height:40px;border-radius:6px;
+    flex:1;height:44px;border-radius:6px;
     background:#101820;border:1px solid #2a3946;color:var(--muted);cursor:pointer;transition:all .15s ease;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-    font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.03em;text-align:center;line-height:1.1;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.03em;text-align:center;line-height:1.15;
+    padding:4px 2px;
   }
-  .sun-season-btn svg,.sun-season-btn i{width:15px;height:15px;stroke-width:2;}
+  .sun-season-btn svg,.sun-season-btn i{width:15px;height:15px;stroke-width:2;flex:none;}
   .sun-season-btn:hover{border-color:var(--accent);color:var(--paper);}
   .sun-season-btn.active{
     background:rgba(46,232,255,.15);border-color:var(--accent);color:var(--accent);
     box-shadow:0 0 12px rgba(46,232,255,.4);
   }
-  .icon-half-wrap{position:relative;width:15px;height:15px;flex:none;}
-  .icon-half-wrap i{position:absolute;left:0;top:0;width:15px;height:15px;}
-  .icon-half-wrap i:first-child{clip-path:inset(0 50% 0 0);}
-  .icon-half-wrap i:last-child{clip-path:inset(0 0 0 50%);}
+  .icon-half-wrap{position:relative;width:15px;height:15px;flex:none;display:block;}
+  .icon-half-wrap i,.icon-half-wrap svg{
+    position:absolute;left:0;top:0;width:15px;height:15px;stroke-width:2;
+  }
+  .icon-half-wrap i:first-child,.icon-half-wrap svg:first-child{clip-path:inset(0 50% 0 0);}
+  .icon-half-wrap i:last-child,.icon-half-wrap svg:last-child{clip-path:inset(0 0 0 50%);}
   #night-warning{
     margin-top:10px;padding:8px 10px;border-radius:6px;
     background:rgba(224,162,74,.12);border:1px solid rgba(224,162,74,.45);
@@ -1181,11 +1187,11 @@
         <input type="range" id="sun-slider" min="0" max="100" step="0.5" value="50" title="Heure de la journée">
       </div>
       <div id="sun-slider-icons">
-        <i data-lucide="moon" style="left:4%;"></i>
-        <i data-lucide="sunrise" style="left:12%;"></i>
+        <i data-lucide="moon" style="left:2%;"></i>
+        <i data-lucide="sunrise" style="left:15%;"></i>
         <i data-lucide="sun" style="left:50%;"></i>
-        <i data-lucide="sunset" style="left:88%;"></i>
-        <i data-lucide="moon" style="left:96%;"></i>
+        <i data-lucide="sunset" style="left:85%;"></i>
+        <i data-lucide="moon" style="left:98%;"></i>
       </div>
       <div id="sun-panel-sep"></div>
       <div id="sun-season-row">
