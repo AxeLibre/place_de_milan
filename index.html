@@ -1050,7 +1050,7 @@
       <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
       <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
       <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons, constructions en cours)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
-      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + flèches + ±) pour cadrer une capture depuis n'importe quel point de vue. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
+      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + T/B haut-bas + flèches + ±). Souris : clic gauche glissé = regarder, molette = vitesse de croisière avant/arrière, clic molette = stop, clic droit glissé = translation. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
       <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
       <div id="ribbon-sep"></div>
       <div id="bottom-left-menu">
@@ -1711,7 +1711,7 @@ function restoreConstructionGrayscale(){
 //    quel point et n'importe quelle direction, indépendamment de la cible
 //    d'orbite habituelle.
 const keysDown = new Set();
-const CAM_NAV_CODES = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','Equal','Minus','NumpadAdd','NumpadSubtract','ShiftLeft','ShiftRight','ControlLeft','ControlRight']);
+const CAM_NAV_CODES = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyT','KeyB','Equal','Minus','NumpadAdd','NumpadSubtract','ShiftLeft','ShiftRight','ControlLeft','ControlRight']);
 const CAM_NAV_MODIFIER_CODES = new Set(['ShiftLeft','ShiftRight','ControlLeft','ControlRight']);
 function isTypingInInput(){
   const el = document.activeElement;
@@ -1773,6 +1773,8 @@ function updateOrbitKeyboardNav(dt){
   if(keysDown.has('KeyS')) pan.sub(forward);
   if(keysDown.has('KeyD')) pan.add(right);
   if(keysDown.has('KeyA')) pan.sub(right);
+  if(keysDown.has('KeyT')) pan.y += 1;
+  if(keysDown.has('KeyB')) pan.y -= 1;
   if(pan.lengthSq()>0){
     pan.normalize().multiplyScalar(radius*0.26*speedMul*dt);
     camera.position.add(pan);
@@ -1794,6 +1796,20 @@ function updateOrbitKeyboardNav(dt){
 let pedestrianModeActive = false;
 let pedestrianYaw = 0, pedestrianPitch = 0;
 let pedestrianSavedState = null;
+// Vitesse de déplacement WASD du mode piéton : calquée sur la vitesse de
+// panoramique du mode classique au moment de l'entrée en piéton (radius*0.26,
+// même formule que updateOrbitKeyboardNav), plutôt qu'une constante fixe —
+// pour que "avancer" ait la même sensation de vitesse dans les deux modes.
+let pedestrianMoveSpeed = 12;
+// Vitesse de "croisière" avant/arrière pilotée par la molette (en plus du
+// WASD) : molette avant = accélère vers l'avant, molette arrière = accélère
+// vers l'arrière / freine l'avancée en cours. Clic molette = stop net.
+let pedestrianCruiseVelocity = 0;
+// Glissé clic droit = translation (strafe + hausse/baisse), même logique que
+// le clic-droit "pan" du mode classique (OrbitControls), appliquée ici
+// manuellement puisque les contrôles souris standards sont désactivés.
+let pedestrianRightDragging = false;
+let pedestrianRightLastMouse = null;
 const btnPedestrianMode = document.getElementById('btn-pedestrian-mode');
 const pedestrianCloseBar = document.getElementById('pedestrian-close-bar');
 const btnPedestrianClose = document.getElementById('btn-pedestrian-close');
@@ -1824,7 +1840,15 @@ function enterPedestrianMode(){
     planViewWasActive,
   };
   pedestrianModeActive = true;
-  controls.enabled = false; // navigation 100% clavier en piéton, plus d'orbite/pan/zoom souris
+  controls.enabled = false; // navigation 100% clavier/souris en piéton, plus d'OrbitControls
+  // Vitesse WASD calée sur la vitesse de panoramique du mode classique à la
+  // distance de vue actuelle (même formule que le pan clavier orbite).
+  const enterRadius = THREE.MathUtils.clamp(
+    pedestrianSavedState.position.distanceTo(pedestrianSavedState.target),
+    controls.minDistance, controls.maxDistance
+  );
+  pedestrianMoveSpeed = enterRadius * 0.26;
+  pedestrianCruiseVelocity = 0;
   const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
   pedestrianYaw = euler.y;
   pedestrianPitch = euler.x;
@@ -1839,6 +1863,12 @@ function enterPedestrianMode(){
     const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = false;
     b.group.children.forEach(o=>{ if(o.name==='selectionHighlight') o.visible = false; });
   });
+  // Idem pour le halo de SURVOL (contour cyan qui suit la souris) : s'il était
+  // affiché juste avant de basculer, il resterait figé à l'écran sans être
+  // mis à jour tant qu'on ne survole pas un nouveau bâtiment (toolIsActive()
+  // bloque désormais le listener pointermove correspondant).
+  bldgHoverId = null;
+  if(bldgHoverOutline) bldgHoverOutline.visible = false;
 }
 function exitPedestrianMode(){
   if(!pedestrianModeActive) return;
@@ -1848,6 +1878,8 @@ function exitPedestrianMode(){
   pedestrianCloseBar.classList.remove('show');
   keysDown.clear();
   pedestrianDragging = false; pedestrianLastMouse = null;
+  pedestrianRightDragging = false; pedestrianRightLastMouse = null;
+  pedestrianCruiseVelocity = 0;
   renderer.domElement.style.cursor = '';
   buildings.forEach(b=>{
     const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = true;
@@ -1903,11 +1935,50 @@ window.addEventListener('pointermove', (ev)=>{
   pedestrianYaw -= dx*sensitivity;
   pedestrianPitch = THREE.MathUtils.clamp(pedestrianPitch - dy*sensitivity, -Math.PI/2+0.02, Math.PI/2-0.02);
 });
-window.addEventListener('pointerup', ()=>{
-  if(!pedestrianDragging) return;
-  pedestrianDragging = false;
-  pedestrianLastMouse = null;
-  if(pedestrianModeActive) renderer.domElement.style.cursor = 'grab';
+window.addEventListener('pointerup', (ev)=>{
+  if(pedestrianDragging && ev.button===0){
+    pedestrianDragging = false;
+    pedestrianLastMouse = null;
+    if(pedestrianModeActive) renderer.domElement.style.cursor = 'grab';
+  }
+  if(pedestrianRightDragging && ev.button===2){
+    pedestrianRightDragging = false;
+    pedestrianRightLastMouse = null;
+  }
+});
+// Molette en mode piéton = vitesse de croisière avant/arrière (en plus du
+// WASD) : vers l'avant accélère en avant, vers l'arrière accélère en arrière
+// ou freine l'avancée en cours (accumulateur signé, cf. updatePedestrianMovement).
+renderer.domElement.addEventListener('wheel', (ev)=>{
+  if(!pedestrianModeActive) return;
+  ev.preventDefault();
+  const step = pedestrianMoveSpeed * 0.15;
+  const maxCruise = pedestrianMoveSpeed * 3;
+  if(ev.deltaY < 0) pedestrianCruiseVelocity = Math.min(maxCruise, pedestrianCruiseVelocity + step);
+  else if(ev.deltaY > 0) pedestrianCruiseVelocity = Math.max(-maxCruise, pedestrianCruiseVelocity - step);
+}, { passive:false });
+// Clic molette = stop net de la vitesse de croisière.
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!pedestrianModeActive || ev.button!==1) return;
+  ev.preventDefault();
+  pedestrianCruiseVelocity = 0;
+});
+// Clic droit glissé = translation (strafe horizontal + hausse/baisse
+// verticale), même sensation que le clic-droit "pan" du mode classique.
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!pedestrianModeActive || ev.button!==2) return;
+  pedestrianRightDragging = true;
+  pedestrianRightLastMouse = {x:ev.clientX, y:ev.clientY};
+});
+window.addEventListener('pointermove', (ev)=>{
+  if(!pedestrianModeActive || !pedestrianRightDragging || !pedestrianRightLastMouse) return;
+  const dx = ev.clientX - pedestrianRightLastMouse.x, dy = ev.clientY - pedestrianRightLastMouse.y;
+  pedestrianRightLastMouse = {x:ev.clientX, y:ev.clientY};
+  const panSensitivity = pedestrianMoveSpeed * 0.003;
+  const camRight = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+  const camUp = new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+  camera.position.addScaledVector(camRight, -dx*panSensitivity);
+  camera.position.addScaledVector(camUp, dy*panSensitivity);
 });
 
 function updatePedestrianMovement(dt){
@@ -1924,7 +1995,9 @@ function updatePedestrianMovement(dt){
   camera.quaternion.setFromEuler(new THREE.Euler(pedestrianPitch, pedestrianYaw, 0, 'YXZ'));
 
   // Déplacement (WASD) : marche/vol libre dans la direction regardée.
-  const moveSpeed = 12 * speedMul;
+  // Vitesse alignée sur le panoramique du mode classique (pedestrianMoveSpeed,
+  // calculée à l'entrée en mode piéton) plutôt qu'une constante arbitraire.
+  const moveSpeed = pedestrianMoveSpeed * speedMul;
   const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
   const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
   const move = new THREE.Vector3();
@@ -1932,7 +2005,14 @@ function updatePedestrianMovement(dt){
   if(keysDown.has('KeyS')) move.sub(forward);
   if(keysDown.has('KeyD')) move.add(right);
   if(keysDown.has('KeyA')) move.sub(right);
+  if(keysDown.has('KeyT')) move.y += 1;
+  if(keysDown.has('KeyB')) move.y -= 1;
   if(move.lengthSq()>0){ move.normalize().multiplyScalar(moveSpeed*dt); camera.position.add(move); }
+
+  // Vitesse de croisière molette : s'ajoute au WASD, dans la direction regardée.
+  if(pedestrianCruiseVelocity !== 0){
+    camera.position.addScaledVector(forward, pedestrianCruiseVelocity*dt);
+  }
 
   // Zoom (+/-) : zoom optique (FOV), pratique pour cadrer une capture sans bouger.
   const zoomSpeed = 9 * speedMul;
@@ -4311,7 +4391,7 @@ window.addEventListener('pointerup', ()=>{
   if(grassPainting) controls.enabled = true;
   if(wasPainting) updateSiteStats(); // recalcul une seule fois en fin de trait (getImageData coûteux)
 });
-renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting || movingBuildingId || cloningBuildingId) ev.preventDefault(); });
+renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting || movingBuildingId || cloningBuildingId || pedestrianModeActive) ev.preventDefault(); });
 
 const brushBtns = {
   small: document.getElementById('brush-small'),
@@ -5382,7 +5462,10 @@ function ensureBldgHoverOutline(){
   return bldgHoverOutline;
 }
 function toolIsActive(){
-  return drawing || treePlacing || grassPainting || !!editingBuildingId || !!movingBuildingId || !!cloningBuildingId;
+  // Le mode piéton est traité comme un "outil exclusif" ici : il désactive le
+  // survol/sélection de bâtiment sur la maquette (donc le halo bleu néon),
+  // au même titre que le tracé, la plantation d'arbres, etc.
+  return drawing || treePlacing || grassPainting || !!editingBuildingId || !!movingBuildingId || !!cloningBuildingId || pedestrianModeActive;
 }
 function buildingHitAt(ev){
   const rect = renderer.domElement.getBoundingClientRect();
