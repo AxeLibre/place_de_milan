@@ -893,42 +893,80 @@
   #legend-window.show{display:block;}
   #legend-window .section-title{margin:0 0 8px;}
 
-  /* ---------- Panneau circulaire "Éclairage" (jour/nuit) ---------- */
+  /* ---------- Panneau "Éclairage" (curseur horizontal heure + saisons) ---------- */
   #sun-panel{
-    position:absolute;top:184px;right:16px;z-index:8;width:260px;height:auto;
+    position:absolute;top:184px;right:16px;z-index:8;width:280px;height:auto;
     background:rgba(24,36,48,.95);border:1px solid #2a3946;border-radius:10px;
-    padding:14px 10px 12px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.45);
+    padding:14px 12px 12px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.45);
     display:none;
   }
   #sun-panel.show{display:block;}
-  #sun-arc{position:relative;width:100%;height:96px;}
-  .sun-btn{
-    position:absolute;transform:translate(-50%,-50%);
-    width:34px;height:34px;border-radius:50%;
-    background:#101820;border:1px solid #2a3946;color:var(--muted);
-    display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s ease;
+  /* Lecture heure + statut jour/nuit au-dessus du curseur */
+  #sun-readout{
+    display:flex;align-items:baseline;justify-content:center;gap:8px;margin-bottom:10px;
   }
-  .sun-btn svg{width:17px;height:17px;stroke-width:2;}
-  .sun-btn:hover{border-color:var(--accent);color:var(--paper);}
-  .sun-btn.active{
+  #sun-time-label{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;color:var(--paper);
+    letter-spacing:.02em;font-variant-numeric:tabular-nums;
+  }
+  #sun-status-label{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--accent);
+    text-transform:uppercase;
+  }
+  #sun-status-label.is-night{color:#8fa6c9;}
+  /* Piste du curseur : dégradé nuit/jour/nuit peint dynamiquement en JS */
+  #sun-slider-wrap{position:relative;width:100%;height:40px;margin-bottom:4px;}
+  #sun-slider-track{
+    position:absolute;left:0;right:0;top:50%;height:10px;transform:translateY(-50%);
+    border-radius:6px;overflow:hidden;border:1px solid #2a3946;
+    background:#0c141c; /* remplacé dynamiquement par un gradient inline */
+  }
+  /* Petites encoches visuelles marquant les zones tampon (séparation avant le vrai mode nuit) */
+  #sun-slider-track .sun-buffer-mark{
+    position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.18);
+  }
+  #sun-slider{
+    position:absolute;left:-8px;right:-8px;top:50%;transform:translateY(-50%);
+    width:calc(100% + 16px);height:40px;margin:0;
+    -webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;
+  }
+  #sun-slider::-webkit-slider-runnable-track{height:40px;background:transparent;}
+  #sun-slider::-moz-range-track{height:40px;background:transparent;}
+  #sun-slider::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;margin-top:0;
+    width:26px;height:26px;border-radius:50%;
+    background:#101820;border:2px solid var(--accent);color:var(--accent);
+    box-shadow:0 0 10px rgba(46,232,255,.55);cursor:grab;
+  }
+  #sun-slider::-moz-range-thumb{
+    width:26px;height:26px;border-radius:50%;border:2px solid var(--accent);
+    background:#101820;box-shadow:0 0 10px rgba(46,232,255,.55);cursor:grab;
+  }
+  #sun-slider.is-night::-webkit-slider-thumb{border-color:#8fa6c9;box-shadow:0 0 10px rgba(143,166,201,.55);}
+  #sun-slider.is-night::-moz-range-thumb{border-color:#8fa6c9;box-shadow:0 0 10px rgba(143,166,201,.55);}
+  /* Icônes fixes sous la piste : nuit | (tampon) | lever ... coucher | (tampon) | nuit */
+  #sun-slider-icons{position:relative;width:100%;height:20px;margin-top:2px;}
+  #sun-slider-icons i{
+    position:absolute;top:0;transform:translateX(-50%);width:14px;height:14px;color:var(--muted);
+  }
+  #sun-panel-sep{height:1px;background:#2a3946;margin:12px 4px 10px;}
+  #sun-season-row{display:flex;gap:6px;}
+  .sun-season-btn{
+    flex:1;height:40px;border-radius:6px;
+    background:#101820;border:1px solid #2a3946;color:var(--muted);cursor:pointer;transition:all .15s ease;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.03em;text-align:center;line-height:1.1;
+  }
+  .sun-season-btn svg,.sun-season-btn i{width:15px;height:15px;stroke-width:2;}
+  .sun-season-btn:hover{border-color:var(--accent);color:var(--paper);}
+  .sun-season-btn.active{
     background:rgba(46,232,255,.15);border-color:var(--accent);color:var(--accent);
     box-shadow:0 0 12px rgba(46,232,255,.4);
   }
-  #sun-jour-label{
-    text-align:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;
-    letter-spacing:.08em;color:var(--paper);margin-top:2px;
-  }
-  #sun-sep{height:1px;background:#2a3946;margin:10px 4px;}
-  .sun-btn-night{
-    position:static;transform:none;width:100%;height:34px;border-radius:6px;
-    display:flex;align-items:center;justify-content:center;gap:8px;
-    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:12.5px;letter-spacing:.06em;
-  }
-  .sun-btn-night svg{width:16px;height:16px;}
-  .sun-btn-night.active{
-    background:rgba(46,232,255,.15);border-color:var(--accent);color:var(--accent);
-    box-shadow:0 0 12px rgba(46,232,255,.4);
-  }
+  .icon-half-wrap{position:relative;width:15px;height:15px;flex:none;}
+  .icon-half-wrap i{position:absolute;left:0;top:0;width:15px;height:15px;}
+  .icon-half-wrap i:first-child{clip-path:inset(0 50% 0 0);}
+  .icon-half-wrap i:last-child{clip-path:inset(0 0 0 50%);}
   #night-warning{
     margin-top:10px;padding:8px 10px;border-radius:6px;
     background:rgba(224,162,74,.12);border:1px solid rgba(224,162,74,.45);
@@ -936,6 +974,8 @@
     color:#f0b969;text-align:center;display:flex;align-items:center;gap:7px;justify-content:center;
   }
   #night-warning .icon{flex:none;font-size:14px;}
+  #night-warning{display:none;}
+  #night-warning.show{display:flex;}
 
   /* ---------- Spinner de chargement (bascule jour/nuit) : anneau épais,
      incomplet, en dégradé circulaire CONIQUE (pas radial) — style ouroboros. */
@@ -1007,7 +1047,7 @@
       </div>
       <div class="welcome-step">
         <img src="public/help-eclairage.png" alt="" onerror="this.style.display='none'">
-        <div><b>5. Explorez jour/nuit et vue plan</b><p>Le panneau « Éclairage » permet de faire varier la position du soleil ou de passer en mode Nuit (plus gourmand en ressources). Le bouton « Vue plan » bascule en vue orthographique du dessus.</p></div>
+        <div><b>5. Explorez jour/nuit et vue plan</b><p>Le panneau « Éclairage » permet de faire glisser le curseur pour choisir l'heure (avec passage en mode Nuit aux extrémités) et de changer de saison (solstices, équinoxe) pour des ombres exactes selon la position réelle du soleil à Lyon. Le bouton « Vue plan » bascule en vue orthographique du dessus.</p></div>
       </div>
       <div class="welcome-step">
         <img src="public/help-sauvegarde.png" alt="" onerror="this.style.display='none'">
@@ -1132,16 +1172,30 @@
     </div>
     <div id="sun-panel">
       <button class="panel-x-btn" id="sun-panel-close" title="Fermer" style="position:absolute;top:8px;right:8px;z-index:2;"><i data-lucide="x"></i></button>
-      <div id="sun-arc">
-        <button class="sun-btn" data-time="lever" style="left:2%;top:62%;" title="Lever du soleil"><i data-lucide="sunrise"></i></button>
-        <button class="sun-btn" data-time="matin" style="left:20%;top:20%;" title="Milieu de matinée"><i data-lucide="sun"></i></button>
-        <button class="sun-btn active" data-time="midi" style="left:50%;top:4%;" title="Midi"><i data-lucide="sun"></i></button>
-        <button class="sun-btn" data-time="apresmidi" style="left:80%;top:20%;" title="Milieu d'après-midi"><i data-lucide="sun"></i></button>
-        <button class="sun-btn" data-time="coucher" style="left:98%;top:62%;" title="Coucher du soleil"><i data-lucide="sunset"></i></button>
+      <div id="sun-readout">
+        <span id="sun-time-label">12:00</span>
+        <span id="sun-status-label">JOUR</span>
       </div>
-      <div id="sun-jour-label">JOUR</div>
-      <div id="sun-sep"></div>
-      <button class="sun-btn sun-btn-night" id="sun-btn-night" title="Mode nuit"><i data-lucide="moon"></i><span>NUIT</span></button>
+      <div id="sun-slider-wrap">
+        <div id="sun-slider-track"></div>
+        <input type="range" id="sun-slider" min="0" max="100" step="0.5" value="50" title="Heure de la journée">
+      </div>
+      <div id="sun-slider-icons">
+        <i data-lucide="moon" style="left:4%;"></i>
+        <i data-lucide="sunrise" style="left:12%;"></i>
+        <i data-lucide="sun" style="left:50%;"></i>
+        <i data-lucide="sunset" style="left:88%;"></i>
+        <i data-lucide="moon" style="left:96%;"></i>
+      </div>
+      <div id="sun-panel-sep"></div>
+      <div id="sun-season-row">
+        <button class="sun-season-btn" data-season="hiver" title="Solstice d'hiver"><i data-lucide="snowflake"></i><span>Solstice<br>d'hiver</span></button>
+        <button class="sun-season-btn active" data-season="equinoxe" title="Équinoxe">
+          <span class="icon-half-wrap"><i data-lucide="snowflake"></i><i data-lucide="sun"></i></span>
+          <span>Équinoxe</span>
+        </button>
+        <button class="sun-season-btn" data-season="ete" title="Solstice d'été"><i data-lucide="sun"></i><span>Solstice<br>d'été</span></button>
+      </div>
       <div id="night-warning"><span class="icon">⚠️</span><span>Le mode Nuit est gourmand en RAM, CPU &amp; GPU.</span></div>
     </div>
     <div id="draw-area-label"></div>
@@ -1189,7 +1243,7 @@
           <li><b>Menu bâtiment</b> : modifiable à tout moment ; réglez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche — la hauteur de chaque étage s'adapte à son usage, et l'emprise au sol comme la surface potentielle totale sont affichées en direct.</li>
           <li><b>Arbre / Gazon</b> : plantez des arbres et peignez des zones végétalisées.</li>
           <li><b>Légende</b> : bascule entre la coloration par usage (résidentiel, bureaux…) et un rendu neutre en verre — en verre, le toit affiche un rebord et une incrustation colorés, avec des repères sphériques sur les coins convexes.</li>
-          <li><b>Éclairage</b> : position du soleil réglable, ou mode Nuit (plus gourmand en ressources).</li>
+          <li><b>Éclairage</b> : curseur d'heure (position solaire réelle à Lyon) + saisons (solstices/équinoxe), ou mode Nuit (plus gourmand en ressources).</li>
           <li><b>Vue plan</b> : bascule en vue orthographique du dessus.</li>
           <li><b>Voir PLU</b> : superpose le zonage réglementaire du Plan Local d'Urbanisme et de l'Habitat.</li>
           <li><b>Exporter / Sauver</b> : générez une image PNG ou sauvegardez votre projet en JSON (boutons en bas à gauche).</li>
@@ -7012,17 +7066,30 @@ function collectSiteLights(){
   siteLights.forEach(l=> l.visible = isNight);
 }
 /* ============================================================
-   ÉCLAIRAGE — position solaire réelle (latitude de Lyon, 45.75° N) pour 5
-   heures de la journée (équinoxe, déclinaison ≈ 0 → lever/coucher symétriques
-   à 6h/18h solaires, ce qui évite tout souci de fuseau horaire/équation du
-   temps pour une démonstration) + un mode Nuit. Convention d'azimut : 0° =
-   Nord (-Z, car Blender +Y → Three -Z après la conversion Z-up→Y-up), 90° =
-   Est (+X), 180° = Sud (+Z), 270° = Ouest (-X) — la même que updateCompass()
-   ci-dessus, donc le soleil tourne bien Est→Sud→Ouest.
+   ÉCLAIRAGE — position solaire réelle (latitude de Lyon, 45.75° N), pour
+   trois configurations de déclinaison solaire (solstice d'hiver, équinoxe,
+   solstice d'été — valeurs vérifiées sur sunearthtools.com pour Lyon) et une
+   heure choisie en continu via un curseur, + un mode Nuit. Le calcul reste en
+   « heure solaire vraie » (angle horaire = (heure-12)×15°), ce qui évite tout
+   souci de fuseau horaire/équation du temps pour cette démonstration —
+   comportement identique à l'ancienne version, juste généralisé à une
+   déclinaison variable. Convention d'azimut : 0° = Nord (-Z, car Blender +Y →
+   Three -Z après la conversion Z-up→Y-up), 90° = Est (+X), 180° = Sud (+Z),
+   270° = Ouest (-X) — la même que updateCompass() ci-dessus, donc le soleil
+   tourne bien Est→Sud→Ouest.
    ============================================================ */
 const LYON_LAT_RAD = 45.75 * Math.PI/180;
-function sunAltAz(hourDecimal){
-  const decl = 0; // approximation équinoxe
+// Déclinaison solaire (°) aux solstices/équinoxe — valeurs standard (±23.44°),
+// cohérentes avec sunearthtools.com pour ces trois dates repères.
+const SEASONS = {
+  hiver:     { label:"Solstice d'hiver", declDeg: -23.44 },
+  equinoxe:  { label:'Équinoxe',         declDeg: 0      },
+  ete:       { label:"Solstice d'été",   declDeg: 23.44  },
+};
+let currentSeason = 'equinoxe';
+
+function sunAltAz(hourDecimal, declDeg){
+  const decl = declDeg*Math.PI/180;
   const H = (hourDecimal-12)*15*Math.PI/180;
   const sinAlt = Math.sin(LYON_LAT_RAD)*Math.sin(decl) + Math.cos(LYON_LAT_RAD)*Math.cos(decl)*Math.cos(H);
   const alt = Math.asin(Math.max(-1,Math.min(1,sinAlt)));
@@ -7032,60 +7099,78 @@ function sunAltAz(hourDecimal){
   if(H>0) az = 2*Math.PI - az;
   return { alt, az };
 }
-const SUN_TIMES = [
-  { key:'lever',      label:'Levé du soleil',        hour:6.25  },
-  { key:'matin',       label:'Milieu de matinée',      hour:9.5   },
-  { key:'midi',        label:'Midi',                   hour:12    },
-  { key:'apresmidi',   label:"Milieu d'après-midi",    hour:14.5  },
-  { key:'coucher',     label:'Coucher du soleil',      hour:17.75 },
+// Heures (solaires vraies) de lever/coucher pour une déclinaison donnée, à la
+// latitude de Lyon — sert à border la plage « jour » du curseur selon la saison.
+function sunriseSunsetHours(declDeg){
+  const decl = declDeg*Math.PI/180;
+  let cosH0 = -Math.tan(LYON_LAT_RAD)*Math.tan(decl);
+  cosH0 = Math.max(-1, Math.min(1, cosH0));
+  const H0deg = Math.acos(cosH0)*180/Math.PI;
+  return { sunrise: 12 - H0deg/15, sunset: 12 + H0deg/15 };
+}
+// Dégradés de ciel repères le long de la journée (fraction 0=lever, 1=coucher),
+// utilisés pour interpoler une couleur de ciel continue pendant le glissement du curseur.
+const DAY_COLOR_STOPS = [
+  { frac:0,    top:'#31456b', bottom:'#f3a56a' }, // lever
+  { frac:0.25, top:'#5f9fd4', bottom:'#eef7fb' }, // matin
+  { frac:0.5,  top:'#3f8fd1', bottom:'#eaf6ff' }, // midi
+  { frac:0.75, top:'#4d8fc2', bottom:'#f4e2c6' }, // après-midi
+  { frac:1,    top:'#2c3760', bottom:'#ff9662' }, // coucher
 ];
+const NIGHT_GRADIENT = ['#040810', '#0f1b30'];
 const SUN_DISTANCE = 260;
-let lightingMode = 'midi';
+let lightingMode = 'jour'; // 'jour' | 'nuit'
 let isNight = false;
+let currentHour = 12; // heure solaire vraie courante (mode jour)
 
 function positionSunForHour(hourDecimal){
-  const { alt, az } = sunAltAz(hourDecimal);
+  const { alt, az } = sunAltAz(hourDecimal, SEASONS[currentSeason].declDeg);
   const x = SUN_DISTANCE * Math.cos(alt) * Math.sin(az);
   const z = -SUN_DISTANCE * Math.cos(alt) * Math.cos(az); // Nord réel = -Z (Blender +Y), d'où le signe négatif
   const y = Math.max(8, SUN_DISTANCE * Math.sin(alt)); // jamais totalement à plat, même lever/coucher
   sun.position.set(x, y, z);
   // L'intensité et la teinte suivent la hauteur réelle du soleil : rasant et
-  // chaud (orangé) au lever/coucher, franc et plus neutre à midi.
+  // chaud (orangé) au lever/coucher, franc et plus neutre à midi. On se cale
+  // sur la hauteur max de l'été à Lyon (~67.7°) pour normaliser t sur 0..1
+  // quelle que soit la saison choisie.
   const altDeg = alt*180/Math.PI;
-  const t = Math.max(0, Math.min(1, altDeg/44.25)); // 44.25° = hauteur max à midi, latitude de Lyon
+  const t = Math.max(0, Math.min(1, altDeg/67.7));
   sun.intensity = 0.7 + t*1.35;
-  sun.color.setHex(t<0.35 ? 0xffb066 : 0xfff2df);
+  sun.color.setHex(altDeg<15 ? 0xffb066 : 0xfff2df);
   // La lumière ambiante (hémisphère) était presque aussi forte que le soleil
   // au lever/coucher (0.6 vs 0.55), ce qui noyait les ombres de contraste :
   // on part maintenant beaucoup plus bas (0.22) et on monte plus doucement.
   hemiLight.intensity = 0.22 + t*0.28;
   return { alt, az, t };
 }
+// Interpole une couleur de ciel (haut/bas) selon la fraction du jour écoulée
+// (0 = lever, 1 = coucher), à partir des repères DAY_COLOR_STOPS.
+function skyColorsForDayFrac(frac){
+  frac = Math.max(0, Math.min(1, frac));
+  let a = DAY_COLOR_STOPS[0], b = DAY_COLOR_STOPS[DAY_COLOR_STOPS.length-1];
+  for(let i=0;i<DAY_COLOR_STOPS.length-1;i++){
+    if(frac>=DAY_COLOR_STOPS[i].frac && frac<=DAY_COLOR_STOPS[i+1].frac){
+      a = DAY_COLOR_STOPS[i]; b = DAY_COLOR_STOPS[i+1]; break;
+    }
+  }
+  const span = (b.frac - a.frac) || 1;
+  const localT = (frac - a.frac)/span;
+  const top = new THREE.Color(a.top).lerp(new THREE.Color(b.top), localT);
+  const bottom = new THREE.Color(a.bottom).lerp(new THREE.Color(b.bottom), localT);
+  return { top, bottom };
+}
 
-// Applique réellement le mode (soleil à une heure donnée OU nuit) — appelé
-// via setLightingMode() ci-dessous, qui affiche le spinner pendant l'appel
-// pour ne pas donner l'impression d'un blocage/bug (voir plus bas).
 /* ------------------------------------------------------------
    CIEL EN DÉGRADÉ selon l'heure d'éclairage — léger et rapide :
    un minuscule canvas 2×128 rempli d'un dégradé CSS, converti en texture
-   Three.js, régénéré uniquement au changement d'éclairage (pas par frame).
+   Three.js, régénéré à chaque déplacement du curseur (pas coûteux : un
+   simple remplissage 2×128 px, pas une recompilation de shader).
    ------------------------------------------------------------ */
-const SKY_GRADIENTS = {
-  lever:      ['#31456b', '#f3a56a'], // aube : bleu profond en haut, orangé bas
-  matin:      ['#5f9fd4', '#eef7fb'], // matin clair
-  midi:       ['#3f8fd1', '#eaf6ff'], // bleu franc / blanc quasi-zénithal
-  apresmidi:  ['#4d8fc2', '#f4e2c6'], // légèrement doré vers le bas
-  coucher:    ['#2c3760', '#ff9662'], // rose/orange de coucher de soleil
-  nuit:       ['#040810', '#0f1b30'], // bleu nuit très sombre
-};
 const skyCanvas = document.createElement('canvas');
 skyCanvas.width = 2; skyCanvas.height = 128;
 const skyCtx = skyCanvas.getContext('2d');
 const skyTexture = new THREE.CanvasTexture(skyCanvas);
 skyTexture.colorSpace = THREE.SRGBColorSpace;
-// Peint le dégradé à partir de deux couleurs CSS déjà résolues (utilisé aussi
-// bien pour un mode fixe que pour une valeur interpolée pendant une
-// transition — voir updateDayTransition ci-dessous).
 function paintSkyGradient(topCss, bottomCss){
   const g = skyCtx.createLinearGradient(0,0,0,skyCanvas.height);
   g.addColorStop(0, topCss);
@@ -7099,131 +7184,135 @@ function paintSkyGradient(topCss, bottomCss){
   // que la maquette se fonde dans le ciel plutôt que dans un gris neutre.
   scene.fog.color.copy(new THREE.Color(topCss).lerp(new THREE.Color(bottomCss), 0.6));
 }
-function updateSkyGradient(key){
-  const [top, bottom] = SKY_GRADIENTS[key] || SKY_GRADIENTS.midi;
-  paintSkyGradient(top, bottom);
+function hourToClock(h){
+  let hh = Math.floor(h);
+  let mm = Math.round((h-hh)*60);
+  if(mm===60){ mm=0; hh+=1; }
+  hh = ((hh%24)+24)%24;
+  return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
 }
-// ---- Transition douce ENTRE LES 5 MOMENTS DE JOUR uniquement ----
-// (l'entrée/sortie du mode Nuit reste instantanée : elle bascule en plus
-// scene.environment et les lampadaires, déjà coûteux — voir applyLightingModeNow).
-// Le soleil se déplace en interpolant directement l'heure décimale (ce qui
-// fait varier sa position, son intensité et sa couleur d'un même mouvement,
-// via positionSunForHour), pendant que le dégradé de ciel interpole ses deux
-// couleurs (haut/bas) indépendamment.
-const DAY_TRANSITION_MS = 1000;
-let dayTransition = null; // {fromHour,toHour,fromTop,fromBottom,toTop,toBottom,elapsed}
-function getCurrentDayVisualState(){
-  if(dayTransition){
-    const t = Math.min(1, dayTransition.elapsed / DAY_TRANSITION_MS);
-    const te = t*t*(3-2*t); // smoothstep : même easing que l'interpolation en cours
-    return {
-      hour: THREE.MathUtils.lerp(dayTransition.fromHour, dayTransition.toHour, te),
-      top: dayTransition.fromTop.clone().lerp(dayTransition.toTop, te),
-      bottom: dayTransition.fromBottom.clone().lerp(dayTransition.toBottom, te),
-    };
-  }
-  const cfg = SUN_TIMES.find(s=>s.key===lightingMode);
-  const [topHex, bottomHex] = SKY_GRADIENTS[lightingMode] || SKY_GRADIENTS.midi;
-  return { hour: cfg ? cfg.hour : 12, top: new THREE.Color(topHex), bottom: new THREE.Color(bottomHex) };
-}
-function startDayTransition(targetMode){
-  const cfg = SUN_TIMES.find(s=>s.key===targetMode);
-  if(!cfg){ applyLightingModeNow(targetMode); return; } // sécurité : mode inconnu, jamais atteint en pratique
-  // Repart de l'état visuel ACTUEL (même si une transition précédente était
-  // encore en cours) pour ne jamais faire de saut brusque si on reclique vite.
-  const from = getCurrentDayVisualState();
-  const [toTopHex, toBottomHex] = SKY_GRADIENTS[targetMode];
-  dayTransition = {
-    fromHour: from.hour, toHour: cfg.hour,
-    fromTop: from.top, fromBottom: from.bottom,
-    toTop: new THREE.Color(toTopHex), toBottom: new THREE.Color(toBottomHex),
-    elapsed: 0,
-  };
-  lightingMode = targetMode; // le mode "actif" (UI du panneau soleil) change dès le clic
-  refreshSunPanelUI();
-}
-function updateDayTransition(dt){
-  if(!dayTransition) return;
-  dayTransition.elapsed += dt*1000;
-  const t = Math.min(1, dayTransition.elapsed / DAY_TRANSITION_MS);
-  const te = t*t*(3-2*t); // smoothstep : doux au départ et à l'arrivée, pas de à-coup
-  positionSunForHour(THREE.MathUtils.lerp(dayTransition.fromHour, dayTransition.toHour, te));
-  const top = dayTransition.fromTop.clone().lerp(dayTransition.toTop, te);
-  const bottom = dayTransition.fromBottom.clone().lerp(dayTransition.toBottom, te);
-  paintSkyGradient('#'+top.getHexString(), '#'+bottom.getHexString());
-  if(t>=1){
-    dayTransition = null;
-    // Recale exactement sur les valeurs nominales du mode cible pour éviter
-    // toute micro-dérive d'arrondi accumulée pendant l'interpolation.
-    positionSunForHour(SUN_TIMES.find(s=>s.key===lightingMode).hour);
-    updateSkyGradient(lightingMode);
-  }
-}
-function applyLightingModeNow(mode){
-  dayTransition = null; // un changement instantané (nuit ↔ jour) annule toute transition douce en cours
-  lightingMode = mode;
-  isNight = (mode === 'nuit');
-  if(isNight){
-    sun.visible = false;
-    hemiLight.intensity = 0.55;
-    hemiLight.color.setHex(0x2c405f);
-    scene.environment = nightEnvTexture;
-    renderer.toneMappingExposure = 1.0;
-    updateSkyGradient('nuit');
-    siteLights.forEach(l=> l.visible = true);
-  } else {
-    sun.visible = true;
-    const cfg = SUN_TIMES.find(s=>s.key===mode) || SUN_TIMES[2];
-    positionSunForHour(cfg.hour);
-    scene.environment = dayEnvTexture;
-    renderer.toneMappingExposure = 0.85;
-    updateSkyGradient(mode);
-    siteLights.forEach(l=> l.visible = false);
-  }
-  applyVehicleLightState();
-  applyTrainWindowEmissive();
-  refreshSunPanelUI();
-}
-// Le changement d'environnement (scene.environment) et la bascule de
-// nombreuses lampes de rue peuvent déclencher une recompilation de shaders
-// PBR côté navigateur → un vrai figeage de quelques centaines de ms à plus
-// d'une seconde, qui ressemble à un bug si rien ne le signale. On affiche
-// donc un spinner AVANT, avec deux requestAnimationFrame pour laisser le
-// navigateur peindre ce spinner avant de lancer le travail bloquant.
+// Bascule "lourde" (changement d'environnement PBR + lampadaires) : peut
+// déclencher une recompilation de shaders côté navigateur → un figeage de
+// quelques centaines de ms à plus d'une seconde, qui ressemble à un bug si
+// rien ne le signale. On affiche donc un spinner AVANT, avec deux
+// requestAnimationFrame pour laisser le navigateur le peindre avant de
+// lancer le travail bloquant, puis on force un rendu synchrone pendant qu'il
+// est encore masqué par le spinner.
 const loadingSpinner = document.getElementById('loading-spinner');
-function setLightingMode(mode){
-  // Jour → jour (parmi les 5 moments) : transition douce d'1s (soleil +
-  // dégradé de ciel), sans le spinner ni le coût du changement nuit/jour
-  // (pas de bascule scene.environment, pas de lampadaires à (re)basculer).
-  const isDayToDay = !isNight && mode!=='nuit' && SUN_TIMES.some(s=>s.key===mode);
-  if(isDayToDay){
-    startDayTransition(mode);
-    return;
-  }
+function runWithSpinner(fn){
   loadingSpinner.classList.add('show');
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
-      applyLightingModeNow(mode);
-      // applyLightingModeNow() ne fait que changer des propriétés JS
-      // (matériaux, environnement, lampes) — la VRAIE recompilation des
-      // shaders PBR par le navigateur n'a lieu qu'au prochain rendu qui les
-      // utilise réellement. Si on masquait le spinner ici, il disparaissait
-      // donc avant que ce rendu (déclenché plus tard par la boucle
-      // animate()) n'ait eu lieu, laissant l'utilisateur face à un figeage
-      // sans indicateur. On force donc ici un rendu synchrone immédiat
-      // (qui déclenche la compilation bloquante pendant qu'elle est encore
-      // masquée par le spinner), et on ne masque le spinner qu'après.
+      fn();
       const activeCam = planViewActive ? orthoCamera : camera;
       renderer.render(scene, activeCam);
       loadingSpinner.classList.remove('show');
     });
   });
 }
-function refreshSunPanelUI(){
-  document.querySelectorAll('#sun-arc .sun-btn').forEach(btn=>{
-    btn.classList.toggle('active', !isNight && btn.dataset.time===lightingMode);
+function ensureDayVisualEnvironment(){
+  sun.visible = true;
+  scene.environment = dayEnvTexture;
+  renderer.toneMappingExposure = 0.85;
+  siteLights.forEach(l=> l.visible = false);
+}
+function ensureNightVisualEnvironment(){
+  sun.visible = false;
+  hemiLight.intensity = 0.55;
+  hemiLight.color.setHex(0x2c405f);
+  scene.environment = nightEnvTexture;
+  renderer.toneMappingExposure = 1.0;
+  paintSkyGradient(NIGHT_GRADIENT[0], NIGHT_GRADIENT[1]);
+  siteLights.forEach(l=> l.visible = true);
+}
+// Applique le mode Jour à une heure solaire précise (continue) — passer
+// heavy:true lors d'une entrée depuis la Nuit (reconstruit l'environnement),
+// heavy:false pendant un simple glissement du curseur en plein jour (léger :
+// juste soleil + ciel, appelé à chaque frame de glissement).
+function applyDayAtHour(hourDecimal, opts){
+  opts = opts || {};
+  lightingMode = 'jour'; isNight = false; currentHour = hourDecimal;
+  if(opts.heavy) ensureDayVisualEnvironment();
+  positionSunForHour(hourDecimal);
+  const { sunrise, sunset } = sunriseSunsetHours(SEASONS[currentSeason].declDeg);
+  const frac = (hourDecimal - sunrise) / ((sunset - sunrise) || 1);
+  const { top, bottom } = skyColorsForDayFrac(frac);
+  paintSkyGradient('#'+top.getHexString(), '#'+bottom.getHexString());
+  if(opts.heavy){ applyVehicleLightState(); applyTrainWindowEmissive(); }
+  refreshSunPanelUI();
+}
+function applyNight(){
+  lightingMode = 'nuit'; isNight = true;
+  ensureNightVisualEnvironment();
+  applyVehicleLightState();
+  applyTrainWindowEmissive();
+  refreshSunPanelUI();
+}
+/* ------------------------------------------------------------
+   CURSEUR D'HEURE — zones du curseur (en % de la piste 0..100) :
+   [0-8] nuit | [8-12] zone tampon (reste accroché au lever/coucher, pour ne
+   pas basculer en Nuit par un léger dépassement accidentel) | [12-88] jour,
+   mappé linéairement sur [lever, coucher] de la saison en cours | [88-92]
+   tampon | [92-100] nuit.
+   ------------------------------------------------------------ */
+const SLIDER_DAY_START = 12, SLIDER_DAY_END = 88;
+const SLIDER_NIGHT_START = 8, SLIDER_NIGHT_END = 92;
+function handleSliderInput(rawValue){
+  const v = parseFloat(rawValue);
+  const sliderEl = document.getElementById('sun-slider');
+  const goingNight = (v <= SLIDER_NIGHT_START || v >= SLIDER_NIGHT_END);
+  sliderEl.classList.toggle('is-night', goingNight);
+  if(goingNight){
+    if(!isNight) runWithSpinner(()=> applyNight());
+    return;
+  }
+  const clamped = Math.max(SLIDER_DAY_START, Math.min(SLIDER_DAY_END, v));
+  const frac = (clamped - SLIDER_DAY_START) / (SLIDER_DAY_END - SLIDER_DAY_START);
+  const { sunrise, sunset } = sunriseSunsetHours(SEASONS[currentSeason].declDeg);
+  const hour = sunrise + frac*(sunset - sunrise);
+  if(isNight){
+    runWithSpinner(()=> applyDayAtHour(hour, {heavy:true}));
+  } else {
+    applyDayAtHour(hour, {heavy:false});
+  }
+}
+// Peint la piste du curseur : dégradé nuit → jour (couleurs d'horizon selon
+// l'heure, via DAY_COLOR_STOPS) → nuit, plus des repères visuels aux
+// frontières des zones tampon.
+function updateSliderTrackVisual(){
+  const track = document.getElementById('sun-slider-track');
+  const stops = [[0, NIGHT_GRADIENT[1]], [SLIDER_NIGHT_START, NIGHT_GRADIENT[1]]];
+  DAY_COLOR_STOPS.forEach(s=>{
+    stops.push([SLIDER_DAY_START + s.frac*(SLIDER_DAY_END-SLIDER_DAY_START), s.bottom]);
   });
-  document.getElementById('sun-btn-night').classList.toggle('active', isNight);
+  stops.push([SLIDER_NIGHT_END, NIGHT_GRADIENT[1]], [100, NIGHT_GRADIENT[1]]);
+  track.style.background = 'linear-gradient(to right, ' + stops.map(([p,c])=>`${c} ${p}%`).join(', ') + ')';
+  track.querySelectorAll('.sun-buffer-mark').forEach(m=>m.remove());
+  [SLIDER_NIGHT_START, SLIDER_DAY_START, SLIDER_DAY_END, SLIDER_NIGHT_END].forEach(p=>{
+    const mark = document.createElement('div');
+    mark.className = 'sun-buffer-mark';
+    mark.style.left = p+'%';
+    track.appendChild(mark);
+  });
+}
+function refreshSunPanelUI(){
+  document.querySelectorAll('.sun-season-btn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.season===currentSeason);
+  });
+  const timeLabel = document.getElementById('sun-time-label');
+  const statusLabel = document.getElementById('sun-status-label');
+  const warning = document.getElementById('night-warning');
+  if(isNight){
+    timeLabel.textContent = '--:--';
+    statusLabel.textContent = 'NUIT';
+    statusLabel.classList.add('is-night');
+    warning.classList.add('show');
+  } else {
+    timeLabel.textContent = hourToClock(currentHour);
+    statusLabel.textContent = 'JOUR';
+    statusLabel.classList.remove('is-night');
+    warning.classList.remove('show');
+  }
   const sunPanelBtn = document.getElementById('btn-sun-panel');
   const iconEl = sunPanelBtn.querySelector('svg, i');
   if(iconEl) iconEl.outerHTML = `<i data-lucide="${isNight ? 'moon':'sun-medium'}"></i>`;
@@ -7256,10 +7345,18 @@ document.getElementById('sun-panel-close').addEventListener('click', (ev)=>{
   ev.stopPropagation();
   sunPanel.classList.remove('show');
 });
-document.querySelectorAll('#sun-arc .sun-btn').forEach(btn=>{
-  btn.addEventListener('click', ()=> setLightingMode(btn.dataset.time));
+const sunSliderEl = document.getElementById('sun-slider');
+sunSliderEl.addEventListener('input', (ev)=> handleSliderInput(ev.target.value));
+document.querySelectorAll('.sun-season-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const season = btn.dataset.season;
+    if(season===currentSeason) return;
+    currentSeason = season;
+    updateSliderTrackVisual();
+    if(!isNight) handleSliderInput(sunSliderEl.value); // recalcule l'heure/soleil pour la nouvelle saison, à la même position de curseur
+    else refreshSunPanelUI();
+  });
 });
-document.getElementById('sun-btn-night').addEventListener('click', ()=> setLightingMode('nuit'));
 // Ferme la fiche bâtiment dès qu'on clique un BOUTON du menu "outils" (barre
 // de gauche) — et seulement lui, pas les autres menus de l'interface. On
 // exclut tout ce qui fait partie du travail EN COURS sur ce bâtiment (le
@@ -7290,11 +7387,13 @@ document.addEventListener('click', (ev)=>{
   rebuildAll();
   renderList();
 });
-// État initial : midi, soleil déjà positionné à l'ouverture (pas de spinner
-// nécessaire ici, rien n'a encore été rendu).
-const vehicleLightMaterials = { blanc:null, rouge:null }; // matériaux de phares PARTAGÉS par tous les véhicules — déclaré avant le premier appel de applyLightingModeNow pour éviter le TDZ
-let trainWindowMaterial = null; // "vitres_trains" — rendu émissif la nuit (voir applyTrainWindowEmissive) — déclaré avant le premier appel de applyLightingModeNow pour éviter le TDZ
-applyLightingModeNow('midi');
+// État initial : équinoxe, midi, soleil déjà positionné à l'ouverture (pas de
+// spinner nécessaire ici, rien n'a encore été rendu).
+const vehicleLightMaterials = { blanc:null, rouge:null }; // matériaux de phares PARTAGÉS par tous les véhicules — déclaré avant le premier appel de applyDayAtHour pour éviter le TDZ
+let trainWindowMaterial = null; // "vitres_trains" — rendu émissif la nuit (voir applyTrainWindowEmissive) — déclaré avant le premier appel de applyDayAtHour pour éviter le TDZ
+updateSliderTrackVisual();
+ensureDayVisualEnvironment();
+applyDayAtHour(12, {heavy:true});
 
 /* ============================================================
    LABELS — point au sol + étiquette décalée + ligne de rappel
@@ -9299,7 +9398,6 @@ function animate(){
   // est lancée pendant une pause, elle reste figée à son état de départ
   // (grue posée, aucun étage encore sorti de terre) jusqu'au "Reprendre".
   if(!simulationPaused) updateConstructions(dt);
-  updateDayTransition(dt);
   updateCompass();
   updateLabelPositions();
   updateDrawAreaLabel();
