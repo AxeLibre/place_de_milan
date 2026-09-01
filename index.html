@@ -264,9 +264,6 @@
     flex:1;background:none;border:none;color:var(--paper);font-family:'Space Grotesk',sans-serif;
     font-size:16px;font-weight:700;padding:2px 0;
   }
-  #bldg-edit-window .bew-close{background:none;border:none;color:var(--muted);cursor:pointer;
-    width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:5px;flex-shrink:0;}
-  #bldg-edit-window .bew-close:hover{color:var(--paper);background:#0b1116;}
   #bldg-edit-window .bew-meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin:2px 0 8px;flex-shrink:0;}
   /* ---------- Corps : une seule colonne verticale, dans l'ordre logique de
      lecture — stats, étages, graphique interactif, éditeur de la tranche
@@ -1109,7 +1106,7 @@
         <div class="bew-head">
           <div class="bew-dot" id="bew-dot"></div>
           <input class="bew-name" id="bew-name" />
-          <button class="bew-close" id="bew-close" title="Fermer"><i data-lucide="x"></i></button>
+          <button class="panel-x-btn" id="bew-close" title="Fermer"><i data-lucide="x"></i></button>
         </div>
         <div class="bew-meta" id="bew-meta"></div>
         <div id="bew-body"></div>
@@ -1119,7 +1116,6 @@
     <div id="draw-mode-popout">
       <button class="draw-mode-btn" id="btn-mode-rect" title="Rectangle (cliquer-glisser-lâcher)"><i data-lucide="square"></i></button>
       <button class="draw-mode-btn" id="btn-mode-poly" title="Polygone (clics successifs)"><i data-lucide="pentagon"></i></button>
-      <button class="panel-x-btn" id="btn-draw-menu-close" title="Fermer"><i data-lucide="x"></i></button>
     </div>
     <div id="grass-brush-popout">
       <button class="brush-btn" id="brush-small" title="Petit pinceau"><i data-lucide="circle" style="width:6px;height:6px;fill:currentColor;"></i></button>
@@ -1748,6 +1744,17 @@ const btnPedestrianClose = document.getElementById('btn-pedestrian-close');
 
 function enterPedestrianMode(){
   if(pedestrianModeActive) return;
+  // Ferme l'outil en cours (tracé, arbre, gazon, labels, édition, déplacement,
+  // extension gare) avant de basculer — la navigation piéton ne doit jamais
+  // laisser un outil actif "en arrière-plan", invisible mais toujours armé.
+  if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
+  if(editingBuildingId) stopEditBuildingShape();
+  if(movingBuildingId) stopMoveBuilding();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   // La vue plan (verrouillée à la verticale, caméra orthographique) n'a pas
   // de sens en piéton : on la referme proprement avant de basculer, et on la
   // rétablira à la sortie si elle était active.
@@ -3491,7 +3498,6 @@ btnDraw.addEventListener('click', ()=>{
 });
 btnModePoly.addEventListener('click', ()=>{ closeDrawMenu(); startDraw('polygon'); });
 btnModeRect.addEventListener('click', ()=>{ closeDrawMenu(); startDraw('rect'); });
-document.getElementById('btn-draw-menu-close').addEventListener('click', closeDrawMenu);
 
 renderer.domElement.addEventListener('click', (ev)=>{
   if(!drawing || drawMode!=='polygon') return;
@@ -3504,10 +3510,14 @@ window.addEventListener('keydown', (ev)=>{
   if(ev.key==='Escape') cancelDraw();
 });
 document.getElementById('btn-construction-validate').addEventListener('click', ()=>{
+  if(movingBuildingId){ stopMoveBuilding(); return; }
   if(!drawing) return;
   if(drawMode==='polygon') finishDraw(); // le rectangle se valide déjà tout seul au relâchement de la souris
 });
-document.getElementById('btn-construction-cancel').addEventListener('click', ()=>{ if(drawing) cancelDraw(); });
+document.getElementById('btn-construction-cancel').addEventListener('click', ()=>{
+  if(movingBuildingId){ cancelMoveBuilding(); return; }
+  if(drawing) cancelDraw();
+});
 
 // ---- Mode rectangle : cliquer-glisser-lâcher trace un rectangle au sol,
 // contraint au polygone d'implantation via le même pipeline (finishDraw) que
@@ -4193,7 +4203,7 @@ window.addEventListener('pointerup', ()=>{
   if(grassPainting) controls.enabled = true;
   if(wasPainting) updateSiteStats(); // recalcul une seule fois en fin de trait (getImageData coûteux)
 });
-renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting || movingBuildingId) ev.preventDefault(); });
+renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting || movingBuildingId || cloningBuildingId) ev.preventDefault(); });
 
 const brushBtns = {
   small: document.getElementById('brush-small'),
@@ -4946,6 +4956,13 @@ function deleteBuilding(id, opts={}){
   if(!b) return;
   if(editingBuildingId===id) stopEditBuildingShape();
   if(movingBuildingId===id) stopMoveBuilding();
+  if(cloningBuildingId===id){
+    // On ne rappelle pas cancelCloneBuilding() ici (elle appelle deleteBuilding
+    // et provoquerait une récursion) : on remet juste l'état de l'outil à zéro.
+    cloningBuildingId = null; clonePivot = null; cloneRotating = false; cloneRotateStart = null;
+    controls.enabled = true; exitConstructionMode(); renderer.domElement.style.cursor = '';
+    drawHint.classList.remove('show'); drawHintEnter.style.display = '';
+  }
   buildings = buildings.filter(x=>x.id!==id);
   if(selectedId===id){ selectedId = null; updateBldgPanelVisibility(); }
   // Le halo de sélection (pourtour bleu clair à la base) a pu être ajouté à
@@ -5212,7 +5229,7 @@ function ensureBldgHoverOutline(){
   return bldgHoverOutline;
 }
 function toolIsActive(){
-  return drawing || treePlacing || grassPainting || !!editingBuildingId;
+  return drawing || treePlacing || grassPainting || !!editingBuildingId || !!movingBuildingId || !!cloningBuildingId;
 }
 function buildingHitAt(ev){
   const rect = renderer.domElement.getBoundingClientRect();
@@ -5251,10 +5268,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
 renderer.domElement.addEventListener('click', (ev)=>{
   if(toolIsActive()) return;
   const hit = buildingHitAt(ev);
-  if(!hit){
-    if(selectedId !== null){ selectedId = null; updateBldgPanelVisibility(); rebuildAll(); renderList(); }
-    return;
-  }
+  if(!hit) return; // un clic dans le vide ne referme plus la fiche — seule sa croix rouge ou un autre outil le fait
   selectBuilding(hit.id);
   openBldgEditWindow(hit.id);
 });
@@ -5497,6 +5511,7 @@ function stopEditBuildingShape(){
    ------------------------------------------------------------ */
 let movingBuildingId = null;
 let buildingMoveDrag = null; // {mode:'translate'|'rotate', startGround, pivot, startAngle, snapshot}
+let moveOriginalSnapshot = null; // état complet AVANT le début du déplacement, pour "ANNULER"
 function startMoveBuilding(b){
   if(movingBuildingId && movingBuildingId!==b.id) stopMoveBuilding();
   if(editingBuildingId) stopEditBuildingShape();
@@ -5507,23 +5522,142 @@ function startMoveBuilding(b){
   if(labelPlacing) stopLabelTool();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   movingBuildingId = b.id;
+  moveOriginalSnapshot = snapshotBuildingContours(b);
   controls.enabled = false;
   enterConstructionMode();
   applyConstructionGrayscale(b.group);
   renderer.domElement.style.cursor = 'grab';
-  flashStatus('Clic gauche glissé : déplacer · Clic droit glissé : pivoter · Échap : terminer');
+  drawHintText.textContent = 'Clic gauche glissé : déplacer · Clic droit glissé : pivoter';
+  drawHintEnter.style.display = 'none';
+  drawHint.classList.add('show');
 }
 function stopMoveBuilding(){
   const id = movingBuildingId;
   movingBuildingId = null;
+  moveOriginalSnapshot = null;
   buildingMoveDrag = null;
   controls.enabled = true;
   exitConstructionMode();
   renderer.domElement.style.cursor = '';
+  drawHint.classList.remove('show');
+  drawHintEnter.style.display = '';
   const b = buildings.find(x=>x.id===id);
   if(b){ rebuildMesh(b); renderBldgEditWindow(b); }
   renderList();
 }
+// "ANNULER" pendant un déplacement : restaure le contour d'avant le début du
+// déplacement (avant le premier glissement), puis sort de l'outil.
+function cancelMoveBuilding(){
+  const id = movingBuildingId;
+  const b = buildings.find(x=>x.id===id);
+  if(b && moveOriginalSnapshot){
+    b.points = moveOriginalSnapshot.base.map(p=>({x:p.x, z:p.z}));
+    moveOriginalSnapshot.bands.forEach(({idx,pts})=>{
+      if(b.bands[idx]) b.bands[idx].points = pts.map(p=>({x:p.x, z:p.z}));
+    });
+  }
+  stopMoveBuilding();
+  flashStatus('Déplacement annulé');
+}
+
+/* ------------------------------------------------------------
+   OUTIL "CLONER" — duplique un bâtiment (socle + tous ses volumes/décrochés)
+   et attache le clone au curseur : il suit la souris jusqu'au clic gauche qui
+   le pose, le clic droit glissé le fait pivoter entre-temps. Échap annule et
+   supprime le clone.
+   ------------------------------------------------------------ */
+let cloningBuildingId = null;
+let clonePivot = null;      // centre courant du clone (suit le curseur)
+let cloneRotating = false;
+let cloneRotateStart = null; // {angle, snapshot}
+function startCloneBuilding(source){
+  if(movingBuildingId) stopMoveBuilding();
+  if(editingBuildingId) stopEditBuildingShape();
+  if(drawing) cancelDraw();
+  if(drawMenuOpen) closeDrawMenu();
+  if(treePlacing) stopTreeTool();
+  if(grassPainting) stopGrassTool();
+  if(labelPlacing) stopLabelTool();
+  if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
+  const pointsClone = source.points.map(p=>({x:p.x, z:p.z}));
+  const bandsClone = JSON.parse(JSON.stringify(source.bands||[]));
+  const clone = createBuilding(pointsClone, {
+    name: `${source.name} (copie)`, floors: source.floors, bands: bandsClone, silent:true
+  });
+  cloningBuildingId = clone.id;
+  clonePivot = polygonCentroidXZ(clone.points);
+  controls.enabled = false;
+  enterConstructionMode();
+  applyConstructionGrayscale(clone.group);
+  renderer.domElement.style.cursor = 'grabbing';
+  drawHintText.textContent = 'Déplacez la souris pour positionner le clone · Clic gauche : poser · Clic droit glissé : pivoter';
+  drawHintEnter.style.display = 'none';
+  drawHint.classList.add('show');
+}
+function finishCloneBuilding(){
+  const id = cloningBuildingId;
+  cloningBuildingId = null; clonePivot = null; cloneRotating = false; cloneRotateStart = null;
+  controls.enabled = true;
+  exitConstructionMode();
+  renderer.domElement.style.cursor = '';
+  drawHint.classList.remove('show');
+  drawHintEnter.style.display = '';
+  const b = buildings.find(x=>x.id===id);
+  if(b){ selectBuilding(b.id); openBldgEditWindow(b.id); }
+  renderList();
+  updateLegendTotals();
+}
+function cancelCloneBuilding(){
+  const id = cloningBuildingId;
+  cloningBuildingId = null; clonePivot = null; cloneRotating = false; cloneRotateStart = null;
+  controls.enabled = true;
+  exitConstructionMode();
+  renderer.domElement.style.cursor = '';
+  drawHint.classList.remove('show');
+  drawHintEnter.style.display = '';
+  if(id!=null) deleteBuilding(id, {silent:true});
+  flashStatus('Clonage annulé');
+}
+renderer.domElement.addEventListener('pointermove', (ev)=>{
+  if(!cloningBuildingId) return;
+  const b = buildings.find(x=>x.id===cloningBuildingId);
+  if(!b) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  if(cloneRotating && cloneRotateStart){
+    const angle = Math.atan2(pt.z-clonePivot.z, pt.x-clonePivot.x) - cloneRotateStart.angle;
+    const rot = p=> rotatePointAround(p, clonePivot, angle);
+    b.points = cloneRotateStart.snapshot.base.map(rot);
+    cloneRotateStart.snapshot.bands.forEach(({idx,pts})=>{
+      if(b.bands[idx]) b.bands[idx].points = pts.map(rot);
+    });
+  } else {
+    const dx = pt.x-clonePivot.x, dz = pt.z-clonePivot.z;
+    b.points = b.points.map(p=>({x:p.x+dx, z:p.z+dz}));
+    b.bands.forEach(band=>{ if(band.points && band.points.length>=3) band.points = band.points.map(p=>({x:p.x+dx, z:p.z+dz})); });
+    clonePivot = { x:pt.x, z:pt.z };
+  }
+  rebuildMesh(b);
+}, { passive:true });
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  if(!cloningBuildingId || ev.button!==2) return;
+  const b = buildings.find(x=>x.id===cloningBuildingId);
+  if(!b) return;
+  const pt = groundPointFromEvent(ev);
+  if(!pt) return;
+  ev.preventDefault();
+  cloneRotating = true;
+  cloneRotateStart = { angle: Math.atan2(pt.z-clonePivot.z, pt.x-clonePivot.x), snapshot: snapshotBuildingContours(b) };
+});
+window.addEventListener('pointerup', (ev)=>{
+  if(cloningBuildingId && cloneRotating && ev.button===2){ cloneRotating = false; cloneRotateStart = null; }
+});
+renderer.domElement.addEventListener('click', (ev)=>{
+  if(!cloningBuildingId || cloneRotating) return;
+  finishCloneBuilding();
+});
+window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && cloningBuildingId) cancelCloneBuilding(); });
+
 function rotatePointAround(p, pivot, angle){
   const dx = p.x-pivot.x, dz = p.z-pivot.z;
   const cos = Math.cos(angle), sin = Math.sin(angle);
@@ -5582,7 +5716,7 @@ window.addEventListener('pointerup', ()=>{
   const b = buildings.find(x=>x.id===movingBuildingId);
   if(b) renderList();
 });
-window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && movingBuildingId) stopMoveBuilding(); });
+window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && movingBuildingId) cancelMoveBuilding(); });
 const BLDG_HANDLE_COLOR = 0xe0663f, BLDG_HANDLE_HOVER = 0xffab7a, BLDG_HANDLE_DRAG = 0xffffff, BLDG_HANDLE_SELECTED = NEON_BLUE;
 // Rayon réduit + liseré blanc en coque inversée (BackSide) pour retrouver le
 // même rendu "boule orange qualitative" que les poignées de l'extension gare
@@ -6263,10 +6397,15 @@ function renderBldgEditWindow(b){
     isMovingThis ? stopMoveBuilding() : startMoveBuilding(b);
     renderBldgEditWindow(b);
   });
+  const cloneBtn = document.createElement('button');
+  cloneBtn.className = 'action-btn';
+  cloneBtn.innerHTML = '<i data-lucide="copy"></i> Dupliquer';
+  cloneBtn.title = 'Créer un clone de ce bâtiment (socle + volumes) attaché au curseur : clic gauche pour le poser, clic droit glissé pour le pivoter';
+  cloneBtn.addEventListener('click', ()=> startCloneBuilding(b));
   const delBtn = document.createElement('button');
   delBtn.className='action-btn delete'; delBtn.innerHTML='<i data-lucide="trash-2"></i> Supprimer';
   delBtn.addEventListener('click', ()=>{ deleteBuilding(b.id); closeBldgEditWindow(); });
-  actions.append(editBtn, moveBtn, delBtn);
+  actions.append(editBtn, moveBtn, cloneBtn, delBtn);
   body.appendChild(actions);
 
   if(window.lucide) lucide.createIcons();
