@@ -5988,9 +5988,32 @@ function splitSelectedFacadeEdge(){
 }
 document.getElementById('btn-split-edge').addEventListener('click', splitSelectedFacadeEdge);
 
-/* ---------------- GIZMO déplacement / échelle ---------------- */
+/* ---------------- GIZMO déplacement / rotation / échelle ---------------- */
+// Repensé façon Blender : des flèches XY colorées (rouge = X, vert = Y —
+// "Y" désignant ici le second axe du plan, l'axe Z de three.js, vu que tout
+// se dessine sur le plan horizontal XZ) pour un déplacement contraint à un
+// seul axe, une bille centrale pour le déplacement libre (les deux axes à la
+// fois), une tige+cube pour l'échelle uniforme (plus confondable avec les
+// flèches maintenant que ce n'est plus un losange), et un grand anneau plat
+// autour de l'ensemble pour la rotation des sommets sélectionnés autour de
+// leur centroïde.
 let gizmoGroup = new THREE.Group(); worldRoot.add(gizmoGroup);
-let gizmoMove, gizmoScale;
+let gizmoMove, gizmoScale, gizmoRotateRing;
+let gizmoAxisX = [], gizmoAxisY = []; // flèches +/- de chaque axe (mêmes comportements, juste 2 sens visuels)
+const GIZMO_AXIS_X_COLOR = 0xe6483d; // rouge — axe X (three.js x)
+const GIZMO_AXIS_Y_COLOR = 0x3ddc84; // vert — axe Y du plan (three.js z)
+const GIZMO_AXIS_ARROW_OFFSET = 3.2;
+const GIZMO_SCALE_OFFSET = 6;
+const GIZMO_ROTATE_RADIUS = 8.6;
+function makeGizmoArrow(color, gizmoType){
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.4, 1.3, 14),
+    new THREE.MeshStandardMaterial({ color, emissive:color, emissiveIntensity:0.55, depthTest:false, transparent:true })
+  );
+  cone.renderOrder = 60;
+  cone.userData.gizmoType = gizmoType;
+  return cone;
+}
 (function buildGizmo(){
   gizmoMove = makeCircleDecal(1.1, NEON_BLUE_CSS, 'fill');
   gizmoMove.position.y = 0.6;
@@ -6004,8 +6027,41 @@ let gizmoMove, gizmoScale;
   moveCore.renderOrder = 61;
   moveCore.position.y = 1.4;
   moveCore.userData.gizmoType = 'move';
+
+  // Flèches d'axe : une tige (ligne double sens) + un cône à chaque
+  // extrémité, pour un déplacement contraint clairement identifiable —
+  // rouge pour X, vert pour Y (= Z three.js), comme dans Blender.
+  const axisLineX = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-GIZMO_AXIS_ARROW_OFFSET,0,0), new THREE.Vector3(GIZMO_AXIS_ARROW_OFFSET,0,0)]),
+    new THREE.LineBasicMaterial({ color:GIZMO_AXIS_X_COLOR, transparent:true, opacity:0.85, depthTest:false })
+  );
+  axisLineX.renderOrder = 59;
+  const axisLineY = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-GIZMO_AXIS_ARROW_OFFSET), new THREE.Vector3(0,0,GIZMO_AXIS_ARROW_OFFSET)]),
+    new THREE.LineBasicMaterial({ color:GIZMO_AXIS_Y_COLOR, transparent:true, opacity:0.85, depthTest:false })
+  );
+  axisLineY.renderOrder = 59;
+
+  const coneXPos = makeGizmoArrow(GIZMO_AXIS_X_COLOR, 'moveX');
+  coneXPos.rotation.z = -Math.PI/2;
+  coneXPos.position.set(GIZMO_AXIS_ARROW_OFFSET,0,0);
+  const coneXNeg = makeGizmoArrow(GIZMO_AXIS_X_COLOR, 'moveX');
+  coneXNeg.rotation.z = Math.PI/2;
+  coneXNeg.position.set(-GIZMO_AXIS_ARROW_OFFSET,0,0);
+  const coneYPos = makeGizmoArrow(GIZMO_AXIS_Y_COLOR, 'moveY');
+  coneYPos.rotation.x = Math.PI/2;
+  coneYPos.position.set(0,0,GIZMO_AXIS_ARROW_OFFSET);
+  const coneYNeg = makeGizmoArrow(GIZMO_AXIS_Y_COLOR, 'moveY');
+  coneYNeg.rotation.x = -Math.PI/2;
+  coneYNeg.position.set(0,0,-GIZMO_AXIS_ARROW_OFFSET);
+  gizmoAxisX = [coneXPos, coneXNeg];
+  gizmoAxisY = [coneYPos, coneYNeg];
+
+  // Échelle : tige + CUBE (plus confondable avec un losange/octaèdre, trop
+  // proche visuellement des flèches) — placée en diagonale pour ne
+  // chevaucher ni les flèches d'axe ni l'anneau de rotation.
   gizmoScale = new THREE.Mesh(
-    new THREE.OctahedronGeometry(1,0),
+    new THREE.BoxGeometry(1.15,1.15,1.15),
     new THREE.MeshStandardMaterial({ color:0xffffff, emissive:NEON_BLUE, emissiveIntensity:0.6, depthTest:false, transparent:true })
   );
   gizmoScale.renderOrder = 61;
@@ -6016,15 +6072,30 @@ let gizmoMove, gizmoScale;
   );
   link.renderOrder = 59;
   link.userData.isGizmoLink = true;
-  gizmoGroup.add(gizmoMove, moveCore, gizmoScale, link);
+
+  // Anneau de rotation : grand cercle plat (à plat sur le sol, comme le
+  // pourtour blanc du gizmo Blender) englobant toute la croix de
+  // déplacement — glisser dessus fait pivoter les sommets sélectionnés
+  // autour de leur centroïde.
+  gizmoRotateRing = new THREE.Mesh(
+    new THREE.TorusGeometry(GIZMO_ROTATE_RADIUS, 0.16, 8, 64),
+    new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.55, depthTest:false })
+  );
+  gizmoRotateRing.rotation.x = Math.PI/2; // à plat sur le plan XZ (le tore est nativement dans XY)
+  gizmoRotateRing.renderOrder = 57;
+  gizmoRotateRing.userData.gizmoType = 'rotate';
+
+  gizmoGroup.add(gizmoRotateRing, axisLineX, axisLineY, coneXPos, coneXNeg, coneYPos, coneYNeg, gizmoMove, moveCore, gizmoScale, link);
   gizmoGroup.visible = false;
   gizmoGroup.userData.link = link;
   gizmoGroup.userData.moveCore = moveCore;
+  gizmoGroup.userData.axisLineX = axisLineX;
+  gizmoGroup.userData.axisLineY = axisLineY;
   // Taille écran constante, comme les poignées de sommet — même méthode.
   registerScreenSizedMarker(moveCore);
   registerScreenSizedMarker(gizmoScale);
+  [coneXPos, coneXNeg, coneYPos, coneYNeg].forEach(registerScreenSizedMarker);
 })();
-const GIZMO_SCALE_OFFSET = 6;
 function remapSelectionByProximity(coords, points, epsilon=0.75){
   const result = new Set();
   coords.forEach(c=>{
@@ -6056,8 +6127,13 @@ function updateGizmoForSelection(){
   // boules oranges des sommets (depthTest désactivé + renderOrder élevé).
   gizmoMove.position.set(0,0.12,0);
   gizmoGroup.userData.moveCore.position.set(0,0.3,0);
-  gizmoScale.position.set(GIZMO_SCALE_OFFSET,0.3,0);
-  gizmoGroup.userData.link.geometry.setFromPoints([new THREE.Vector3(0,0.3,0), new THREE.Vector3(GIZMO_SCALE_OFFSET,0.3,0)]);
+  gizmoScale.position.set(GIZMO_SCALE_OFFSET*Math.SQRT1_2, 0.3, GIZMO_SCALE_OFFSET*Math.SQRT1_2);
+  gizmoGroup.userData.link.geometry.setFromPoints([new THREE.Vector3(0,0.3,0), new THREE.Vector3(GIZMO_SCALE_OFFSET*Math.SQRT1_2,0.3,GIZMO_SCALE_OFFSET*Math.SQRT1_2)]);
+  gizmoAxisX.forEach(c=>c.position.y = 0.3);
+  gizmoAxisY.forEach(c=>c.position.y = 0.3);
+  gizmoGroup.userData.axisLineX.geometry.setFromPoints([new THREE.Vector3(-GIZMO_AXIS_ARROW_OFFSET,0.3,0), new THREE.Vector3(GIZMO_AXIS_ARROW_OFFSET,0.3,0)]);
+  gizmoGroup.userData.axisLineY.geometry.setFromPoints([new THREE.Vector3(0,0.3,-GIZMO_AXIS_ARROW_OFFSET), new THREE.Vector3(0,0.3,GIZMO_AXIS_ARROW_OFFSET)]);
+  gizmoRotateRing.position.y = 0.05; // quasi au sol, sous le reste du gizmo
 }
 function gizmoHitTest(ev){
   if(!gizmoGroup.visible) return null;
@@ -6065,10 +6141,22 @@ function gizmoHitTest(ev){
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
   pointer.y = -((ev.clientY-rect.top)/rect.height)*2+1;
   raycaster.setFromCamera(pointer, camera);
-  const targets = [gizmoMove, gizmoGroup.userData.moveCore, gizmoScale];
+  // Ordre des cibles = ordre de priorité en cas de chevauchement visuel :
+  // les flèches et le cube d'abord (cibles précises), l'anneau de rotation
+  // en dernier (grande zone, ne doit pas "voler" les clics sur le reste).
+  const targets = [gizmoMove, gizmoGroup.userData.moveCore, gizmoScale, ...gizmoAxisX, ...gizmoAxisY, gizmoRotateRing];
   const hits = raycaster.intersectObjects(targets);
   return hits.length ? hits[0].object.userData.gizmoType : null;
 }
+function gizmoCursorFor(type, active){
+  if(type==='moveX') return 'ew-resize';
+  if(type==='moveY') return 'ns-resize';
+  if(type==='rotate') return 'crosshair';
+  if(type==='scale') return 'nesw-resize';
+  if(type==='move') return active ? 'grabbing' : 'grab';
+  return '';
+}
+
 
 // Glissement d'un sommet — repensé pour être stable et "user friendly" façon
 // SimCity : pendant le glissement on se contente d'un simple clamp dans
@@ -6105,10 +6193,15 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
     bldgSelected.forEach(idx=>{ if(pts[idx]) startPoints.set(idx, {x:pts[idx].x, z:pts[idx].z}); });
     gizmoDrag = {
       type: gizmoHit, startGround, centroid, startPoints,
-      startDist: startGround && centroid ? Math.hypot(startGround.x-centroid.x, startGround.z-centroid.z) : 1
+      startDist: startGround && centroid ? Math.hypot(startGround.x-centroid.x, startGround.z-centroid.z) : 1,
+      // Angle de départ (souris → centroïde), pour l'anneau de rotation —
+      // le clic démarre toujours à un rayon confortable (sur l'anneau), donc
+      // pas d'instabilité près du centre comme ça pouvait être le cas pour
+      // l'outil "Déplacer" un bâtiment entier (voir le fix appliqué là-bas).
+      startAngle: startGround && centroid ? Math.atan2(startGround.z-centroid.z, startGround.x-centroid.x) : 0
     };
     controls.enabled = false;
-    renderer.domElement.style.cursor = gizmoHit==='move' ? 'grabbing' : 'nesw-resize';
+    renderer.domElement.style.cursor = gizmoCursorFor(gizmoHit, true);
     return;
   }
 
@@ -6134,8 +6227,13 @@ window.addEventListener('pointermove', (ev)=>{
       const pts = editTargetPoints(b);
       const handleY = editTargetHandleY(b);
       const editingBand = editingBandIndex!==null;
-      if(gizmoDrag.type==='move'){
-        const dx = pt.x-gizmoDrag.startGround.x, dz = pt.z-gizmoDrag.startGround.z;
+      if(gizmoDrag.type==='move' || gizmoDrag.type==='moveX' || gizmoDrag.type==='moveY'){
+        let dx = pt.x-gizmoDrag.startGround.x, dz = pt.z-gizmoDrag.startGround.z;
+        // Flèche d'axe : le déplacement est contraint à CET axe uniquement
+        // (X = rouge, Y/Z = vert) — on annule simplement la composante de
+        // l'autre axe plutôt que de projeter, plus simple et prévisible.
+        if(gizmoDrag.type==='moveX') dz = 0;
+        else if(gizmoDrag.type==='moveY') dx = 0;
         // Aimantation via le gizmo : seulement quand un SEUL sommet est
         // sélectionné (déplacement rigide identique au glissement direct
         // d'une sphère). Avec plusieurs sommets sélectionnés, le déplacement
@@ -6160,6 +6258,20 @@ window.addEventListener('pointermove', (ev)=>{
         factor = Math.max(0.15, Math.min(6, factor));
         gizmoDrag.startPoints.forEach((startP, idx)=>{
           let target = { x: c.x + (startP.x-c.x)*factor, z: c.z + (startP.z-c.z)*factor };
+          if(!editingBand && buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
+          pts[idx] = target;
+          if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, handleY, target.z);
+        });
+      } else if(gizmoDrag.type==='rotate'){
+        // Rotation des sommets sélectionnés autour de leur centroïde commun —
+        // angle suivi en continu (souris → centroïde), comme tourner un
+        // volant : le clic de départ est toujours sur l'anneau (rayon
+        // confortable), donc pas de saut brutal au début du geste.
+        const c = gizmoDrag.centroid;
+        const currentAngle = Math.atan2(pt.z-c.z, pt.x-c.x);
+        const angle = currentAngle - gizmoDrag.startAngle;
+        gizmoDrag.startPoints.forEach((startP, idx)=>{
+          let target = rotatePointAround(startP, c, angle);
           if(!editingBand && buildZone.length>=3) target = clampPointToPolygon(target, buildZone);
           pts[idx] = target;
           if(bldgVertexHandles[idx]) bldgVertexHandles[idx].holder.position.set(target.x, handleY, target.z);
@@ -6212,7 +6324,7 @@ window.addEventListener('pointermove', (ev)=>{
     refreshBldgHandleColors();
   }
   const overGizmo = gizmoHitTest(ev);
-  renderer.domElement.style.cursor = overGizmo ? (overGizmo==='move' ? 'grab' : 'nesw-resize') : (idx>=0 ? 'grab' : '');
+  renderer.domElement.style.cursor = overGizmo ? gizmoCursorFor(overGizmo) : (idx>=0 ? 'grab' : '');
 });
 window.addEventListener('pointerup', (ev)=>{
   if(gizmoDrag){
