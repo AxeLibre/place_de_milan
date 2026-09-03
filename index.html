@@ -2944,6 +2944,7 @@ function startDraw(mode){
   refreshBldgMiniListVisibility();
 }
 function cancelDraw(){
+  const cancelledVolumeTargetId = volumeDrawTargetId; // mémorisé AVANT réinitialisation, pour rafraîchir la fiche bâtiment si besoin (voir plus bas)
   drawing = false; drawPoints = []; rectDragging = false; rectStartPt = null;
   currentDrawLiveArea = null; currentDrawLiveCentroid = null;
   drawAreaLabel.classList.remove('show');
@@ -2959,6 +2960,17 @@ function cancelDraw(){
   unlockPlanViewAfterVolumeDraw();
   exitConstructionMode();
   refreshBldgMiniListVisibility();
+  // Sécurité : si un tracé de volume supérieur est annulé (ou vient d'aboutir,
+  // finishDraw() appelant cancelDraw() avant d'ouvrir la modale d'étages)
+  // alors que la fiche du MÊME bâtiment est ouverte à droite, on la
+  // rafraîchit pour qu'elle cesse d'afficher "✕ Annuler le tracé" — sinon un
+  // clic dessus relance startVolumeDraw() au lieu de ne rien faire, puisque
+  // volumeDrawTargetId est déjà retombé à null (voir bewSelectedForBuildingId,
+  // renderBldgEditWindow ci-dessous).
+  if(cancelledVolumeTargetId!==null && typeof bewSelectedForBuildingId!=='undefined' && bewSelectedForBuildingId===cancelledVolumeTargetId){
+    const b = buildings.find(x=>x.id===cancelledVolumeTargetId);
+    if(b) renderBldgEditWindow(b);
+  }
 }
 function clearMarkers(){
   unregisterScreenSizedMarkersOf(drawMarkers);
@@ -4451,7 +4463,15 @@ window.addEventListener('pointerup', ()=>{
   if(grassPainting) controls.enabled = true;
   if(wasPainting) updateSiteStats(); // recalcul une seule fois en fin de trait (getImageData coûteux)
 });
-renderer.domElement.addEventListener('contextmenu', (ev)=>{ if(grassPainting || movingBuildingId || cloningBuildingId || pedestrianModeActive) ev.preventDefault(); });
+// Menu contextuel du navigateur bloqué PARTOUT (fenêtre entière, canvas 3D,
+// UI, chips de labels, etc.) : le clic droit est utilisé dans l'outil pour
+// orbiter/peindre/déplacer selon le mode, un clic droit qui ferait
+// apparaître le menu du navigateur par-dessus casserait ces interactions.
+// Écouteur unique sur `window`, en phase de capture pour intercepter avant
+// tout autre gestionnaire (les gestionnaires spécifiques, comme celui des
+// chips de labels ci-dessous, gardent leur propre logique métier — seul le
+// menu natif du navigateur est supprimé ici).
+window.addEventListener('contextmenu', (ev)=> ev.preventDefault(), true);
 
 const brushBtns = {
   small: document.getElementById('brush-small'),
