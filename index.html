@@ -1931,8 +1931,7 @@ const btnPedestrianClose = document.getElementById('btn-pedestrian-close');
 // les éléments d'UI (barre de fermeture, bouton ruban) restent spécifiques.
 let globalViewActive = false;
 let globalViewSavedState = null;   // caméra + éclairage avant l'entrée, pour restauration à la sortie
-let globalRoot = new THREE.Group(); globalRoot.name = 'globalRoot'; globalRoot.visible = false;
-worldRoot.add(globalRoot);
+let globalRoot = null; // THREE.Group créé juste après worldRoot (voir plus bas) — pas encore déclaré ici, worldRoot n'existe pas encore à ce point du script
 let globalGlbLoaded = false;
 let globalFloorY = -Infinity; // altitude la plus basse de global.glb — sert à empêcher la caméra de passer sous la maquette
 const GLOBAL_GLB_URL = './global.glb'; // nom attendu à côté de ce fichier index.html, comme SITE_GLB_URL
@@ -2396,6 +2395,11 @@ scene.add(worldRoot);
 
 let siteRoot = new THREE.Group(); siteRoot.name = 'siteRoot';
 worldRoot.add(siteRoot);
+// globalRoot ("Vue Globale", voir plus haut) : déclaré/assigné ICI (et non à
+// sa première mention plus haut dans le fichier) car il doit être enfant de
+// worldRoot, qui vient tout juste d'être créé sur la ligne précédente.
+globalRoot = new THREE.Group(); globalRoot.name = 'globalRoot'; globalRoot.visible = false;
+worldRoot.add(globalRoot);
 let polygonMesh = null;   // THREE.Mesh du polygone d'implantation
 let siteUpCorrected = false; // true si une rotation Z-up→Y-up a été appliquée à la maquette chargée
 let hallMesh = null;      // THREE.Mesh du hall de gare
