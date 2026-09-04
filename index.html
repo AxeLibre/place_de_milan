@@ -2072,6 +2072,14 @@ function frameCameraOnGlobalModel(){
   camera.position.set(center.x, box.max.y + radius*0.45 + 25, center.z + radius*0.95);
   camera.lookAt(center);
   controls.target.copy(center);
+  // Brouillard spécifique à la Vue Globale : plus léger de près (démarre
+  // beaucoup plus loin, proportionnellement à la taille réelle de la
+  // maquette globale) mais étalé jusqu'à couvrir toute son étendue, au lieu
+  // du brouillard "de rue" par défaut, pensé pour une échelle bien plus
+  // petite et qui, ici, mangerait tout l'horizon bien avant le bord de
+  // global.glb.
+  scene.fog.near = radius * 1.1;
+  scene.fog.far = radius * 4.5;
 }
 function enterGlobalView(){
   if(globalViewActive) return;
@@ -2108,6 +2116,10 @@ function activateGlobalView(){
     hour: currentHour,
     isNight,
     sliderValue: sunSliderEl.value,
+    // Brouillard courant (voir frameCameraOnGlobalModel, qui le réajuste pour
+    // couvrir toute l'étendue de global.glb).
+    fogNear: scene.fog.near,
+    fogFar: scene.fog.far,
   };
   globalViewActive = true;
   controls.enabled = false;
@@ -2171,6 +2183,8 @@ function exitGlobalView(){
       sunSliderEl.classList.remove('is-night');
       applyDayAtHour(globalViewSavedState.hour, {heavy:true});
     }
+    scene.fog.near = globalViewSavedState.fogNear;
+    scene.fog.far = globalViewSavedState.fogFar;
     camera.fov = globalViewSavedState.fov;
     camera.updateProjectionMatrix();
     controls.enabled = globalViewSavedState.controlsEnabled;
@@ -2233,12 +2247,23 @@ window.addEventListener('pointerup', (ev)=>{
     pedestrianRightLastMouse = null;
   }
 });
-// Molette en mode piéton = vitesse de croisière avant/arrière (en plus du
-// WASD) : vers l'avant accélère en avant, vers l'arrière accélère en arrière
-// ou freine l'avancée en cours (accumulateur signé, cf. updatePedestrianMovement).
+// Molette : comportement différent selon le mode.
+// - Mode piéton : vitesse de croisière avant/arrière (en plus du WASD) —
+//   vers l'avant accélère en avant, vers l'arrière accélère en arrière ou
+//   freine l'avancée en cours (accumulateur signé, cf. updatePedestrianMovement).
+// - Vue Globale : zoom classique (avance/recule directement la caméra d'un
+//   cran à chaque geste de molette, sans vitesse qui persiste) — plus adapté
+//   pour explorer une maquette large qu'un réglage de "vitesse de marche".
 renderer.domElement.addEventListener('wheel', (ev)=>{
   if(!freeFlyActive()) return;
   ev.preventDefault();
+  if(globalViewActive){
+    const dollyStep = pedestrianMoveSpeed * 0.9 * (ev.deltaY < 0 ? 1 : -1);
+    const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
+    camera.position.addScaledVector(forward, dollyStep);
+    if(isFinite(globalFloorY)) camera.position.y = Math.max(camera.position.y, globalFloorY + 1.6);
+    return;
+  }
   const step = pedestrianMoveSpeed * 0.15;
   const maxCruise = pedestrianMoveSpeed * 3;
   if(ev.deltaY < 0) pedestrianCruiseVelocity = Math.min(maxCruise, pedestrianCruiseVelocity + step);
