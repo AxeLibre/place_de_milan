@@ -1947,6 +1947,20 @@ let globalRoot = null; // THREE.Group créé juste après worldRoot (voir plus b
 let globalGlbLoaded = false;
 let globalFloorY = -Infinity; // altitude la plus basse de global.glb — sert à empêcher la caméra de passer sous la maquette
 const GLOBAL_GLB_URL = './global.glb'; // nom attendu à côté de ce fichier index.html, comme SITE_GLB_URL
+// Réglages du brouillard en Vue Globale, en DISTANCE (mètres) — recalculés à
+// chaque frame (voir updateGlobalViewFog()) à partir de la distance RÉELLE
+// caméra-cible du moment, donc ça suit automatiquement le zoom :
+//   - GLOBAL_FOG_MIN_NEAR   : distance mini (m) avant que le brouillard
+//     commence, même en zoomant très près. Descends cette valeur pour que le
+//     voile apparaisse encore plus tôt/plus fort de près (0 = dès la caméra).
+//   - GLOBAL_FOG_NEAR_RATIO : le brouillard commence aussi à ce ratio de la
+//     distance caméra-cible courante (le plus GRAND des deux, MIN_NEAR et ce
+//     ratio, est utilisé) — baisse ce ratio pour un voile plus dense de près.
+//   - GLOBAL_FOG_FAR_RATIO  : distance (en multiple de la distance
+//     caméra-cible) à laquelle le brouillard est fondu à 100%.
+const GLOBAL_FOG_MIN_NEAR = 6;
+const GLOBAL_FOG_NEAR_RATIO = 0.12;
+const GLOBAL_FOG_FAR_RATIO = 3.2;
 const btnGlobalView = document.getElementById('btn-global-view');
 const globalViewCloseBar = document.getElementById('global-view-close-bar');
 const btnGlobalViewClose = document.getElementById('btn-global-view-close');
@@ -2116,6 +2130,16 @@ function applyHeightFog(root){
       if(!m || !m.fog || heightFogPatchedMats.has(m)) return;
       heightFogPatchedMats.add(m);
       m.onBeforeCompile = injectHeightFog;
+      // IMPORTANT : sans customProgramCacheKey, Three.js identifie les
+      // programmes shader compilés par une "signature" de paramètres qui
+      // n'inclut PAS le contenu réel de onBeforeCompile. Résultat : si un
+      // matériau aux réglages similaires (fog, roughness, etc.) avait déjà
+      // été compilé AVANT ce patch, le moteur réutilisait silencieusement
+      // l'ancien programme (non patché) au lieu de compiler le nôtre — le
+      // patch n'avait donc, dans les faits, jamais d'effet visible. Cette
+      // clé unique force un programme séparé, réellement compilé avec notre
+      // code de brouillard.
+      m.customProgramCacheKey = () => 'heightFog';
       m.needsUpdate = true;
     });
   });
@@ -2228,15 +2252,9 @@ function activateGlobalView(){
   // dézoomer/zoomer librement dessus, et on l'ancien plafond est restauré à
   // la sortie (voir globalViewSavedState.maxDistance ci-dessus).
   controls.maxDistance = Math.max(controls.maxDistance, radius*3.5);
-  // Brouillard spécifique à la Vue Globale : basé sur la distance RÉELLE de
-  // la caméra à sa cible (pas juste le rayon de la maquette), pour rester
-  // dans la plage effectivement rendue (le plan de coupe lointain de la
-  // caméra reste à 3000) — démarre après une bonne marge (léger de près),
-  // puis s'étale jusqu'à bien au-delà de la maquette pour un dégradé doux au
-  // lieu du brouillard "de rue" par défaut, bien trop dense à cette échelle.
-  const camDist = camera.position.distanceTo(controls.target);
-  scene.fog.near = Math.max(40, camDist*0.6);
-  scene.fog.far = Math.min(camera.far*0.95, camDist*3.2);
+  // Brouillard Vue Globale : voir updateGlobalViewFog() (appelée ici pour la
+  // première frame, puis en continu depuis animate() pour suivre le zoom).
+  updateGlobalViewFog();
   // Brouillard "hauteur" (voile garanti de près + renfort au sol) : voir
   // applyHeightFog()/injectHeightFog() plus haut. On repatch au cas où de
   // nouveaux matériaux (maquette globale, bâtiments dessinés) seraient
@@ -2319,6 +2337,17 @@ window.addEventListener('mousemove', (ev)=>{
 // déplacent ENSEMBLE la caméra et la cible d'orbite (donc sans toucher à
 // l'angle de vue), le long des axes horizontaux "vers la cible"/"latéral" —
 // la molette reste le zoom natif, le clic droit le pan natif.
+// Brouillard Vue Globale : recalculé à CHAQUE FRAME (voir animate()) à partir
+// de la distance RÉELLE caméra-cible du moment — donc quand on zoome de près,
+// "near" redescend automatiquement et le voile redevient visible tout près,
+// au lieu de rester figé sur la distance qu'on avait à l'entrée en Vue
+// Globale. Constantes réglables : voir GLOBAL_FOG_MIN_NEAR/RATIO plus haut.
+function updateGlobalViewFog(){
+  if(!globalViewActive) return;
+  const camDist = camera.position.distanceTo(controls.target);
+  scene.fog.near = Math.max(GLOBAL_FOG_MIN_NEAR, camDist*GLOBAL_FOG_NEAR_RATIO);
+  scene.fog.far = Math.min(camera.far*0.95, camDist*GLOBAL_FOG_FAR_RATIO);
+}
 function updateGlobalViewKeyboardPan(dt){
   if(!globalViewActive || isTypingInInput()) return;
   // Flèches : orbite autour de la cible, exactement comme le clic gauche glissé
@@ -9820,7 +9849,7 @@ function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
   if(pedestrianModeActive){ updatePedestrianMovement(dt); }
-  else if(globalViewActive){ updateGlobalViewKeyboardPan(dt); controls.update(); }
+  else if(globalViewActive){ updateGlobalViewFog(); updateGlobalViewKeyboardPan(dt); controls.update(); }
   else { updateOrbitKeyboardNav(dt); controls.update(); }
   if(!simulationPaused) tickAgents(dt);
   updateDemolitions(dt);
