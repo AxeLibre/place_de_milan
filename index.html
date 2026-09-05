@@ -4299,11 +4299,23 @@ function fixProceduralMaterials(root){
         // heuristique noir/sans-texture ne suffisait pas à le détecter à coup sûr).
         replacement = new THREE.MeshStandardMaterial({ name:m.name, color:0x4a7c4e, roughness:0.85, flatShading:true, side:THREE.DoubleSide });
       } else if(isLikelyBrokenShader(m)){
+        // Cette heuristique attrapait à tort de VRAIS matériaux volontairement
+        // très sombres (ex. "BU", "noir", "Matériau.007" — façades noires/
+        // marron foncé authentiques exportées de Blender) et les remplaçait
+        // par un gris générique, ce qui cassait leur couleur réelle. On ne
+        // remplace donc plus QUE le cas identifié et sans ambiguïté — un nom
+        // évoquant explicitement du feuillage/arbre — et on se contente de
+        // signaler les autres matériaux quasi-noirs sans texture, sans jamais
+        // toucher à leur couleur : mieux vaut garder tel quel un matériau
+        // authentiquement sombre que de deviner et se tromper.
         const guessGreen = /leaf|vert|green|arbre|tree|icosph|folia/.test(name);
-        replacement = new THREE.MeshStandardMaterial({
-          name:m.name, color: guessGreen ? 0x4a7c4e : 0x8d8f92,
-          roughness: guessGreen ? 0.85 : 0.6, flatShading: guessGreen, side:THREE.DoubleSide
-        });
+        if(guessGreen){
+          replacement = new THREE.MeshStandardMaterial({
+            name:m.name, color:0x4a7c4e, roughness:0.85, flatShading:true, side:THREE.DoubleSide
+          });
+        } else {
+          console.warn(`[Place de Milan] Matériau "${m.name}" quasi-noir sans texture — laissé tel quel (couleur d'origine conservée) :`, m.color);
+        }
       }
       seen.set(m.uuid, replacement);
       return replacement || m;
