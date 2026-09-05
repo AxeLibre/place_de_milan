@@ -2156,6 +2156,11 @@ function loadGlobalGlbIfNeeded(cb){
   if(globalGlbLoaded){ cb(true); return; }
   gltfLoader.load(GLOBAL_GLB_URL, (gltf)=>{
     globalRoot.add(gltf.scene);
+    // Sans ça, le matériau "route" (et les autres matériaux procéduraux :
+    // aluminium, feuillage...) de global.glb garde sa couleur brute exportée
+    // de Blender au lieu de la recoloration appliquée à place_de_milan.glb —
+    // d'où la différence de teinte entre les deux maquettes.
+    fixProceduralMaterials(globalRoot);
     const box = new THREE.Box3().setFromObject(globalRoot);
     if(!box.isEmpty()) globalFloorY = box.min.y;
     globalGlbLoaded = true;
@@ -2946,6 +2951,9 @@ function onSiteLoaded(){
     // bouton "Voir PLU" inopérant (aucun changement visuel au clic).
     plzMaterialNormal = polyParts[0].material || null;
     plzMaterialPLU = findMaterialByName(siteRoot, 'PLU') || plzMaterialNormal;
+    if(plzMaterialPLU === plzMaterialNormal){
+      console.warn('[Place de Milan] Matériau "PLU" introuvable ou identique au matériau normal : le bouton "Voir PLU" n\'aura aucun effet visuel tant que ce n\'est pas corrigé.');
+    }
     applyPLUView(showingPLU);
     buildZone = computeBuildZoneFromParts(polyParts);
     updateBuildZoneVisual();
@@ -4264,9 +4272,10 @@ function isLikelyBrokenShader(m){
   const c = m.color;
   return c.r<0.04 && c.g<0.04 && c.b<0.04; // noir/quasi-noir sans texture = shader procédural perdu à l'export
 }
-function fixProceduralMaterials(){
+function fixProceduralMaterials(root){
+  root = root || siteRoot;
   const seen = new Map(); // uuid -> matériau de remplacement (ou null si inchangé)
-  siteRoot.traverse(o=>{
+  root.traverse(o=>{
     if(!o.isMesh || !o.material) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     const nextMats = mats.map(m=>{
@@ -8638,13 +8647,34 @@ const pedestrianMat = new THREE.MeshStandardMaterial({ color:ROUTE_TYPES.pieton.
 
 function findMaterialByName(root, name){
   if(!root) return null;
-  let found = null;
+  // Recherche en 3 passes de plus en plus tolérantes : le nom exact d'un
+  // matériau peut légèrement changer d'un export Blender à l'autre (casse,
+  // suffixe ".001" ajouté par Blender en cas de doublon, espace parasite...).
+  // Une correspondance stricte silencieuse faisait retomber le code sur un
+  // matériau de repli sans prévenir (ex. bouton "Voir PLU" resté inopérant
+  // après un nouvel export .glb).
+  let exact = null, ci = null, partial = null;
+  const target = name.toLowerCase().trim();
+  const allNames = [];
   root.traverse(o=>{
-    if(found || !o.isMesh) return;
+    if(!o.isMesh) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
-    const m = mats.find(mm=>mm && mm.name===name);
-    if(m) found = m;
+    mats.forEach(mm=>{
+      if(!mm) return;
+      allNames.push(mm.name);
+      if(exact) return;
+      if(mm.name===name) exact = mm;
+      else {
+        const n = (mm.name||'').toLowerCase().trim();
+        if(!ci && n===target) ci = mm;
+        else if(!partial && n.includes(target)) partial = mm;
+      }
+    });
   });
+  const found = exact || ci || partial;
+  if(!found){
+    console.warn(`[Place de Milan] Matériau "${name}" introuvable dans le .glb. Matériaux présents :`, [...new Set(allNames)].join(', '));
+  }
   return found;
 }
 function applyVehicleLightStateTrainExtras(on){
