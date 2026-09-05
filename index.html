@@ -1846,15 +1846,13 @@ window.addEventListener('keydown', (ev)=>{
 window.addEventListener('keyup', (ev)=>{ keysDown.delete(ev.code); });
 window.addEventListener('blur', ()=> keysDown.clear());
 
-function updateOrbitKeyboardNav(dt){
-  if(keysDown.size===0) return;
-  if(isTypingInInput()) return;
-  if(!controls.enabled) return; // laisse la main aux outils exclusifs (dessin, gazon, sélection…)
-  const speedMul = camSpeedMultiplier();
+// Rotation aux flèches, équivalente au clic-gauche-glisser des OrbitControls
+// (orbite autour de controls.target) — partagée entre la navigation "classique"
+// (updateOrbitKeyboardNav) et la Vue Globale (updateGlobalViewKeyboardPan), qui
+// utilisent toutes les deux les vraies OrbitControls en dessous.
+function applyOrbitArrowRotation(dt, speedMul){
   const offset = camera.position.clone().sub(controls.target);
   const radius = offset.length() || 1;
-
-  // Rotation (flèches) : orbite autour de la cible — équivalent clic-gauche-glisser.
   let theta = Math.atan2(offset.x, offset.z);
   let phi = Math.acos(THREE.MathUtils.clamp(offset.y/radius, -1, 1));
   let rotated = false;
@@ -1872,6 +1870,20 @@ function updateOrbitKeyboardNav(dt){
     );
     camera.position.copy(controls.target).add(newOffset);
   }
+}
+function updateOrbitKeyboardNav(dt){
+  if(keysDown.size===0) return;
+  if(isTypingInInput()) return;
+  if(!controls.enabled) return; // laisse la main aux outils exclusifs (dessin, gazon, sélection…)
+  const speedMul = camSpeedMultiplier();
+
+  // Rotation (flèches) : orbite autour de la cible — équivalent clic-gauche-glisser.
+  // Factorisée dans applyOrbitArrowRotation() pour être réutilisée telle quelle
+  // par la Vue Globale (voir updateGlobalViewKeyboardPan).
+  applyOrbitArrowRotation(dt, speedMul);
+
+  const offset = camera.position.clone().sub(controls.target);
+  const radius = offset.length() || 1;
 
   // Déplacement (WASD) : translate cible + caméra dans le plan horizontal de vue — équivalent clic-droit-glisser.
   const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
@@ -2040,6 +2052,76 @@ btnPedestrianClose.addEventListener('click', exitPedestrianMode);
 window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && pedestrianModeActive) exitPedestrianMode(); });
 
 /* ------------------------------------------------------------
+   BROUILLARD "HAUTEUR" (Vue Globale uniquement)
+   ------------------------------------------------------------
+   Le THREE.Fog standard est purement fonction de la distance à la caméra :
+   near/far ne permettent ni un léger voile garanti de près, ni un renfort
+   près du sol qui s'estompe en hauteur. On patch donc le chunk de fog des
+   shaders (via onBeforeCompile, appliqué à tous les matériaux via
+   applyHeightFog()) pour ajouter, uniquement quand heightFogEnabled=1 :
+     - un plancher heightFogMinFactor : le brouillard ne retombe jamais à 0%,
+       même juste devant la caméra ;
+     - un renfort heightFogGroundBoost près du sol (Y proche de
+       heightFogGroundY), qui s'estompe progressivement sur heightFogFalloff
+       mètres de hauteur.
+   Hors Vue Globale, heightFogEnabled=0 : le rendu du mode rue/piéton est
+   inchangé (brouillard purement linéaire comme avant).
+   ------------------------------------------------------------ */
+const heightFogUniforms = {
+  heightFogEnabled:     { value: 0 },
+  heightFogGroundY:     { value: 0 },
+  heightFogFalloff:     { value: 1/90 },  // inverse de la hauteur (m) sur laquelle le renfort sol s'estompe
+  heightFogGroundBoost: { value: 1.8 },   // multiplicateur du facteur de brouillard au niveau du sol
+  heightFogMinFactor:   { value: 0.08 },  // brouillard plancher (0-1), garanti même à distance ~0
+};
+const heightFogPatchedMats = new WeakSet(); // évite de repatcher un matériau déjà traité
+function injectHeightFog(shader){
+  Object.assign(shader.uniforms, heightFogUniforms);
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <fog_pars_vertex>', '#include <fog_pars_vertex>\nvarying float vFogWorldY;')
+    .replace('#include <fog_vertex>', '#include <fog_vertex>\n\tvFogWorldY = ( modelMatrix * vec4( transformed, 1.0 ) ).y;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <fog_pars_fragment>',
+      `#include <fog_pars_fragment>
+varying float vFogWorldY;
+uniform float heightFogEnabled;
+uniform float heightFogGroundY;
+uniform float heightFogFalloff;
+uniform float heightFogGroundBoost;
+uniform float heightFogMinFactor;`)
+    .replace('#include <fog_fragment>',
+      `#ifdef USE_FOG
+	#ifdef FOG_EXP2
+		float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+	#else
+		float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+	#endif
+	if ( heightFogEnabled > 0.5 ) {
+		fogFactor = max( fogFactor, heightFogMinFactor );
+		float hAboveGround = max( 0.0, vFogWorldY - heightFogGroundY );
+		float heightMul = mix( heightFogGroundBoost, 1.0, clamp( hAboveGround * heightFogFalloff, 0.0, 1.0 ) );
+		fogFactor = clamp( fogFactor * heightMul, 0.0, 1.0 );
+	}
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+#endif`);
+}
+// Applique le patch à tous les matériaux (avec fog) d'un sous-arbre — idempotent,
+// donc peu coûteux à rappeler (ex. à chaque entrée en Vue Globale, pour couvrir
+// d'éventuels nouveaux bâtiments/maquette globale chargés entre-temps).
+function applyHeightFog(root){
+  root.traverse(o=>{
+    if(!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach(m=>{
+      if(!m || !m.fog || heightFogPatchedMats.has(m)) return;
+      heightFogPatchedMats.add(m);
+      m.onBeforeCompile = injectHeightFog;
+      m.needsUpdate = true;
+    });
+  });
+}
+
+/* ------------------------------------------------------------
    MODE "VUE GLOBALE" — charge global.glb (maquette élargie qui vient se
    greffer autour de place_de_milan.glb) au premier appel, puis bascule sur la
    même caméra libre que le mode piéton (voir freeFlyActive() plus haut),
@@ -2155,6 +2237,13 @@ function activateGlobalView(){
   const camDist = camera.position.distanceTo(controls.target);
   scene.fog.near = Math.max(40, camDist*0.6);
   scene.fog.far = Math.min(camera.far*0.95, camDist*3.2);
+  // Brouillard "hauteur" (voile garanti de près + renfort au sol) : voir
+  // applyHeightFog()/injectHeightFog() plus haut. On repatch au cas où de
+  // nouveaux matériaux (maquette globale, bâtiments dessinés) seraient
+  // apparus depuis la dernière entrée en Vue Globale.
+  heightFogUniforms.heightFogGroundY.value = isFinite(globalFloorY) ? globalFloorY : 0;
+  applyHeightFog(scene);
+  heightFogUniforms.heightFogEnabled.value = 1;
   pedestrianMoveSpeed = radius * 0.32; // vitesse du déplacement clavier (voir updateGlobalViewKeyboardPan)
   document.body.classList.add('global-view-mode');
   btnGlobalView.classList.add('active');
@@ -2169,6 +2258,7 @@ function activateGlobalView(){
 function exitGlobalView(){
   if(!globalViewActive) return;
   globalViewActive = false;
+  heightFogUniforms.heightFogEnabled.value = 0; // retour au brouillard linéaire classique
   document.body.classList.remove('global-view-mode');
   btnGlobalView.classList.remove('active');
   globalViewCloseBar.classList.remove('show');
@@ -2223,19 +2313,23 @@ window.addEventListener('mousemove', (ev)=>{
   if(ev.clientY <= 6) globalViewCloseBar.classList.add('show');
   else if(ev.clientY > 90) globalViewCloseBar.classList.remove('show');
 });
-// Déplacement clavier (WASD/flèches/T-B, MAJ pour accélérer, CTRL pour
-// ralentir) de la Vue Globale : déplace ENSEMBLE la caméra et la cible
-// d'orbite (donc sans toucher à l'angle de vue choisi à la souris), le long
-// des axes horizontaux "vers la cible"/"latéral" — contrairement au mode
-// piéton, la rotation reste entièrement gérée par les vraies OrbitControls
-// (clic gauche glissé = orbiter, molette = zoom natif, clic droit = pan).
+// Navigation clavier de la Vue Globale (MAJ pour accélérer, CTRL pour
+// ralentir) : les flèches orbitent autour de la cible, exactement comme le
+// clic gauche glissé des OrbitControls (voir applyOrbitArrowRotation) ; WASD/T-B
+// déplacent ENSEMBLE la caméra et la cible d'orbite (donc sans toucher à
+// l'angle de vue), le long des axes horizontaux "vers la cible"/"latéral" —
+// la molette reste le zoom natif, le clic droit le pan natif.
 function updateGlobalViewKeyboardPan(dt){
   if(!globalViewActive || isTypingInInput()) return;
+  // Flèches : orbite autour de la cible, exactement comme le clic gauche glissé
+  // (voir applyOrbitArrowRotation, partagée avec le mode classique). Le
+  // déplacement clavier (WASD/T/B, plus bas) reste géré séparément.
+  applyOrbitArrowRotation(dt, camSpeedMultiplier());
   let moveX = 0, moveZ = 0, moveY = 0;
-  if(keysDown.has('KeyW') || keysDown.has('ArrowUp')) moveZ -= 1;
-  if(keysDown.has('KeyS') || keysDown.has('ArrowDown')) moveZ += 1;
-  if(keysDown.has('KeyA') || keysDown.has('ArrowLeft')) moveX -= 1;
-  if(keysDown.has('KeyD') || keysDown.has('ArrowRight')) moveX += 1;
+  if(keysDown.has('KeyW')) moveZ -= 1;
+  if(keysDown.has('KeyS')) moveZ += 1;
+  if(keysDown.has('KeyA')) moveX -= 1;
+  if(keysDown.has('KeyD')) moveX += 1;
   if(keysDown.has('KeyT')) moveY += 1;
   if(keysDown.has('KeyB')) moveY -= 1;
   if(!moveX && !moveZ && !moveY) return;
