@@ -2161,6 +2161,11 @@ function loadGlobalGlbIfNeeded(cb){
     // de Blender au lieu de la recoloration appliquée à place_de_milan.glb —
     // d'où la différence de teinte entre les deux maquettes.
     fixProceduralMaterials(globalRoot);
+    // Contrairement à place_de_milan.glb (voir hallMesh/quartierGroup plus
+    // bas), les meshes de global.glb ne reçoivent castShadow/receiveShadow
+    // nulle part ailleurs — par défaut Three.js les met à false au chargement,
+    // d'où l'absence totale d'ombres portées en mode Vue Globale.
+    gltf.scene.traverse(o=>{ if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
     const box = new THREE.Box3().setFromObject(globalRoot);
     if(!box.isEmpty()) globalFloorY = box.min.y;
     globalGlbLoaded = true;
