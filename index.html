@@ -132,7 +132,7 @@
   }
   #global-view-close-bar{
     position:fixed;top:-64px;left:50%;transform:translateX(-50%);
-    z-index:600;pointer-events:none;transition:top .22s ease;
+    z-index:700;pointer-events:none;transition:top .22s ease;
   }
   #global-view-close-bar.show{ top:0; pointer-events:auto; }
   #btn-global-view-close{
@@ -150,9 +150,12 @@
   /* Barre de 5 boutons (Maquette 3D + 4 orientations), visible uniquement en
      Vue Globale. "Maquette 3D" correspond au mode Vue Globale existant
      (caméra libre) ; les 4 autres basculent sur une caméra orthographique
-     alignée sur un axe cardinal, façon dessin technique de coupe/élévation. */
+     alignée sur un axe cardinal, façon dessin technique de coupe/élévation.
+     Positionnée plus bas que le haut de l'écran (top:68px, z-index sous
+     celui de #global-view-close-bar) pour ne jamais recouvrir le bouton
+     "Quitter la Vue Globale", qui glisse depuis tout en haut au survol. */
   #skyline-mode-bar{
-    display:none;position:fixed;top:16px;left:50%;transform:translateX(-50%);
+    display:none;position:fixed;top:68px;left:50%;transform:translateX(-50%);
     z-index:610;gap:4px;padding:5px;border-radius:10px;
     background:rgba(15,22,28,.9);border:1px solid var(--accent);
     box-shadow:0 6px 18px rgba(0,0,0,.5);
@@ -2498,48 +2501,82 @@ function collectSkylineMeshes(){
 // matrice monde figée), sans matériau visuel, sans lumière, sans brouillard.
 // Ça permet de rendre UNIQUEMENT la profondeur de la maquette+bâtiments,
 // indépendamment de tout ce qui vit par ailleurs dans `scene`.
+//
+// IMPORTANT : le renderer principal utilise logarithmicDepthBuffer:true
+// (voir sa création plus haut), ce qui recode le depth buffer standard de
+// façon non-linéaire pour les matériaux qui incluent les chunks GLSL
+// logdepthbuf_*. Lire ce depth buffer directement (comme dans une première
+// version de ce code) provoquait des artefacts de précision par endroits —
+// petits segments manquants, pointillés parasites sur certains bâtiments
+// (visible en Skyline Est/Ouest sur des volumes précis). Pour l'éviter
+// complètement, on calcule et on écrit NOUS-MÊMES une distance caméra
+// linéaire (en mètres réels) dans une texture couleur dédiée, via un
+// ShaderMaterial minimal qui n'inclut PAS ces chunks — le test de
+// profondeur normal (gl_Position standard, caméra orthographique = linéaire
+// par nature) reste utilisé pour l'occultation entre volumes, mais la
+// VALEUR qu'on lit ensuite pour détecter les contours est un nombre de
+// mètres propre, stable, sans codage logarithmique ni quantification.
 const skylineSilhouetteScene = new THREE.Scene();
-const skylineSilhouetteMaterial = new THREE.MeshBasicMaterial();
+const skylineViewZMaterial = new THREE.ShaderMaterial({
+  vertexShader:`
+    varying float vViewZ;
+    void main(){
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vViewZ = -mv.z; // distance caméra->fragment le long de l'axe de vue, en mètres
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader:`
+    varying float vViewZ;
+    void main(){ gl_FragColor = vec4(vViewZ, vViewZ, vViewZ, 1.0); }
+  `,
+});
 function buildSkylineSilhouette(){
   while(skylineSilhouetteScene.children.length) skylineSilhouetteScene.remove(skylineSilhouetteScene.children[0]);
   collectSkylineMeshes().forEach(o=>{
     o.updateWorldMatrix(true, false);
-    const m = new THREE.Mesh(o.geometry, skylineSilhouetteMaterial);
+    const m = new THREE.Mesh(o.geometry, skylineViewZMaterial);
     m.matrixAutoUpdate = false;
     m.matrix.copy(o.matrixWorld);
     skylineSilhouetteScene.add(m);
   });
 }
-// Cible de rendu profondeur + shader plein-écran de détection de contours.
-let skylineDepthTarget = null;
-function ensureSkylineDepthTarget(w, h){
-  if(skylineDepthTarget && skylineDepthTarget.width===w && skylineDepthTarget.height===h) return;
-  if(skylineDepthTarget) skylineDepthTarget.dispose();
-  const dt = new THREE.DepthTexture(w, h);
-  dt.type = THREE.UnsignedIntType;
-  skylineDepthTarget = new THREE.WebGLRenderTarget(w, h, { depthTexture: dt, depthBuffer:true, stencilBuffer:false });
+// Cible de rendu couleur (distance en mètres, voir plus haut) + shader
+// plein-écran de détection de contours par différence de distance.
+let skylineViewZTarget = null;
+const SKYLINE_EMPTY_VIEWZ = 20000; // valeur "pas de matière ici" (ciel) — sous le plafond du HalfFloatType (~65504) tout en restant très éloignée de toute distance réelle (quelques centaines de mètres max)
+function ensureSkylineViewZTarget(w, h){
+  if(skylineViewZTarget && skylineViewZTarget.width===w && skylineViewZTarget.height===h) return;
+  if(skylineViewZTarget) skylineViewZTarget.dispose();
+  skylineViewZTarget = new THREE.WebGLRenderTarget(w, h, {
+    type: THREE.HalfFloatType, depthBuffer:true, stencilBuffer:false,
+  });
 }
 const skylineEdgeMaterial = new THREE.ShaderMaterial({
-  uniforms:{ tDepth:{value:null}, texel:{value:new THREE.Vector2()}, edgeColor:{value:SKYLINE_LINE_COLOR} },
+  uniforms:{ tViewZ:{value:null}, texel:{value:new THREE.Vector2()}, edgeColor:{value:SKYLINE_LINE_COLOR} },
   vertexShader:`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
   fragmentShader:`
-    uniform sampler2D tDepth; uniform vec2 texel; uniform vec3 edgeColor;
+    uniform sampler2D tViewZ; uniform vec2 texel; uniform vec3 edgeColor;
     varying vec2 vUv;
-    // Détection de contour à partir de la profondeur, échantillonnée sur un
-    // rayon de 2 texels (plutôt que 1) : ça donne un trait d'environ 2-3 px
-    // de large, bien plus lisible qu'un contour d'un seul pixel une fois
-    // affiché à l'écran.
-    float sampleDepth(vec2 offset){ return texture2D(tDepth, vUv + offset*texel).x; }
+    // Détection de contour à partir de la distance réelle (en mètres),
+    // échantillonnée sur un rayon de 2 texels (plutôt que 1) : ça donne un
+    // trait d'environ 2-3 px de large, bien plus lisible qu'un contour d'un
+    // seul pixel une fois affiché à l'écran.
+    float sampleZ(vec2 offset){ return texture2D(tViewZ, vUv + offset*texel).r; }
     void main(){
-      float d = sampleDepth(vec2(0.0));
+      float d = sampleZ(vec2(0.0));
       float diff = 0.0;
-      diff += abs(d - sampleDepth(vec2( 2.0,  0.0)));
-      diff += abs(d - sampleDepth(vec2(-2.0,  0.0)));
-      diff += abs(d - sampleDepth(vec2( 0.0,  2.0)));
-      diff += abs(d - sampleDepth(vec2( 0.0, -2.0)));
-      diff += abs(d - sampleDepth(vec2( 1.0,  1.0)));
-      diff += abs(d - sampleDepth(vec2(-1.0, -1.0)));
-      float edge = smoothstep(0.0005, 0.0035, diff);
+      diff += abs(d - sampleZ(vec2( 2.0,  0.0)));
+      diff += abs(d - sampleZ(vec2(-2.0,  0.0)));
+      diff += abs(d - sampleZ(vec2( 0.0,  2.0)));
+      diff += abs(d - sampleZ(vec2( 0.0, -2.0)));
+      diff += abs(d - sampleZ(vec2( 1.0,  1.0)));
+      diff += abs(d - sampleZ(vec2(-1.0, -1.0)));
+      // Seuils en MÈTRES : un écart de moins de 15 cm entre pixels voisins
+      // n'est jamais un vrai contour (juste du bruit numérique), un écart
+      // de plus d'1,2 m l'est toujours (arête réelle entre deux volumes ou
+      // avec le ciel).
+      float edge = smoothstep(0.15, 1.2, diff);
       if(edge < 0.03) discard;
       gl_FragColor = vec4(edgeColor, edge);
     }
@@ -2554,18 +2591,21 @@ skylineFsQuadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), skylineEdgeM
 // l'export PNG, pour un résultat strictement identique.
 function renderSkylineView(){
   const w = renderer.domElement.width, h = renderer.domElement.height;
-  ensureSkylineDepthTarget(w, h);
+  ensureSkylineViewZTarget(w, h);
   const prevTarget = renderer.getRenderTarget();
   const prevClear = new THREE.Color(); renderer.getClearColor(prevClear);
   const prevAlpha = renderer.getClearAlpha();
-  renderer.setRenderTarget(skylineDepthTarget);
-  renderer.setClearColor(0x000000, 1);
+  renderer.setRenderTarget(skylineViewZTarget);
+  // Le "ciel" (aucune géométrie) doit avoir une distance très éloignée de
+  // toute distance réelle, pour que le contour extérieur de la maquette
+  // ressorte net face au vide, exactement comme entre deux volumes.
+  renderer.setClearColor(new THREE.Color(SKYLINE_EMPTY_VIEWZ, SKYLINE_EMPTY_VIEWZ, SKYLINE_EMPTY_VIEWZ), 1);
   renderer.clear(true, true, false);
   renderer.render(skylineSilhouetteScene, orthoCamera);
   renderer.setRenderTarget(null);
   renderer.setClearColor(SKYLINE_BG_COLOR, 1);
   renderer.clear(true, true, false);
-  skylineEdgeMaterial.uniforms.tDepth.value = skylineDepthTarget.depthTexture;
+  skylineEdgeMaterial.uniforms.tViewZ.value = skylineViewZTarget.texture;
   skylineEdgeMaterial.uniforms.texel.value.set(1/w, 1/h);
   renderer.render(skylineFsQuadScene, skylineFsQuadCamera);
   renderer.setRenderTarget(prevTarget);
