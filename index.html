@@ -2502,112 +2502,144 @@ function collectSkylineMeshes(){
 // Ça permet de rendre UNIQUEMENT la profondeur de la maquette+bâtiments,
 // indépendamment de tout ce qui vit par ailleurs dans `scene`.
 //
-// IMPORTANT : le renderer principal utilise logarithmicDepthBuffer:true
-// (voir sa création plus haut), ce qui recode le depth buffer standard de
-// façon non-linéaire pour les matériaux qui incluent les chunks GLSL
-// logdepthbuf_*. Lire ce depth buffer directement (comme dans une première
-// version de ce code) provoquait des artefacts de précision par endroits —
-// petits segments manquants, pointillés parasites sur certains bâtiments
-// (visible en Skyline Est/Ouest sur des volumes précis). Pour l'éviter
-// complètement, on calcule et on écrit NOUS-MÊMES une distance caméra
-// linéaire (en mètres réels) dans une texture couleur dédiée, via un
-// ShaderMaterial minimal qui n'inclut PAS ces chunks — le test de
-// profondeur normal (gl_Position standard, caméra orthographique = linéaire
-// par nature) reste utilisé pour l'occultation entre volumes, mais la
-// VALEUR qu'on lit ensuite pour détecter les contours est un nombre de
-// mètres propre, stable, sans codage logarithmique ni quantification.
+// NOTE : une variante précédente calculait une distance caméra "maison" en
+// mètres pour éviter le codage logarithmique du depth buffer principal.
+// Résultat : elle n'a pas résolu l'artefact (toujours localisé aux mêmes
+// bâtiments/angles → ce n'est donc PAS un problème de précision de
+// profondeur, mais très probablement deux surfaces quasi coïncidentes dans
+// le modèle 3D lui-même à cet endroit précis, ex. un toit et son capuchon)
+// et a rendu le contour plus "bruyant" ailleurs (seuils en mètres bien plus
+// sensibles aux petits reliefs de façade). On revient donc à la texture de
+// profondeur standard (fidèle au rendu validé), on ajoute un léger
+// `polygonOffset` pour limiter le z-fighting entre surfaces coïncidentes,
+// et surtout on ajoute une PASSE DE NETTOYAGE dédiée (voir plus bas) qui
+// élimine spécifiquement les petits amas de points isolés sans toucher aux
+// vraies arêtes (qui, elles, forment toujours une ligne continue).
 const skylineSilhouetteScene = new THREE.Scene();
-const skylineViewZMaterial = new THREE.ShaderMaterial({
-  vertexShader:`
-    varying float vViewZ;
-    void main(){
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      vViewZ = -mv.z; // distance caméra->fragment le long de l'axe de vue, en mètres
-      gl_Position = projectionMatrix * mv;
-    }
-  `,
-  fragmentShader:`
-    varying float vViewZ;
-    void main(){ gl_FragColor = vec4(vViewZ, vViewZ, vViewZ, 1.0); }
-  `,
+const skylineSilhouetteMaterial = new THREE.MeshBasicMaterial({
+  polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1,
 });
 function buildSkylineSilhouette(){
   while(skylineSilhouetteScene.children.length) skylineSilhouetteScene.remove(skylineSilhouetteScene.children[0]);
   collectSkylineMeshes().forEach(o=>{
     o.updateWorldMatrix(true, false);
-    const m = new THREE.Mesh(o.geometry, skylineViewZMaterial);
+    const m = new THREE.Mesh(o.geometry, skylineSilhouetteMaterial);
     m.matrixAutoUpdate = false;
     m.matrix.copy(o.matrixWorld);
     skylineSilhouetteScene.add(m);
   });
 }
-// Cible de rendu couleur (distance en mètres, voir plus haut) + shader
-// plein-écran de détection de contours par différence de distance.
-let skylineViewZTarget = null;
-const SKYLINE_EMPTY_VIEWZ = 20000; // valeur "pas de matière ici" (ciel) — sous le plafond du HalfFloatType (~65504) tout en restant très éloignée de toute distance réelle (quelques centaines de mètres max)
-function ensureSkylineViewZTarget(w, h){
-  if(skylineViewZTarget && skylineViewZTarget.width===w && skylineViewZTarget.height===h) return;
-  if(skylineViewZTarget) skylineViewZTarget.dispose();
-  skylineViewZTarget = new THREE.WebGLRenderTarget(w, h, {
-    type: THREE.HalfFloatType, depthBuffer:true, stencilBuffer:false,
-  });
+// Cible de rendu profondeur (comme dans la version validée) + pipeline en
+// DEUX passes plein-écran : (1) détection de contour brute par différence de
+// profondeur, (2) nettoyage/érosion + colorisation. Séparer les deux permet
+// à la passe 2 de "voir" le voisinage de chaque pixel de contour pour juger
+// s'il fait partie d'une vraie ligne continue ou d'un artefact isolé.
+let skylineDepthTarget = null;
+function ensureSkylineDepthTarget(w, h){
+  if(skylineDepthTarget && skylineDepthTarget.width===w && skylineDepthTarget.height===h) return;
+  if(skylineDepthTarget) skylineDepthTarget.dispose();
+  const dt = new THREE.DepthTexture(w, h);
+  dt.type = THREE.UnsignedIntType;
+  skylineDepthTarget = new THREE.WebGLRenderTarget(w, h, { depthTexture: dt, depthBuffer:true, stencilBuffer:false });
 }
-const skylineEdgeMaterial = new THREE.ShaderMaterial({
-  uniforms:{ tViewZ:{value:null}, texel:{value:new THREE.Vector2()}, edgeColor:{value:SKYLINE_LINE_COLOR} },
-  vertexShader:`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+let skylineMaskTarget = null;
+function ensureSkylineMaskTarget(w, h){
+  if(skylineMaskTarget && skylineMaskTarget.width===w && skylineMaskTarget.height===h) return;
+  if(skylineMaskTarget) skylineMaskTarget.dispose();
+  skylineMaskTarget = new THREE.WebGLRenderTarget(w, h, { depthBuffer:false, stencilBuffer:false });
+}
+const SKYLINE_QUAD_VS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+// Passe 1 — masque de contour brut (niveau de gris, aucune couleur).
+const skylineEdgeMaskMaterial = new THREE.ShaderMaterial({
+  uniforms:{ tDepth:{value:null}, texel:{value:new THREE.Vector2()} },
+  vertexShader: SKYLINE_QUAD_VS,
   fragmentShader:`
-    uniform sampler2D tViewZ; uniform vec2 texel; uniform vec3 edgeColor;
+    uniform sampler2D tDepth; uniform vec2 texel;
     varying vec2 vUv;
-    // Détection de contour à partir de la distance réelle (en mètres),
-    // échantillonnée sur un rayon de 2 texels (plutôt que 1) : ça donne un
-    // trait d'environ 2-3 px de large, bien plus lisible qu'un contour d'un
-    // seul pixel une fois affiché à l'écran.
-    float sampleZ(vec2 offset){ return texture2D(tViewZ, vUv + offset*texel).r; }
+    float sampleDepth(vec2 offset){ return texture2D(tDepth, vUv + offset*texel).x; }
     void main(){
-      float d = sampleZ(vec2(0.0));
+      float d = sampleDepth(vec2(0.0));
       float diff = 0.0;
-      diff += abs(d - sampleZ(vec2( 2.0,  0.0)));
-      diff += abs(d - sampleZ(vec2(-2.0,  0.0)));
-      diff += abs(d - sampleZ(vec2( 0.0,  2.0)));
-      diff += abs(d - sampleZ(vec2( 0.0, -2.0)));
-      diff += abs(d - sampleZ(vec2( 1.0,  1.0)));
-      diff += abs(d - sampleZ(vec2(-1.0, -1.0)));
-      // Seuils en MÈTRES : un écart de moins de 15 cm entre pixels voisins
-      // n'est jamais un vrai contour (juste du bruit numérique), un écart
-      // de plus d'1,2 m l'est toujours (arête réelle entre deux volumes ou
-      // avec le ciel).
-      float edge = smoothstep(0.15, 1.2, diff);
-      if(edge < 0.03) discard;
-      gl_FragColor = vec4(edgeColor, edge);
+      diff += abs(d - sampleDepth(vec2( 1.0,  0.0)));
+      diff += abs(d - sampleDepth(vec2(-1.0,  0.0)));
+      diff += abs(d - sampleDepth(vec2( 0.0,  1.0)));
+      diff += abs(d - sampleDepth(vec2( 0.0, -1.0)));
+      float edge = smoothstep(0.0006, 0.0022, diff);
+      gl_FragColor = vec4(edge, edge, edge, 1.0);
+    }
+  `,
+  depthTest:false, depthWrite:false,
+});
+// Passe 2 — nettoyage (érosion) + colorisation finale. Un vrai contour
+// architectural est une LIGNE CONTINUE : chacun de ses pixels a plusieurs
+// voisins également marqués dans le masque brut. Un artefact isolé
+// (poussière ponctuelle due à une géométrie quasi coïncidente) n'a presque
+// aucun voisin marqué et se fait éliminer ici, sans qu'on touche à
+// l'épaisseur ni à la couleur des vraies arêtes.
+const skylineDenoiseMaterial = new THREE.ShaderMaterial({
+  uniforms:{ tMask:{value:null}, texel:{value:new THREE.Vector2()}, edgeColor:{value:SKYLINE_LINE_COLOR} },
+  vertexShader: SKYLINE_QUAD_VS,
+  fragmentShader:`
+    uniform sampler2D tMask; uniform vec2 texel; uniform vec3 edgeColor;
+    varying vec2 vUv;
+    float m(vec2 offset){ return texture2D(tMask, vUv + offset*texel).r; }
+    void main(){
+      float center = m(vec2(0.0));
+      if(center < 0.35) discard;
+      float count = 0.0;
+      count += step(0.35, m(vec2(-1.0,-1.0)));
+      count += step(0.35, m(vec2( 0.0,-1.0)));
+      count += step(0.35, m(vec2( 1.0,-1.0)));
+      count += step(0.35, m(vec2(-1.0, 0.0)));
+      count += step(0.35, m(vec2( 1.0, 0.0)));
+      count += step(0.35, m(vec2(-1.0, 1.0)));
+      count += step(0.35, m(vec2( 0.0, 1.0)));
+      count += step(0.35, m(vec2( 1.0, 1.0)));
+      if(count < 3.0) discard; // isolé : probablement un artefact, on l'écarte
+      gl_FragColor = vec4(edgeColor, center);
     }
   `,
   transparent:true, depthTest:false, depthWrite:false,
 });
 const skylineFsQuadScene = new THREE.Scene();
 const skylineFsQuadCamera = new THREE.Camera();
-skylineFsQuadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), skylineEdgeMaterial));
+const skylineFsQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), skylineEdgeMaskMaterial);
+skylineFsQuadScene.add(skylineFsQuad);
 // Effectue le rendu Skyline complet (silhouette contour sur fond noir) dans
 // le canvas WebGL visible — utilisé à la fois par la boucle animate() et par
 // l'export PNG, pour un résultat strictement identique.
 function renderSkylineView(){
   const w = renderer.domElement.width, h = renderer.domElement.height;
-  ensureSkylineViewZTarget(w, h);
+  ensureSkylineDepthTarget(w, h);
+  ensureSkylineMaskTarget(w, h);
   const prevTarget = renderer.getRenderTarget();
   const prevClear = new THREE.Color(); renderer.getClearColor(prevClear);
   const prevAlpha = renderer.getClearAlpha();
-  renderer.setRenderTarget(skylineViewZTarget);
-  // Le "ciel" (aucune géométrie) doit avoir une distance très éloignée de
-  // toute distance réelle, pour que le contour extérieur de la maquette
-  // ressorte net face au vide, exactement comme entre deux volumes.
-  renderer.setClearColor(new THREE.Color(SKYLINE_EMPTY_VIEWZ, SKYLINE_EMPTY_VIEWZ, SKYLINE_EMPTY_VIEWZ), 1);
+
+  // Passe 0 : profondeur brute de la maquette (caméra ortho, silhouette isolée).
+  renderer.setRenderTarget(skylineDepthTarget);
+  renderer.setClearColor(0x000000, 1);
   renderer.clear(true, true, false);
   renderer.render(skylineSilhouetteScene, orthoCamera);
+
+  // Passe 1 : masque de contour brut, avant nettoyage.
+  skylineEdgeMaskMaterial.uniforms.tDepth.value = skylineDepthTarget.depthTexture;
+  skylineEdgeMaskMaterial.uniforms.texel.value.set(1/w, 1/h);
+  skylineFsQuad.material = skylineEdgeMaskMaterial;
+  renderer.setRenderTarget(skylineMaskTarget);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear(true, true, false);
+  renderer.render(skylineFsQuadScene, skylineFsQuadCamera);
+
+  // Passe 2 : nettoyage + colorisation, composée sur le fond noir final.
   renderer.setRenderTarget(null);
   renderer.setClearColor(SKYLINE_BG_COLOR, 1);
   renderer.clear(true, true, false);
-  skylineEdgeMaterial.uniforms.tViewZ.value = skylineViewZTarget.texture;
-  skylineEdgeMaterial.uniforms.texel.value.set(1/w, 1/h);
+  skylineDenoiseMaterial.uniforms.tMask.value = skylineMaskTarget.texture;
+  skylineDenoiseMaterial.uniforms.texel.value.set(1/w, 1/h);
+  skylineFsQuad.material = skylineDenoiseMaterial;
   renderer.render(skylineFsQuadScene, skylineFsQuadCamera);
+
   renderer.setRenderTarget(prevTarget);
   renderer.setClearColor(prevClear, prevAlpha);
 }
