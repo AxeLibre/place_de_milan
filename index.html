@@ -2503,20 +2503,28 @@ function collectSkylineMeshes(){
 // indépendamment de tout ce qui vit par ailleurs dans `scene`.
 //
 // NOTE : une variante précédente calculait une distance caméra "maison" en
-// mètres pour éviter le codage logarithmique du depth buffer principal.
-// Résultat : elle n'a pas résolu l'artefact (toujours localisé aux mêmes
-// bâtiments/angles → ce n'est donc PAS un problème de précision de
-// profondeur, mais très probablement deux surfaces quasi coïncidentes dans
-// le modèle 3D lui-même à cet endroit précis, ex. un toit et son capuchon)
-// et a rendu le contour plus "bruyant" ailleurs (seuils en mètres bien plus
-// sensibles aux petits reliefs de façade). On revient donc à la texture de
-// profondeur standard (fidèle au rendu validé), on ajoute un léger
-// `polygonOffset` pour limiter le z-fighting entre surfaces coïncidentes,
-// et surtout on ajoute une PASSE DE NETTOYAGE dédiée (voir plus bas) qui
-// élimine spécifiquement les petits amas de points isolés sans toucher aux
-// vraies arêtes (qui, elles, forment toujours une ligne continue).
+// mètres pour éviter le codage logarithmique du depth buffer principal —
+// ça n'a rien changé (l'artefact restait localisé aux 2 mêmes tours), donc
+// ce n'était pas un problème de précision de profondeur.
+// LA VRAIE CAUSE (confirmée en comparant Skyline Est/Ouest sur les MÊMES
+// bâtiments) : ces 2 tours ont un capuchon de toit qui, vu d'un côté,
+// disparaît par endroits (trous → petits pointillés isolés en Est) et vu de
+// l'autre côté, laisse voir des faces obliques qui ne devraient pas être
+// visibles (triangle/diagonale parasite en Ouest). C'est la signature
+// classique d'un mesh à FACE UNIQUE (normales orientées dans un seul sens) :
+// vu depuis l'arrière, ses faces sont "culled" par défaut et n'écrivent
+// aucune profondeur → trous dans la silhouette côté Est ; vu de face, on
+// voit la vraie géométrie de la sous-face oblique du capuchon qui n'était
+// pas censée être visible de champ → artefact en Ouest.
+// Fix : on force le rendu en DOUBLE FACE (`side: DoubleSide`) pour la passe
+// de silhouette, afin que CHAQUE mesh écrive sa profondeur correctement
+// quel que soit l'angle de vue cardinal, plus un léger `polygonOffset` pour
+// limiter le z-fighting entre surfaces coïncidentes, et une PASSE DE
+// NETTOYAGE dédiée (voir plus bas) qui élimine les points isolés résiduels
+// sans toucher aux vraies arêtes (qui forment toujours une ligne continue).
 const skylineSilhouetteScene = new THREE.Scene();
 const skylineSilhouetteMaterial = new THREE.MeshBasicMaterial({
+  side: THREE.DoubleSide,
   polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1,
 });
 function buildSkylineSilhouette(){
