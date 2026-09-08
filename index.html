@@ -2445,22 +2445,27 @@ function updateGlobalViewKeyboardPan(dt){
 /* ------------------------------------------------------------
    SOUS-MODE "SKYLINE" DE LA VUE GLOBALE — 4 élévations orthogonales
    (Nord/Sud/Est/Ouest) façon dessin technique : la maquette (place_de_milan
-   + global.glb) et les nouveaux bâtiments dessinés sont projetés en caméra
-   orthographique strictement alignée sur l'axe cardinal choisi, rendus en
-   CONTOURS SEULEMENT (arêtes des volumes, aucune face pleine), avec une
-   graduation de hauteur en fond (traits tous les 10 m, plus épais tous les
-   50 m, valeurs affichées à gauche). Le Nord de la maquette est -Z (voir
-   orientCameraNorth plus haut) : "Skyline Nord" place la caméra au Nord
-   (-Z) de la scène et regarde vers le Sud (+Z), et ainsi de suite pour les
-   3 autres orientations, à 90° l'une de l'autre.
+   + global.glb) et les nouveaux bâtiments dessinés sont projetées en caméra
+   orthographique strictement alignée sur l'axe cardinal choisi.
+   RENDU : contour visible SEULEMENT (silhouette des masses + lignes de
+   recouvrement entre volumes à profondeurs différentes) — PAS le wireframe
+   de chaque arête de chaque mesh, qui serait illisible. Technique : on
+   rend la profondeur de la maquette dans une texture (caméra ortho =
+   profondeur linéaire), puis un filtre de détection de contours (Sobel sur
+   la profondeur) ne fait ressortir que les endroits où la profondeur "saute"
+   — c'est-à-dire exactement les limites visibles des volumes, comme dans un
+   vrai dessin d'élévation avec suppression des lignes cachées. Fond noir
+   uni, contour clair pour un contraste maximal, + graduation de hauteur
+   (traits tous les 10 m, plus épais tous les 50 m, valeurs à gauche).
+   Le Nord de la maquette est -Z (voir orientCameraNorth plus haut).
    ------------------------------------------------------------ */
 let skylineDirection = null; // null='Maquette 3D' (vue libre normale), sinon 'nord'|'sud'|'est'|'ouest'
 let skylineSavedState = null; // position/cible/contrôles avant la 1ère bascule en Skyline, pour retour exact
-const skylineEdgesGroup = new THREE.Group(); skylineEdgesGroup.name = 'skylineEdgesGroup'; skylineEdgesGroup.visible = false;
-scene.add(skylineEdgesGroup);
 const skylineRulerCanvas = document.getElementById('skyline-ruler-overlay');
 const skylineRulerCtx = skylineRulerCanvas.getContext('2d');
 const skylineModeBar = document.getElementById('skyline-mode-bar');
+const SKYLINE_BG_COLOR = new THREE.Color(0x05070a); // fond noir (légèrement teinté) du mode Skyline
+const SKYLINE_LINE_COLOR = new THREE.Color(0xf2f7fb); // contour clair, contraste maximal sur fond noir
 // Direction de vue (caméra -> cible) pour chaque bouton, exprimée dans le
 // repère Three.js de la maquette (Nord = -Z, voir plus haut).
 const SKYLINE_VIEW_DIRS = {
@@ -2488,35 +2493,97 @@ function collectSkylineMeshes(){
   });
   return meshes;
 }
-// (Re)construit le groupe d'arêtes utilisé par les vues Skyline, à partir de
-// l'état courant de la maquette (appelé à chaque entrée en vue Skyline, pour
-// refléter les bâtiments ajoutés/modifiés entre-temps).
-const skylineEdgesMaterial = new THREE.LineBasicMaterial({ color:0x0c1116 });
-function buildSkylineEdges(){
-  while(skylineEdgesGroup.children.length){
-    const c = skylineEdgesGroup.children.pop();
-    c.geometry.dispose();
-  }
+// Scène isolée, dédiée au calcul de la silhouette : un THREE.Mesh brut par
+// mesh source (même géométrie PARTAGÉE — jamais clonée/disposée — juste sa
+// matrice monde figée), sans matériau visuel, sans lumière, sans brouillard.
+// Ça permet de rendre UNIQUEMENT la profondeur de la maquette+bâtiments,
+// indépendamment de tout ce qui vit par ailleurs dans `scene`.
+const skylineSilhouetteScene = new THREE.Scene();
+const skylineSilhouetteMaterial = new THREE.MeshBasicMaterial();
+function buildSkylineSilhouette(){
+  while(skylineSilhouetteScene.children.length) skylineSilhouetteScene.remove(skylineSilhouetteScene.children[0]);
   collectSkylineMeshes().forEach(o=>{
-    let eg;
-    try{ eg = new THREE.EdgesGeometry(o.geometry, 20); }
-    catch(e){ return; }
-    if(!eg.attributes.position || eg.attributes.position.count===0){ eg.dispose(); return; }
-    const seg = new THREE.LineSegments(eg, skylineEdgesMaterial);
     o.updateWorldMatrix(true, false);
-    seg.matrixAutoUpdate = false;
-    seg.matrix.copy(o.matrixWorld);
-    skylineEdgesGroup.add(seg);
+    const m = new THREE.Mesh(o.geometry, skylineSilhouetteMaterial);
+    m.matrixAutoUpdate = false;
+    m.matrix.copy(o.matrixWorld);
+    skylineSilhouetteScene.add(m);
   });
+}
+// Cible de rendu profondeur + shader plein-écran de détection de contours.
+let skylineDepthTarget = null;
+function ensureSkylineDepthTarget(w, h){
+  if(skylineDepthTarget && skylineDepthTarget.width===w && skylineDepthTarget.height===h) return;
+  if(skylineDepthTarget) skylineDepthTarget.dispose();
+  const dt = new THREE.DepthTexture(w, h);
+  dt.type = THREE.UnsignedIntType;
+  skylineDepthTarget = new THREE.WebGLRenderTarget(w, h, { depthTexture: dt, depthBuffer:true, stencilBuffer:false });
+}
+const skylineEdgeMaterial = new THREE.ShaderMaterial({
+  uniforms:{ tDepth:{value:null}, texel:{value:new THREE.Vector2()}, edgeColor:{value:SKYLINE_LINE_COLOR} },
+  vertexShader:`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader:`
+    uniform sampler2D tDepth; uniform vec2 texel; uniform vec3 edgeColor;
+    varying vec2 vUv;
+    // Détection de contour à partir de la profondeur, échantillonnée sur un
+    // rayon de 2 texels (plutôt que 1) : ça donne un trait d'environ 2-3 px
+    // de large, bien plus lisible qu'un contour d'un seul pixel une fois
+    // affiché à l'écran.
+    float sampleDepth(vec2 offset){ return texture2D(tDepth, vUv + offset*texel).x; }
+    void main(){
+      float d = sampleDepth(vec2(0.0));
+      float diff = 0.0;
+      diff += abs(d - sampleDepth(vec2( 2.0,  0.0)));
+      diff += abs(d - sampleDepth(vec2(-2.0,  0.0)));
+      diff += abs(d - sampleDepth(vec2( 0.0,  2.0)));
+      diff += abs(d - sampleDepth(vec2( 0.0, -2.0)));
+      diff += abs(d - sampleDepth(vec2( 1.0,  1.0)));
+      diff += abs(d - sampleDepth(vec2(-1.0, -1.0)));
+      float edge = smoothstep(0.0005, 0.0035, diff);
+      if(edge < 0.03) discard;
+      gl_FragColor = vec4(edgeColor, edge);
+    }
+  `,
+  transparent:true, depthTest:false, depthWrite:false,
+});
+const skylineFsQuadScene = new THREE.Scene();
+const skylineFsQuadCamera = new THREE.Camera();
+skylineFsQuadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), skylineEdgeMaterial));
+// Effectue le rendu Skyline complet (silhouette contour sur fond noir) dans
+// le canvas WebGL visible — utilisé à la fois par la boucle animate() et par
+// l'export PNG, pour un résultat strictement identique.
+function renderSkylineView(){
+  const w = renderer.domElement.width, h = renderer.domElement.height;
+  ensureSkylineDepthTarget(w, h);
+  const prevTarget = renderer.getRenderTarget();
+  const prevClear = new THREE.Color(); renderer.getClearColor(prevClear);
+  const prevAlpha = renderer.getClearAlpha();
+  renderer.setRenderTarget(skylineDepthTarget);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear(true, true, false);
+  renderer.render(skylineSilhouetteScene, orthoCamera);
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(SKYLINE_BG_COLOR, 1);
+  renderer.clear(true, true, false);
+  skylineEdgeMaterial.uniforms.tDepth.value = skylineDepthTarget.depthTexture;
+  skylineEdgeMaterial.uniforms.texel.value.set(1/w, 1/h);
+  renderer.render(skylineFsQuadScene, skylineFsQuadCamera);
+  renderer.setRenderTarget(prevTarget);
+  renderer.setClearColor(prevClear, prevAlpha);
 }
 function skylineButtonFor(dir){ return document.getElementById(dir ? `btn-skyline-${dir}` : 'btn-skyline-3d'); }
 function setSkylineActiveButton(dir){
   skylineModeBar.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
   const btn = skylineButtonFor(dir); if(btn) btn.classList.add('active');
 }
+const skylineFrameCenter = new THREE.Vector3();
 // Cadre la caméra orthographique pour englober toute la maquette (worldRoot),
 // vue le long de l'axe cardinal `dir`, avec une marge à gauche réservée à la
-// graduation de hauteur (voir drawSkylineRuler).
+// graduation de hauteur (voir drawSkylineRuler). Le near/far est resserré au
+// plus près de l'épaisseur réelle de la maquette selon l'axe de vue : la
+// détection de contours par profondeur (renderSkylineView) a besoin d'un
+// intervalle near/far serré pour rester précise (une plage near/far trop
+// large "écrase" la précision de la texture de profondeur).
 function frameOrthoOnSkyline(dir){
   const box = new THREE.Box3().setFromObject(worldRoot);
   if(box.isEmpty()) return;
@@ -2524,6 +2591,7 @@ function frameOrthoOnSkyline(dir){
   const size = box.getSize(new THREE.Vector3());
   const viewDir = SKYLINE_VIEW_DIRS[dir];
   const horizExtent = Math.abs(viewDir.x) > 0.5 ? size.z : size.x; // largeur perçue selon l'axe de vue
+  const depthExtent = Math.abs(viewDir.x) > 0.5 ? size.x : size.z; // épaisseur de la maquette le long de l'axe de vue
   const vertExtent = size.y;
   const margin = 1.15;
   const halfH = Math.max(vertExtent, 10) * margin / 2;
@@ -2531,8 +2599,9 @@ function frameOrthoOnSkyline(dir){
   // largeur du viewport pour rester cohérente au redimensionnement).
   const rulerFrac = 0.12;
   const halfW = (Math.max(horizExtent, 10) * margin / 2) / (1 - rulerFrac);
-  const dist = Math.max(size.x, size.y, size.z, 60) * 3 + 200;
-  orthoCamera.position.copy(center).addScaledVector(viewDir, -dist);
+  const standoff = 100; // recul de la caméra hors de la maquette, pour garder de la marge devant le near plane
+  const half = depthExtent/2 + standoff;
+  orthoCamera.position.copy(center).addScaledVector(viewDir, -half);
   orthoCamera.up.set(0,1,0);
   orthoCamera.lookAt(center);
   const aspect = window.innerWidth / window.innerHeight;
@@ -2543,11 +2612,10 @@ function frameOrthoOnSkyline(dir){
   const shift = vw * rulerFrac;
   orthoCamera.left = -vw - shift; orthoCamera.right = vw - shift;
   orthoCamera.top = vh; orthoCamera.bottom = -vh;
-  orthoCamera.near = 0.1; orthoCamera.far = dist*2 + 2000;
+  orthoCamera.near = standoff*0.5; orthoCamera.far = depthExtent + standoff*1.5;
   orthoCamera.updateProjectionMatrix();
   skylineFrameCenter.copy(center);
 }
-const skylineFrameCenter = new THREE.Vector3();
 function setSkylineDirection(dir){
   if(dir === skylineDirection) return;
   const wasActive = !!skylineDirection;
@@ -2563,13 +2631,11 @@ function setSkylineDirection(dir){
   setSkylineActiveButton(dir);
   document.body.classList.toggle('skyline-view-active', !!dir);
   if(dir){
-    buildSkylineEdges();
-    skylineEdgesGroup.visible = true;
-    worldRoot.visible = false; // on masque la maquette "normale" : seuls les contours doivent apparaître
+    buildSkylineSilhouette(); // capture l'état courant de la maquette AVANT de la masquer
+    worldRoot.visible = false; // la scène normale n'est plus rendue en Skyline (voir animate()/renderSkylineView)
     controls.enabled = false;
     frameOrthoOnSkyline(dir);
   } else {
-    skylineEdgesGroup.visible = false;
     worldRoot.visible = true;
     if(skylineSavedState){
       camera.position.copy(skylineSavedState.position);
@@ -2592,25 +2658,21 @@ exitGlobalView = function(){
   _exitGlobalViewBase();
 };
 // Dessine la graduation de hauteur (traits horizontaux tous les 10 m, plus
-// épais tous les 50 m, valeur affichée à gauche) par-dessus le rendu 3D. Un
-// plan horizontal du monde à hauteur h se projette TOUJOURS en une ligne
-// parfaitement horizontale à l'écran dans une vue orthogonale alignée sur un
-// axe cardinal (up=(0,1,0)) : on calcule donc sa position écran une seule
-// fois via la projection caméra, peu importe X/Z du point choisi.
-function drawSkylineRuler(){
-  if(!skylineDirection) return;
-  const w = window.innerWidth, h = window.innerHeight;
-  if(skylineRulerCanvas.width!==w || skylineRulerCanvas.height!==h){
-    skylineRulerCanvas.width = w; skylineRulerCanvas.height = h;
-  }
-  const ctx = skylineRulerCtx;
-  ctx.clearRect(0,0,w,h);
+// épais tous les 50 m, valeur affichée à gauche), lisible sur le fond noir
+// du mode Skyline. Un plan horizontal du monde à hauteur h se projette
+// TOUJOURS en une ligne parfaitement horizontale à l'écran dans une vue
+// orthogonale alignée sur un axe cardinal (up=(0,1,0)) : on calcule donc sa
+// position écran une seule fois via la projection caméra, peu importe X/Z
+// du point choisi. Fonction générique (ctx/largeur/hauteur/échelle en
+// paramètres) pour être réutilisable telle quelle par l'export PNG.
+function drawSkylineRulerOn(ctx, w, h, scale){
+  scale = scale || 1;
   const box = new THREE.Box3().setFromObject(worldRoot);
   if(box.isEmpty()) return;
   const hMin = Math.floor(box.min.y/10)*10 - 10;
   const hMax = Math.ceil(box.max.y/10)*10 + 10;
   const p = new THREE.Vector3();
-  ctx.font = '600 12px Space Grotesk, sans-serif';
+  ctx.font = `600 ${12*scale}px 'Space Grotesk', sans-serif`;
   ctx.textBaseline = 'middle';
   for(let hVal=hMin; hVal<=hMax; hVal+=10){
     p.set(skylineFrameCenter.x, hVal, skylineFrameCenter.z);
@@ -2618,19 +2680,31 @@ function drawSkylineRuler(){
     if(p.y < -1.05 || p.y > 1.05) continue; // hors écran verticalement
     const sy = (1 - (p.y*0.5+0.5)) * h;
     const isMajor = Math.round(hVal) % 50 === 0;
-    ctx.strokeStyle = isMajor ? 'rgba(20,28,34,.85)' : 'rgba(20,28,34,.45)';
-    ctx.lineWidth = isMajor ? 2 : 1;
+    ctx.strokeStyle = isMajor ? 'rgba(255,255,255,.6)' : 'rgba(255,255,255,.22)';
+    ctx.lineWidth = (isMajor ? 2 : 1) * scale;
     ctx.beginPath();
-    ctx.moveTo(isMajor ? 0 : 70, sy);
+    ctx.moveTo(isMajor ? 0 : 74*scale, sy);
     ctx.lineTo(w, sy);
     ctx.stroke();
     if(isMajor){
-      ctx.fillStyle = '#0c1116';
-      ctx.fillRect(4, sy-9, 58, 18);
+      const chipW = 64*scale, chipH = 20*scale;
+      ctx.fillStyle = 'rgba(5,7,10,.92)';
+      ctx.strokeStyle = 'rgba(46,232,255,.55)'; ctx.lineWidth = 1*scale;
+      ctx.fillRect(4*scale, sy-chipH/2, chipW, chipH);
+      ctx.strokeRect(4*scale, sy-chipH/2, chipW, chipH);
       ctx.fillStyle = '#2ee8ff';
-      ctx.fillText(`${Math.round(hVal)} m`, 10, sy);
+      ctx.fillText(`${Math.round(hVal)} m`, 10*scale, sy);
     }
   }
+}
+function drawSkylineRuler(){
+  if(!skylineDirection) return;
+  const w = window.innerWidth, h = window.innerHeight;
+  if(skylineRulerCanvas.width!==w || skylineRulerCanvas.height!==h){
+    skylineRulerCanvas.width = w; skylineRulerCanvas.height = h;
+  }
+  skylineRulerCtx.clearRect(0,0,w,h);
+  drawSkylineRulerOn(skylineRulerCtx, w, h, 1);
 }
 
 // La barre de sortie glisse depuis le haut dès que la souris touche le rebord
@@ -8486,8 +8560,9 @@ labelEditInput.addEventListener('keydown', (ev)=>{
    EXPORT PNG
    ============================================================ */
 document.getElementById('btn-export-png').addEventListener('click', ()=>{
-  if(planViewActive) syncOrthoCameraForPlanView();
-  renderer.render(scene, planViewActive ? orthoCamera : camera);
+  if(skylineDirection) renderSkylineView();
+  else if(planViewActive){ syncOrthoCameraForPlanView(); renderer.render(scene, orthoCamera); }
+  else renderer.render(scene, camera);
   const glDataUrl = renderer.domElement.toDataURL('image/png');
   const download = (dataUrl)=>{
     const link = document.createElement('a');
@@ -8510,7 +8585,13 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
     const scaleX = img.width / (rect.width||img.width);
     const scaleY = img.height / (rect.height||img.height);
 
-    if(labelsVisible && labels.length){
+    // En vue Skyline, ni les étiquettes ni la nomenclature des légendes
+    // n'ont de sens (positions calculées pour la caméra perspective normale)
+    // — on dessine uniquement la graduation de hauteur par-dessus le rendu.
+    if(skylineDirection){
+      drawSkylineRulerOn(ctx, off.width, off.height, scaleY);
+    }
+    if(!skylineDirection && labelsVisible && labels.length){
       ctx.font = `${11*scaleY}px 'IBM Plex Mono', monospace`;
       ctx.textBaseline = 'middle';
       labels.forEach(l=>{
@@ -8539,7 +8620,7 @@ document.getElementById('btn-export-png').addEventListener('click', ()=>{
     // Nomenclature des légendes, en bas à droite, uniquement si "Légendes"
     // est actif — reprend les mêmes couleurs (USAGE_COLORS, personnalisables
     // depuis le panneau admin) et libellés que le panneau flottant du site.
-    if(legendEnabled){
+    if(!skylineDirection && legendEnabled){
       const { totals: usageTotals, grandTotal } = computeUsageTotals();
       const pad = 14*scaleX;
       const rowH = 20*scaleY, sw = 12*scaleX, gap = 8*scaleX;
@@ -10170,7 +10251,7 @@ function animate(){
     const t = performance.now()/1000;
     grassCursorDecal.material.opacity = 0.75 + Math.sin(t*4)*0.15;
   }
-  if(skylineDirection){ renderer.render(scene, orthoCamera); drawSkylineRuler(); }
+  if(skylineDirection){ renderSkylineView(); drawSkylineRuler(); }
   else if(planViewActive){ syncOrthoCameraForPlanView(); updateScreenSizedMarkers(); renderer.render(scene, orthoCamera); }
   else { updateScreenSizedMarkers(); renderer.render(scene, camera); }
 }
