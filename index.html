@@ -305,7 +305,21 @@
     pointer-events:none;display:none;
   }
   #bldg-connector-svg.show{display:block;}
-  #bldg-connector-line{stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;opacity:.85;}
+  /* Trait "élégant" façon connecteur technique : coudes à angle droit
+     (horizontal/vertical, pas de diagonale), avec un halo sombre sous la
+     ligne accent pour rester lisible quel que soit le ton du ciel en
+     arrière-plan (ciel clair ou dégradé). */
+  #bldg-connector-halo{
+    fill:none;stroke:#08131c;stroke-width:5;opacity:.55;stroke-linejoin:round;
+  }
+  #bldg-connector-path{
+    fill:none;stroke:var(--accent);stroke-width:2.25;stroke-linejoin:round;
+    filter:url(#bldg-connector-glow);
+  }
+  #bldg-connector-dot-a,#bldg-connector-dot-b{
+    fill:var(--ink);stroke:var(--accent);stroke-width:2.25;
+    filter:url(#bldg-connector-glow);
+  }
 
   /* ---------- Fenêtre de modification d'un bâtiment sélectionné — collée
      à gauche, sous le menu outils (flux normal dans #left-stack, plus de
@@ -1271,7 +1285,17 @@
         <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
       </div>
     </div>
-    <svg id="bldg-connector-svg"><line id="bldg-connector-line"/></svg>
+    <svg id="bldg-connector-svg">
+      <defs>
+        <filter id="bldg-connector-glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feDropShadow dx="0" dy="0" stdDeviation="2.2" flood-color="var(--accent)" flood-opacity="0.85"/>
+        </filter>
+      </defs>
+      <path id="bldg-connector-halo"/>
+      <path id="bldg-connector-path"/>
+      <circle id="bldg-connector-dot-a" r="4"/>
+      <circle id="bldg-connector-dot-b" r="4"/>
+    </svg>
     <div id="bldg-panel">
       <div id="bldg-panel-list">
         <div id="bldg-panel-list-head"><i data-lucide="building-2"></i> Bâtiments</div>
@@ -4662,6 +4686,9 @@ function tryValidateMove(){
     flashStatus('Hors du polygone d\'implantation — ramenez le bâtiment dans la parcelle avant de valider', true);
     return false;
   }
+  // Comme pour un nouveau tracé (voir point 4) : les arbres sous l'emprise
+  // ne sont retirés qu'à la validation effective du déplacement, pas avant.
+  if(b) removeTreesUnderFootprint(b.points);
   stopMoveBuilding();
   return true;
 }
@@ -5033,7 +5060,14 @@ function updateTreesOverlapPreview(livePt){
   // un décroché en toiture ou un volume supérieur est en l'air.
   if(!drawing || volumeDrawTargetId!==null){ clearTreesOverlapWarning(); return; }
   const poly = currentDrawPreviewPolygon(livePt);
-  if(!poly){ clearTreesOverlapWarning(); return; }
+  updateTreesOverlapWarningForPolygon(poly);
+}
+// Version générique (pas seulement pour le tracé) : teinte les arbres sous
+// un polygone donné — utilisée aussi pour le déplacement et la modification
+// de forme (socle) d'un bâtiment déjà construit (voir startMoveBuilding /
+// l'édition de forme au sol), pas seulement pour le tracé d'un nouveau.
+function updateTreesOverlapWarningForPolygon(poly){
+  if(!poly || poly.length<3){ clearTreesOverlapWarning(); return; }
   const warned = new Set();
   trees.forEach(t=>{ if(pointInPolygon({x:t.x, z:t.z}, poly, 0)) warned.add(t.id); });
   setTreesOverlapWarning(warned);
@@ -6838,6 +6872,7 @@ function stopEditBuildingShape(){
   gizmoGroup.visible = false;
   controls.enabled = true;
   renderer.domElement.style.cursor = '';
+  clearTreesOverlapWarning();
   setVertexSelectMode('point');
   refreshVertexSelectBar();
   refreshEditBanner();
@@ -6887,6 +6922,7 @@ function stopMoveBuilding(){
   renderer.domElement.style.cursor = '';
   drawHint.classList.remove('show');
   drawHintEnter.style.display = '';
+  clearTreesOverlapWarning();
   const b = buildings.find(x=>x.id===id);
   if(b){ rebuildMesh(b); renderBldgEditWindow(b); }
   renderList();
@@ -7075,6 +7111,7 @@ window.addEventListener('pointermove', (ev)=>{
   }
   rebuildMesh(b);
   setZoneViolationVisuals(b, buildingExceedsZone(b), 'Clic gauche glissé : déplacer · Clic droit glissé : pivoter');
+  updateTreesOverlapWarningForPolygon(b.points);
 }, { passive:true });
 window.addEventListener('pointerup', ()=>{
   if(!buildingMoveDrag) return;
@@ -7475,6 +7512,7 @@ window.addEventListener('pointermove', (ev)=>{
       }
       rebuildMesh(b);
       rebuildBldgSelectionVisuals();
+      if(!editingBand) updateTreesOverlapWarningForPolygon(pts);
     }
     return;
   }
@@ -7509,6 +7547,7 @@ window.addEventListener('pointermove', (ev)=>{
     pts[idx] = { x: target.x, z: target.z };
     bldgVertexHandles[idx].holder.position.set(target.x, handleY, target.z);
     rebuildMesh(b);
+    if(editingBandIndex===null) updateTreesOverlapWarningForPolygon(pts);
     return;
   }
   // Pas de glissement en cours : simple survol des poignées, pour un retour
@@ -7525,6 +7564,7 @@ window.addEventListener('pointermove', (ev)=>{
 window.addEventListener('pointerup', (ev)=>{
   if(gizmoDrag){
     const b = buildings.find(x=>x.id===editingBuildingId);
+    const dragStartPoints = gizmoDrag.startPoints; // capturé AVANT de nullifier gizmoDrag (sinon référence perdue plus bas)
     gizmoDrag = null;
     controls.enabled = true;
     renderer.domElement.style.cursor = '';
@@ -7538,7 +7578,7 @@ window.addEventListener('pointerup', (ev)=>{
         // ramène juste les sommets déplacés à leur position de départ.
         const belowFootprint = editTargetBelowFootprint(b);
         const movedEntries = [];
-        gizmoDrag.startPoints.forEach((startP, idx)=> movedEntries.push({index:idx, start:startP}));
+        if(dragStartPoints) dragStartPoints.forEach((startP, idx)=> movedEntries.push({index:idx, start:startP}));
         const { pts: settled, reverted } = revertBandOverflowIfNeeded(pts, belowFootprint, movedEntries);
         if(reverted){
           finalPts = settled;
@@ -7548,11 +7588,36 @@ window.addEventListener('pointerup', (ev)=>{
           finalPts = simplifyClosedPolygon(cleaned) || cleaned;
         }
       } else {
+        // Socle : on répercute le MÊME déplacement (par index de sommet) sur
+        // toutes les tranches (bands) qui ont déjà leur propre contour
+        // (créé via "Scinder" ou un décroché dessiné) et qui comptent le
+        // même nombre de sommets — ainsi "Forme au sol" modifie le bâtiment
+        // sur toute sa hauteur, pas seulement le socle visuel, tant que la
+        // tranche n'a pas été redessinée indépendamment (nombre de sommets
+        // différent, cas où on renonce sciemment à la cascade).
+        if(dragStartPoints){
+          dragStartPoints.forEach((startP, idx)=>{
+            const cur = pts[idx];
+            if(!cur) return;
+            const dx = cur.x - startP.x, dz = cur.z - startP.z;
+            if(!dx && !dz) return;
+            b.bands.forEach(band=>{
+              if(band.points && band.points.length===pts.length && band.points[idx]){
+                band.points[idx] = { x: band.points[idx].x+dx, z: band.points[idx].z+dz };
+              }
+            });
+          });
+        }
         const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
         const cleaned = (cleanPolygonPoints(repaired) || repaired);
         finalPts = simplifyClosedPolygon(cleaned) || cleaned;
       }
       setEditTargetPoints(b, finalPts);
+      // Comme pour le tracé et le déplacement (point 4) : arbres sous
+      // l'emprise finale retirés pour de bon dès que ce glissement de
+      // sommet(s) du socle est relâché — c'est la validation immédiate de
+      // cette modification, il n'y a pas d'étape "valider" séparée ici.
+      if(editingBandIndex===null) removeTreesUnderFootprint(finalPts);
       // La réparation peut insérer/fusionner des sommets : on retrouve les
       // sommets sélectionnés par proximité de coordonnées pour ne PAS perdre
       // la sélection — l'utilisateur peut ainsi enchaîner plusieurs
@@ -7607,11 +7672,28 @@ window.addEventListener('pointerup', (ev)=>{
         finalPts = simplifyClosedPolygon(cleaned) || cleaned;
       }
     } else {
+      // Socle : même cascade que pour le gizmo (voir plus haut) — on
+      // répercute le déplacement du sommet sur toutes les tranches qui ont
+      // leur propre contour et le même nombre de sommets.
+      if(clickedStartPoint){
+        const cur = pts[clickedIndex];
+        if(cur){
+          const dx = cur.x - clickedStartPoint.x, dz = cur.z - clickedStartPoint.z;
+          if(dx || dz){
+            b.bands.forEach(band=>{
+              if(band.points && band.points.length===pts.length && band.points[clickedIndex]){
+                band.points[clickedIndex] = { x: band.points[clickedIndex].x+dx, z: band.points[clickedIndex].z+dz };
+              }
+            });
+          }
+        }
+      }
       const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
       const cleaned = (cleanPolygonPoints(repaired) || repaired);
       finalPts = simplifyClosedPolygon(cleaned) || cleaned;
     }
     setEditTargetPoints(b, finalPts);
+    if(editingBandIndex===null) removeTreesUnderFootprint(finalPts);
     bldgSelected = remapSelectionByProximity(selectedCoords, editTargetPoints(b));
     rebuildMesh(b);
     rebuildBldgVertexHandles(b);
@@ -7690,8 +7772,23 @@ window.addEventListener('resize', syncBldgPanelMaxHeight);
 // remontée anti-débordement de syncBldgPanelMaxHeight...).
 // ------------------------------------------------------------
 const bldgConnectorSvg = document.getElementById('bldg-connector-svg');
-const bldgConnectorLine = document.getElementById('bldg-connector-line');
+const bldgConnectorHalo = document.getElementById('bldg-connector-halo');
+const bldgConnectorPath = document.getElementById('bldg-connector-path');
+const bldgConnectorDotA = document.getElementById('bldg-connector-dot-a');
+const bldgConnectorDotB = document.getElementById('bldg-connector-dot-b');
 function hideBldgConnectorLine(){ bldgConnectorSvg.classList.remove('show'); }
+// Chemin en coudes à angle droit (horizontal/vertical uniquement, jamais de
+// diagonale) façon connecteur de schéma technique — un simple segment en
+// "Z" ou "L" selon l'écart, avec un petit décroché horizontal/vertical de
+// sécurité pour ne jamais couper à travers la case ou la fiche elle-même.
+function buildElbowPath(x1,y1,x2,y2, vertical){
+  if(vertical){
+    const midY = (y1+y2)/2;
+    return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+  }
+  const midX = (x1+x2)/2;
+  return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+}
 function updateBldgConnectorLine(){
   if(!bldgPanel.classList.contains('has-selection') || selectedId===null){
     hideBldgConnectorLine();
@@ -7713,10 +7810,11 @@ function updateBldgConnectorLine(){
     x1 = cardRect.right; y1 = cardRect.top + cardRect.height/2;
     x2 = editRect.left; y2 = editRect.top + editRect.height/2;
   }
-  bldgConnectorLine.setAttribute('x1', x1);
-  bldgConnectorLine.setAttribute('y1', y1);
-  bldgConnectorLine.setAttribute('x2', x2);
-  bldgConnectorLine.setAttribute('y2', y2);
+  const d = buildElbowPath(x1,y1,x2,y2, narrow);
+  bldgConnectorHalo.setAttribute('d', d);
+  bldgConnectorPath.setAttribute('d', d);
+  bldgConnectorDotA.setAttribute('cx', x1); bldgConnectorDotA.setAttribute('cy', y1);
+  bldgConnectorDotB.setAttribute('cx', x2); bldgConnectorDotB.setAttribute('cy', y2);
   bldgConnectorSvg.classList.add('show');
 }
 
@@ -8080,26 +8178,69 @@ function focusOn(b){
    position à chaque bascule pour les empiler verticalement (droite de
    l'écran, sous la boussole) sans jamais se chevaucher, quelle que soit la
    hauteur réelle de leur contenu (variable selon les usages/stats du site).
-   Utilise getElementById directement (plutôt que les const définies plus
-   bas) pour rester utilisable dès que le DOM existe, sans dépendre de
-   l'ordre d'exécution du script.
+   Si l'empilement d'une colonne déborderait du bas de l'écran, on démarre
+   une NOUVELLE colonne à sa gauche plutôt que de laisser une fenêtre
+   tronquée ou hors champ ; et si une seule fenêtre est plus haute que
+   l'écran disponible, elle reçoit un défilement interne (max-height +
+   overflow-y) en dernier recours. Utilise getElementById directement
+   (plutôt que les const définies plus bas) pour rester utilisable dès que
+   le DOM existe, sans dépendre de l'ordre d'exécution du script.
    ============================================================ */
 function layoutFloatingPanels(){
   const panels = ['sun-panel', 'admin-panel', 'legend-window']
     .map(id=>document.getElementById(id))
     .filter(el=>el && el.classList.contains('show'));
+  if(!panels.length) return;
   const mobile = window.innerWidth <= 980;
-  const right = mobile ? 8 : 16;
+  const rightBase = mobile ? 8 : 16;
   const gap = 12;
-  let top = mobile ? 156 : 184;
+  const topBase = mobile ? 156 : 184;
+  const bottomLimit = window.innerHeight - 16;
+  const availH = Math.max(120, bottomLimit - topBase);
+
+  // On repart d'un état "naturel" (pas de contrainte de hauteur) avant de
+  // mesurer, sinon un ancien max-height poserait faussement les mesures.
+  panels.forEach(el=>{ el.style.maxHeight = 'none'; el.style.overflowY = 'visible'; });
+
+  // 1) Répartition en colonnes : on avance verticalement tant que ça tient,
+  // sinon on démarre une nouvelle colonne (à gauche de la précédente).
+  const columns = [[]];
+  let runningTop = topBase;
   panels.forEach(el=>{
-    el.style.right = right + 'px';
-    el.style.top = top + 'px';
-    el.style.bottom = 'auto';
-    top += el.offsetHeight + gap;
+    const h = Math.min(el.offsetHeight, availH);
+    if(runningTop !== topBase && runningTop + h > bottomLimit){
+      columns.push([]);
+      runningTop = topBase;
+    }
+    columns[columns.length-1].push(el);
+    runningTop += h + gap;
+  });
+
+  // 2) Pose effective, colonne par colonne, de droite à gauche.
+  let rightOffset = rightBase;
+  columns.forEach(colPanels=>{
+    let top = topBase;
+    let colWidth = 0;
+    colPanels.forEach(el=>{
+      el.style.right = rightOffset + 'px';
+      el.style.top = top + 'px';
+      el.style.bottom = 'auto';
+      // Filet de sécurité : même dans sa propre colonne, si cette fenêtre à
+      // elle seule dépasse l'espace vertical restant, on la contraint avec
+      // un défilement interne plutôt que de la laisser déborder de l'écran.
+      const availableForThis = bottomLimit - top;
+      if(el.offsetHeight > availableForThis){
+        el.style.maxHeight = Math.max(120, availableForThis) + 'px';
+        el.style.overflowY = 'auto';
+      }
+      top += el.offsetHeight + gap;
+      colWidth = Math.max(colWidth, el.offsetWidth);
+    });
+    rightOffset += colWidth + gap;
   });
 }
 window.addEventListener('resize', layoutFloatingPanels);
+
 /* ============================================================
    LÉGENDE / MATÉRIAU VERRE
    ============================================================ */
