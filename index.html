@@ -7401,6 +7401,38 @@ function gizmoCursorFor(type, active){
 let bldgVertexDrag = null; // {index, x, y, moved}
 let bldgVertexHover = null; // index survolé (hors glissement), pour le retour visuel
 let gizmoDrag = null; // {type:'move'|'scale', startGround, startPoints:Map(idx->{x,z}), centroid, startDist}
+// Reconstruit, sous forme d'une simple fonction point → point, LA MÊME
+// transformation rigide qu'un glissement de gizmo (move/scale/rotate) vient
+// d'appliquer aux sommets sélectionnés du socle — utilisée pour répercuter
+// "logiquement et gracieusement" ce changement sur les autres tranches du
+// bâtiment (voir le point 2 du pointerup ci-dessous) : une translation, une
+// homothétie ou une rotation s'appliquent identiquement à N'IMPORTE QUEL
+// point, donc aucune correspondance sommet à sommet n'est nécessaire — au
+// contraire d'un déplacement partiel, qui n'a pas de formule unique.
+function gizmoTransformFn(type, startGround, centroid, startDist, startAngle, pt){
+  if(type==='move' || type==='moveX' || type==='moveY'){
+    let dx = pt.x-startGround.x, dz = pt.z-startGround.z;
+    if(type==='moveX') dz = 0; else if(type==='moveY') dx = 0;
+    if(!dx && !dz) return null;
+    return p => ({ x:p.x+dx, z:p.z+dz });
+  }
+  if(type==='scale'){
+    if(!centroid) return null;
+    const dist = Math.hypot(pt.x-centroid.x, pt.z-centroid.z);
+    let factor = startDist>0.01 ? dist/startDist : 1;
+    factor = Math.max(0.15, Math.min(6, factor));
+    if(Math.abs(factor-1)<1e-6) return null;
+    return p => ({ x:centroid.x+(p.x-centroid.x)*factor, z:centroid.z+(p.z-centroid.z)*factor });
+  }
+  if(type==='rotate'){
+    if(!centroid) return null;
+    const currentAngle = Math.atan2(pt.z-centroid.z, pt.x-centroid.x);
+    const angle = currentAngle - startAngle;
+    if(Math.abs(angle)<1e-6) return null;
+    return p => rotatePointAround(p, centroid, angle);
+  }
+  return null;
+}
 function bldgHandleAt(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX-rect.left)/rect.width)*2-1;
@@ -7565,7 +7597,13 @@ window.addEventListener('pointermove', (ev)=>{
 window.addEventListener('pointerup', (ev)=>{
   if(gizmoDrag){
     const b = buildings.find(x=>x.id===editingBuildingId);
-    const dragStartPoints = gizmoDrag.startPoints; // capturé AVANT de nullifier gizmoDrag (sinon référence perdue plus bas)
+    // Tout capturé AVANT de nullifier gizmoDrag (sinon référence perdue plus bas).
+    const dragStartPoints = gizmoDrag.startPoints;
+    const dragType = gizmoDrag.type;
+    const dragCentroid = gizmoDrag.centroid;
+    const dragStartGround = gizmoDrag.startGround;
+    const dragStartDist = gizmoDrag.startDist;
+    const dragStartAngle = gizmoDrag.startAngle;
     gizmoDrag = null;
     controls.enabled = true;
     renderer.domElement.style.cursor = '';
@@ -7589,25 +7627,26 @@ window.addEventListener('pointerup', (ev)=>{
           finalPts = simplifyClosedPolygon(cleaned) || cleaned;
         }
       } else {
-        // Socle : on répercute le MÊME déplacement (par index de sommet) sur
-        // toutes les tranches (bands) qui ont déjà leur propre contour
-        // (créé via "Scinder" ou un décroché dessiné) et qui comptent le
-        // même nombre de sommets — ainsi "Forme au sol" modifie le bâtiment
-        // sur toute sa hauteur, pas seulement le socle visuel, tant que la
-        // tranche n'a pas été redessinée indépendamment (nombre de sommets
-        // différent, cas où on renonce sciemment à la cascade).
-        if(dragStartPoints){
-          dragStartPoints.forEach((startP, idx)=>{
-            const cur = pts[idx];
-            if(!cur) return;
-            const dx = cur.x - startP.x, dz = cur.z - startP.z;
-            if(!dx && !dz) return;
+        // Socle : on ne répercute la modification sur les autres tranches
+        // QUE si c'est une transformation RIGIDE de TOUT le contour (move /
+        // scale / rotate via le gizmo, avec TOUS les sommets sélectionnés) —
+        // dans ce cas on applique la même formule géométrique (translation,
+        // homothétie ou rotation autour du même centre) directement à
+        // chaque tranche, sans avoir besoin d'une correspondance sommet à
+        // sommet : ça reste juste quel que soit son nombre de sommets.
+        // Un déplacement PARTIEL (quelques sommets seulement) n'a pas de
+        // transformation propre à répercuter "logiquement" sur une tranche
+        // de forme différente — on renonce alors à toute cascade plutôt
+        // que de distordre le bâtiment (voir le bug corrigé ici).
+        const pt = groundPointFromEvent(ev);
+        const isWholeShape = dragStartPoints && dragStartPoints.size===pts.length;
+        if(isWholeShape && pt && dragStartGround){
+          const transformFn = gizmoTransformFn(dragType, dragStartGround, dragCentroid, dragStartDist, dragStartAngle, pt);
+          if(transformFn){
             b.bands.forEach(band=>{
-              if(band.points && band.points.length===pts.length && band.points[idx]){
-                band.points[idx] = { x: band.points[idx].x+dx, z: band.points[idx].z+dz };
-              }
+              if(band.points && band.points.length>=3) band.points = band.points.map(transformFn);
             });
-          });
+          }
         }
         const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
         const cleaned = (cleanPolygonPoints(repaired) || repaired);
@@ -7673,22 +7712,13 @@ window.addEventListener('pointerup', (ev)=>{
         finalPts = simplifyClosedPolygon(cleaned) || cleaned;
       }
     } else {
-      // Socle : même cascade que pour le gizmo (voir plus haut) — on
-      // répercute le déplacement du sommet sur toutes les tranches qui ont
-      // leur propre contour et le même nombre de sommets.
-      if(clickedStartPoint){
-        const cur = pts[clickedIndex];
-        if(cur){
-          const dx = cur.x - clickedStartPoint.x, dz = cur.z - clickedStartPoint.z;
-          if(dx || dz){
-            b.bands.forEach(band=>{
-              if(band.points && band.points.length===pts.length && band.points[clickedIndex]){
-                band.points[clickedIndex] = { x: band.points[clickedIndex].x+dx, z: band.points[clickedIndex].z+dz };
-              }
-            });
-          }
-        }
-      }
+      // Socle : contrairement au gizmo (move/scale/rotate de TOUT le
+      // contour, voir plus haut), déplacer un seul sommet est par nature un
+      // ajustement PARTIEL — il n'existe pas de transformation "logique et
+      // gracieuse" à répercuter sur une tranche qui a une forme différente,
+      // donc on renonce à toute cascade ici (c'est ce qui déformait le
+      // bâtiment de façon erratique auparavant). Pour changer une tranche
+      // en particulier, on utilise son propre bouton "Forme".
       const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
       const cleaned = (cleanPolygonPoints(repaired) || repaired);
       finalPts = simplifyClosedPolygon(cleaned) || cleaned;
