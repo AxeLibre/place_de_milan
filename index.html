@@ -26,6 +26,8 @@
     --hot:#a06bd9;    /* hôtel — violet */
     --ser:#4fae8f;    /* services — vert sarcelle */
     --non:#9aa0a6;    /* non défini — gris neutre */
+    --built-stat:#d98c3f;  /* emprise bâtie / parcelle — orange chantier */
+    --green-stat:#5fbd6b;  /* espaces verts / arbres — vert jardin */
 
     --panel-w: 330px;
   }
@@ -292,6 +294,19 @@
   #tree-mini-list.show{display:flex;}
   #tree-empty-note{color:var(--muted);font-size:11px;line-height:1.4;font-family:'IBM Plex Mono',monospace;padding:4px 2px;}
 
+  /* ---------- Ligne de liaison entre la case sélectionnée dans la liste des
+     bâtiments et sa fiche d'édition flottante (#bldg-edit-window) — repère
+     visuel évitant de perdre le fil entre les deux quand elles sont
+     éloignées à l'écran. Un simple <svg> plein écran, non interactif,
+     posé sous les deux panneaux (z-index inférieur) : seul le segment
+     dans l'espace ENTRE eux reste visible. ---------- */
+  #bldg-connector-svg{
+    position:fixed;inset:0;width:100vw;height:100vh;z-index:15;
+    pointer-events:none;display:none;
+  }
+  #bldg-connector-svg.show{display:block;}
+  #bldg-connector-line{stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;opacity:.85;}
+
   /* ---------- Fenêtre de modification d'un bâtiment sélectionné — collée
      à gauche, sous le menu outils (flux normal dans #left-stack, plus de
      positionnement absolu décalé à droite) ---------- */
@@ -460,14 +475,21 @@
   }
   #ribbon-sep{display:none;}
   #bottom-left-menu .mini-fab{
-    width:38px;height:38px;border-radius:50%;flex-shrink:0;
+    height:34px;padding:0 13px 0 11px;border-radius:17px;flex-shrink:0;
     background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
-    display:flex;align-items:center;justify-content:center;cursor:pointer;
-    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;
+    display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;
+    font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:12px;
     transition:all .12s ease;
   }
   #bottom-left-menu .mini-fab:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px);}
-  #bottom-left-menu .mini-fab svg{width:17px;height:17px;stroke-width:2;}
+  #bottom-left-menu .mini-fab svg{width:16px;height:16px;stroke-width:2;flex-shrink:0;}
+  .mini-fab-label{line-height:1;}
+  /* Écran étroit : on revient à des pastilles rondes icône-seule (le texte
+     prendrait trop de place à côté du ruban d'outils). */
+  @media (max-width:980px){
+    #bottom-left-menu .mini-fab{width:34px;height:34px;padding:0;border-radius:50%;justify-content:center;}
+    .mini-fab-label{display:none;}
+  }
   /* #bottom-left-menu .mini-fab (sélecteur avec ID) l'emporte en spécificité
      sur ".admin-only"/"button.admin-only" définis plus haut : sans ces deux
      règles ciblant explicitement ".mini-fab.admin-only", les boutons admin
@@ -684,9 +706,20 @@
     margin-top:8px;padding-top:8px;border-top:1px solid #2a3946;
     font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--paper);
   }
+  #legend-total-row span{display:flex;align-items:center;gap:6px;}
   #legend-total-row b{font-size:13px;color:var(--accent);}
   #legend-site-stats{margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.12);}
   .swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+  /* Icônes + jauges des statistiques du bas (point 6) : un peu de couleur et
+     de repère visuel graphique plutôt que des chiffres bruts. */
+  .legend-item i, .legend-total-row i, .legend-stat-label i{width:14px;height:14px;flex-shrink:0;}
+  .swatch-icon{width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .swatch-icon i{width:14px;height:14px;}
+  .legend-stat-row{margin:4px 0 8px;}
+  .legend-stat-label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--paper);margin-bottom:4px;}
+  .legend-stat-label span:first-of-type{flex:1;}
+  .legend-bar{height:5px;border-radius:3px;background:#1c262e;overflow:hidden;}
+  .legend-bar-fill{height:100%;width:0%;border-radius:3px;transition:width .35s ease;}
 
   /* ---------- Pastilles de couleur cliquables dans "Options d'affichage" :
      personnalisation accessible à tous les utilisateurs. ---------- */
@@ -1050,13 +1083,18 @@
   .icon-half-wrap i:last-child,.icon-half-wrap svg:last-child{clip-path:inset(0 0 0 50%);}
   #night-warning{
     margin-top:10px;padding:8px 10px;border-radius:6px;
-    background:rgba(224,162,74,.12);border:1px solid rgba(224,162,74,.45);
+    background:rgba(154,160,166,.10);border:1px solid rgba(154,160,166,.35);
     font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.4;
-    color:#f0b969;text-align:center;display:flex;align-items:center;gap:7px;justify-content:center;
+    color:var(--muted);text-align:center;display:flex;align-items:center;gap:7px;justify-content:center;
+    transition:background .15s ease,border-color .15s ease,color .15s ease;
   }
   #night-warning .icon{flex:none;font-size:14px;}
-  #night-warning{display:none;}
-  #night-warning.show{display:flex;}
+  /* Toujours visible (avertissement PRÉVENTIF avant même d'activer le mode
+     Nuit, pas seulement une fois qu'il l'est) — seul le ton change : neutre
+     de jour, ambré une fois le mode Nuit réellement actif. */
+  #night-warning.is-night{
+    background:rgba(224,162,74,.12);border-color:rgba(224,162,74,.45);color:#f0b969;
+  }
 
   /* ---------- Spinner de chargement (bascule jour/nuit) : anneau épais,
      incomplet, en dégradé circulaire CONIQUE (pas radial) — style ouroboros. */
@@ -1187,12 +1225,12 @@
       <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
       <div id="ribbon-sep"></div>
       <div id="bottom-left-menu">
-        <button id="btn-help" class="mini-fab" title="À propos"><i data-lucide="info"></i></button>
-        <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i></button>
-        <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i></button>
-        <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i></button>
-        <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><i data-lucide="map-pin"></i></button>
-        <button id="btn-admin-panel" class="mini-fab" title="Options d'affichage"><i data-lucide="settings"></i></button>
+        <button id="btn-help" class="mini-fab" title="À propos"><i data-lucide="info"></i><span class="mini-fab-label">À propos</span></button>
+        <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i><span class="mini-fab-label">Capture</span></button>
+        <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i><span class="mini-fab-label">Enregistrer</span></button>
+        <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i><span class="mini-fab-label">Charger</span></button>
+        <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><i data-lucide="map-pin"></i><span class="mini-fab-label">Départ</span></button>
+        <button id="btn-admin-panel" class="mini-fab" title="Options d'affichage"><i data-lucide="settings"></i><span class="mini-fab-label">Options</span></button>
       </div>
     </div>
     <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
@@ -1233,6 +1271,7 @@
         <button class="tool-btn ghost" id="btn-label"><i data-lucide="map-pin"></i><span class="tool-btn-label">Label</span></button>
       </div>
     </div>
+    <svg id="bldg-connector-svg"><line id="bldg-connector-line"/></svg>
     <div id="bldg-panel">
       <div id="bldg-panel-list">
         <div id="bldg-panel-list-head"><i data-lucide="building-2"></i> Bâtiments</div>
@@ -1289,7 +1328,7 @@
         </button>
         <button class="sun-season-btn" data-season="ete" title="Solstice d'été"><i data-lucide="sun"></i><span>Solstice<br>d'été</span></button>
       </div>
-      <div id="night-warning"><span class="icon">⚠️</span><span>Le mode Nuit est gourmand en RAM, CPU &amp; GPU.</span></div>
+      <div id="night-warning"><span class="icon">⚠️</span><span id="night-warning-text">Le mode Nuit sollicite fortement le GPU (nombreux lampadaires et ombres) et un peu le CPU.</span></div>
     </div>
     <div id="draw-area-label"></div>
     <div id="loading-spinner"><div class="ring"></div></div>
@@ -1304,6 +1343,7 @@
       <button class="vsel-btn" id="btn-split-edge" title="Sélectionnez exactement 2 sommets adjacents (une façade) pour insérer un sommet à mi-chemin" disabled><i data-lucide="scissors"></i><span>Couper la façade en 2</span></button>
     </div>
     <div id="legend-window">
+      <button class="panel-x-btn" id="legend-window-close" title="Fermer" style="position:absolute;top:8px;right:8px;z-index:2;"><i data-lucide="x"></i></button>
       <div class="section-title">Légende des usages</div>
       <div class="legend-item"><div class="swatch" style="background:var(--res)"></div><span>Résidentiel</span><span class="legend-m2" id="legend-m2-residentiel">0 m²</span></div>
       <div class="legend-item"><div class="swatch" style="background:var(--bur)"></div><span>Bureaux</span><span class="legend-m2" id="legend-m2-bureaux">0 m²</span></div>
@@ -1311,14 +1351,21 @@
       <div class="legend-item"><div class="swatch" style="background:var(--hot)"></div><span>Hôtel</span><span class="legend-m2" id="legend-m2-hotel">0 m²</span></div>
       <div class="legend-item"><div class="swatch" style="background:var(--ser)"></div><span>Services / équipements</span><span class="legend-m2" id="legend-m2-services">0 m²</span></div>
       <div class="legend-item"><div class="swatch" style="background:var(--non)"></div><span>Non défini</span><span class="legend-m2" id="legend-m2-nondefini">0 m²</span></div>
-      <div id="legend-total-row"><span>Total opération</span><b id="legend-m2-total">0 m²</b></div>
+      <div id="legend-total-row"><span><i data-lucide="layers"></i> Total opération</span><b id="legend-m2-total">0 m²</b></div>
       <div id="legend-site-stats">
-        <div class="legend-item"><span>Emprise bâtie / parcelle</span><span class="legend-m2" id="legend-built-pct">0 %</span></div>
-        <div class="legend-item"><span>Espaces verts / parcelle</span><span class="legend-m2" id="legend-green-pct">0 %</span></div>
-        <div class="legend-item"><span>Arbres plantés</span><span class="legend-m2" id="legend-tree-count">0</span></div>
+        <div class="legend-stat-row">
+          <div class="legend-stat-label"><i data-lucide="building-2" style="color:var(--built-stat)"></i><span>Emprise bâtie / parcelle</span><span class="legend-m2" id="legend-built-pct">0 %</span></div>
+          <div class="legend-bar"><div class="legend-bar-fill" id="legend-built-bar" style="background:var(--built-stat)"></div></div>
+        </div>
+        <div class="legend-stat-row">
+          <div class="legend-stat-label"><i data-lucide="sprout" style="color:var(--green-stat)"></i><span>Espaces verts / parcelle</span><span class="legend-m2" id="legend-green-pct">0 %</span></div>
+          <div class="legend-bar"><div class="legend-bar-fill" id="legend-green-bar" style="background:var(--green-stat)"></div></div>
+        </div>
+        <div class="legend-item"><div class="swatch-icon"><i data-lucide="trees" style="color:var(--green-stat)"></i></div><span>Arbres plantés</span><span class="legend-m2" id="legend-tree-count">0</span></div>
       </div>
     </div>
     <div id="admin-panel">
+      <button class="panel-x-btn" id="admin-panel-close" title="Fermer" style="position:absolute;top:8px;right:8px;z-index:2;"><i data-lucide="x"></i></button>
       <div class="section-title">Éléments visibles sur la maquette</div>
       <label class="admin-check-row"><input type="checkbox" id="chk-vis-vehicles" checked> Véhicules (bus, trams, voitures, TGV)</label>
       <label class="admin-check-row"><input type="checkbox" id="chk-vis-pedestrians" checked> Piétons</label>
@@ -2317,6 +2364,11 @@ function activateGlobalView(){
   document.body.classList.add('global-view-mode');
   btnGlobalView.classList.add('active');
   keysDown.clear();
+  // Force le rendu neutre "verre" des nouveaux bâtiments pendant la Vue
+  // Globale (voir la condition `legendEnabled && !globalViewActive` dans
+  // rebuildMesh) : on reconstruit tout de suite pour que le changement soit
+  // visible dès l'entrée dans le mode, pas seulement au prochain rebuild.
+  rebuildAll();
   buildings.forEach(b=>{
     const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = false;
     b.group.children.forEach(o=>{ if(o.name==='selectionHighlight') o.visible = false; });
@@ -2335,6 +2387,10 @@ function exitGlobalView(){
   globalRoot.visible = false;
   treesGroup.visible = treesVisibleFlag; // restaure l'état normal (œil "Arbre")
   siteRoot.traverse(o=>{ if(/icosph/i.test(o.name||'')) o.visible = true; });
+  // Retour au rendu normal (coloration par usage si "Légendes" était actif
+  // avant l'entrée en Vue Globale) — voir le forçage symétrique dans
+  // activateGlobalView().
+  rebuildAll();
   buildings.forEach(b=>{
     const halo = b.group.getObjectByName('selectionHalo'); if(halo) halo.visible = true;
     b.group.children.forEach(o=>{ if(o.name==='selectionHighlight') o.visible = true; });
@@ -3661,7 +3717,9 @@ function updateDrawGuide(pt){
 function hideDrawGuide(){ drawGuideGroup.visible = false; }
 renderer.domElement.addEventListener('pointermove', (ev)=>{
   if(!drawing) return;
-  updateDrawGuide(groundPointFromEvent(ev));
+  const livePt = groundPointFromEvent(ev);
+  updateDrawGuide(livePt);
+  updateTreesOverlapPreview(livePt);
 });
 
 let selectedId = null;
@@ -3782,6 +3840,7 @@ function cancelDraw(){
   currentDrawLiveArea = null; currentDrawLiveCentroid = null;
   drawAreaLabel.classList.remove('show');
   clearMarkers();
+  clearTreesOverlapWarning();
   btnDraw.classList.remove('active');
   btnDraw.querySelector('.tool-btn-label').textContent = 'Nouveau bâtiment';
   drawHint.classList.remove('show');
@@ -4391,6 +4450,10 @@ function askFloorsThenBuild(finalPoints){
     const floors = clampVal();
     cleanup();
     const b = createBuilding(finalPoints, { floors, silent:true });
+    // Les arbres plantés sous l'emprise ne sont retirés qu'ICI, une fois la
+    // construction réellement validée par l'utilisateur (voir l'aperçu rouge
+    // pendant le tracé dans updateTreesOverlapPreview).
+    removeTreesUnderFootprint(finalPoints);
     selectedId = b.id;
     renderList();
     startBuildingConstruction(b);
@@ -4889,7 +4952,17 @@ function addTree(pt){
   obj.rotation.y = Math.random()*Math.PI*2;
   const variance = 0.85 + Math.random()*0.3;
   obj.scale.copy(treeTemplate.baseScale).multiplyScalar(variance);
-  obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+  obj.traverse(o=>{
+    if(o.isMesh){
+      o.castShadow=true; o.receiveShadow=true;
+      // clone(true) ne clone PAS les matériaux (partagés par référence avec
+      // le template et donc entre tous les arbres) : on les clone ici pour
+      // que chaque arbre ait son propre matériau, modifiable individuellement
+      // (ex. teinte d'avertissement rouge, voir setTreesOverlapWarning) sans
+      // jamais affecter les autres arbres de la maquette.
+      o.material = Array.isArray(o.material) ? o.material.map(m=>m.clone()) : o.material.clone();
+    }
+  });
   treesGroup.add(obj);
   trees.push({ id: treeIdCounter++, mesh: obj, x:pt.x, z:pt.z });
   renderTreeCount();
@@ -4908,6 +4981,70 @@ function clearAllTrees(){
   trees = [];
   renderTreeCount();
   updateSiteStats();
+}
+// ------------------------------------------------------------
+// Conflit arbres / nouveau bâtiment : pendant le tracé d'une emprise au sol
+// (pas un décroché en toiture, pas un volume supérieur — les arbres ne
+// vivent qu'au sol), les arbres plantés qui tombent SOUS le contour en
+// cours de tracé sont teintés en rouge (avertissement visuel), puis
+// réellement supprimés seulement si la construction est validée.
+// ------------------------------------------------------------
+const TREE_OVERLAP_WARN_COLOR = 0xff2d2d;
+let _treesOverlapWarnedIds = new Set();
+function setTreesOverlapWarning(warnedIds){
+  trees.forEach(t=>{
+    const shouldWarn = warnedIds.has(t.id);
+    const wasWarned = _treesOverlapWarnedIds.has(t.id);
+    if(shouldWarn === wasWarned) return;
+    t.mesh.traverse(o=>{
+      if(!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m=>{
+        if(!m || !m.color) return;
+        if(shouldWarn){
+          if(!m.userData._treeOverlapOrig) m.userData._treeOverlapOrig = m.color.clone();
+          m.color.setHex(TREE_OVERLAP_WARN_COLOR);
+        } else if(m.userData._treeOverlapOrig){
+          m.color.copy(m.userData._treeOverlapOrig);
+          delete m.userData._treeOverlapOrig;
+        }
+      });
+    });
+  });
+  _treesOverlapWarnedIds = new Set(warnedIds);
+}
+function clearTreesOverlapWarning(){ setTreesOverlapWarning(new Set()); }
+// Renvoie le contour "actuel" du tracé en cours (polygone en cours de pose,
+// ou rectangle en cours de glissement), avec le point sous le curseur en
+// bonus pour un avertissement bien réactif — utilisé UNIQUEMENT pour la
+// prévisualisation live, jamais pour le contour final réel.
+function currentDrawPreviewPolygon(livePt){
+  if(drawMode==='rect'){
+    if(!rectDragging || !rectStartPt || !livePt) return null;
+    const a=rectStartPt, b=livePt;
+    return [{x:a.x,z:a.z},{x:b.x,z:a.z},{x:b.x,z:b.z},{x:a.x,z:b.z}];
+  }
+  const pts = drawPoints.slice();
+  if(livePt) pts.push({x:livePt.x, z:livePt.z});
+  return pts.length>=3 ? pts : null;
+}
+function updateTreesOverlapPreview(livePt){
+  // Seule une emprise AU SOL (nouveau bâtiment) peut recouvrir des arbres —
+  // un décroché en toiture ou un volume supérieur est en l'air.
+  if(!drawing || volumeDrawTargetId!==null){ clearTreesOverlapWarning(); return; }
+  const poly = currentDrawPreviewPolygon(livePt);
+  if(!poly){ clearTreesOverlapWarning(); return; }
+  const warned = new Set();
+  trees.forEach(t=>{ if(pointInPolygon({x:t.x, z:t.z}, poly, 0)) warned.add(t.id); });
+  setTreesOverlapWarning(warned);
+}
+// Supprime pour de bon les arbres tombant sous l'emprise FINALE d'un
+// nouveau bâtiment, au moment où sa construction est validée (pas avant).
+function removeTreesUnderFootprint(finalPoints){
+  if(!finalPoints || finalPoints.length<3) return;
+  const toRemove = trees.filter(t=> pointInPolygon({x:t.x, z:t.z}, finalPoints, 0)).map(t=>t.id);
+  if(!toRemove.length) return;
+  toRemove.forEach(id=> removeTree(id));
 }
 function renderTreeCount(){
   document.getElementById('tree-count').textContent = trees.length ? `(${trees.length})` : '';
@@ -5625,13 +5762,32 @@ function shrinkPolygonToFitOverlap(poly, basePts, maxRatio){
   }
   return scaled(lo);
 }
+// Rollback CIBLÉ d'un décroché qui dépasse la règle des 30% de débord max :
+// contrairement à shrinkPolygonToFitOverlap (qui rétrécit TOUT le polygone
+// vers son centre, donc recalcule la position de chaque sommet), on se
+// contente ici de ramener le ou les sommets qui viennent d'être déplacés à
+// leur position d'avant le geste — tous les autres sommets restent
+// strictement inchangés. `movedEntries` est un tableau de {index, start:{x,z}}.
+function revertBandOverflowIfNeeded(pts, belowFootprint, movedEntries){
+  if(polygonOutsideAreaRatio(pts, belowFootprint) <= 0.30) return { pts, reverted:false };
+  movedEntries.forEach(({index, start})=>{
+    if(pts[index] && start) pts[index] = { x:start.x, z:start.z };
+  });
+  return { pts, reverted:true };
+}
 
 function rebuildMesh(b){
   if(b.constructing){ renderConstructionFrame(b); return; }
   b.group.clear();
   const editing = editingBuildingId === b.id;
 
-  if(legendEnabled){
+  // En Vue Globale, on force le rendu neutre "verre" (matériau glass + toit
+  // basique bâtiment/gazon) même si la coloration par usage ("Légendes")
+  // est activée : sur la maquette élargie et vue de loin, ces à-plats de
+  // couleur par usage ("légendes des nouveaux bâtiments") sont un bruit
+  // visuel inutile — on veut juste une masse volumétrique cohérente avec
+  // le reste du site.
+  if(legendEnabled && !globalViewActive){
     // Un bloc par étage, chacun avec le contour de SA tranche (footprintForBand)
     // — un décroché n'est qu'une tranche dont le contour est plus petit que le
     // socle, donc l'effet d'escalier apparaît automatiquement à la bonne
@@ -6072,10 +6228,14 @@ function updateSiteStats(){
   const builtEl = document.getElementById('legend-built-pct');
   const greenEl = document.getElementById('legend-green-pct');
   const treeEl = document.getElementById('legend-tree-count');
+  const builtBar = document.getElementById('legend-built-bar');
+  const greenBar = document.getElementById('legend-green-bar');
   if(!builtEl || !greenEl || !treeEl) return;
   const parcelArea = buildZone.length>=3 ? polygonAreaXZ(buildZone) : 0;
   if(parcelArea<=0){
     builtEl.textContent = '—'; greenEl.textContent = '—'; treeEl.textContent = `${trees.length}`;
+    if(builtBar) builtBar.style.width = '0%';
+    if(greenBar) greenBar.style.width = '0%';
     return;
   }
   const builtPct = (computeBuiltFootprintM2() / parcelArea) * 100;
@@ -6083,6 +6243,11 @@ function updateSiteStats(){
   builtEl.textContent = `${builtPct.toFixed(0)} %`;
   greenEl.textContent = `${greenPct.toFixed(0)} %`;
   treeEl.textContent = `${trees.length}`;
+  // Jauges graphiques (point 6) : simple barre de remplissage, bornée à 100%
+  // par sécurité d'affichage même si le ratio calculé dépasse légèrement
+  // (chevauchements de polygones, arrondis...).
+  if(builtBar) builtBar.style.width = Math.max(0, Math.min(100, builtPct)) + '%';
+  if(greenBar) greenBar.style.width = Math.max(0, Math.min(100, greenPct)) + '%';
 }
 
 // Bande zébrée noir/jaune façon barrière de chantier, le long d'un contour
@@ -7240,7 +7405,10 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
     // édition (bouton "Modifier" / Échap) pour la vider explicitement.
     return;
   }
-  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false };
+  const dragB0 = buildings.find(x=>x.id===editingBuildingId);
+  const dragPts0 = dragB0 ? editTargetPoints(dragB0) : null;
+  const dragStart0 = dragPts0 && dragPts0[idx] ? { x:dragPts0[idx].x, z:dragPts0[idx].z } : null;
+  bldgVertexDrag = { index: idx, x: ev.clientX, y: ev.clientY, moved:false, startPoint: dragStart0 };
   bldgVertexHandles[idx].mesh.material.color.setHex(BLDG_HANDLE_DRAG);
   bldgVertexHandles[idx].mesh.material.emissive.setHex(BLDG_HANDLE_DRAG);
   controls.enabled = false;
@@ -7365,15 +7533,20 @@ window.addEventListener('pointerup', (ev)=>{
       const selectedCoords = Array.from(bldgSelected).map(i=>pts[i]).filter(Boolean).map(p=>({x:p.x,z:p.z}));
       let finalPts;
       if(editingBandIndex!==null){
-        // Décroché : pas de hug contre buildZone (aucun sens en l'air) —
-        // juste un nettoyage, puis la règle des 30% de débord par rapport à
-        // la tranche du dessous, appliquée une seule fois ici.
-        const cleaned = (cleanPolygonPoints(pts) || pts);
-        finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+        // Décroché : pas de hug contre buildZone (aucun sens en l'air). Si le
+        // débord dépasse 30%, on ne recalcule PAS tout le polygone : on
+        // ramène juste les sommets déplacés à leur position de départ.
         const belowFootprint = editTargetBelowFootprint(b);
-        const before = polygonOutsideAreaRatio(finalPts, belowFootprint);
-        finalPts = shrinkPolygonToFitOverlap(finalPts, belowFootprint, 0.30);
-        if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum', true);
+        const movedEntries = [];
+        gizmoDrag.startPoints.forEach((startP, idx)=> movedEntries.push({index:idx, start:startP}));
+        const { pts: settled, reverted } = revertBandOverflowIfNeeded(pts, belowFootprint, movedEntries);
+        if(reverted){
+          finalPts = settled;
+          flashStatus('Déplacement annulé : débord au-delà de 30% maximum', true);
+        } else {
+          const cleaned = (cleanPolygonPoints(settled) || settled);
+          finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+        }
       } else {
         const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
         const cleaned = (cleanPolygonPoints(repaired) || repaired);
@@ -7395,6 +7568,7 @@ window.addEventListener('pointerup', (ev)=>{
   const b = buildings.find(x=>x.id===editingBuildingId);
   const wasClick = !bldgVertexDrag.moved;
   const clickedIndex = bldgVertexDrag.index;
+  const clickedStartPoint = bldgVertexDrag.startPoint;
   bldgVertexDrag = null;
   controls.enabled = true;
   renderer.domElement.style.cursor = '';
@@ -7419,12 +7593,19 @@ window.addEventListener('pointerup', (ev)=>{
     }
     let finalPts;
     if(editingBandIndex!==null){
-      const cleaned = (cleanPolygonPoints(pts) || pts);
-      finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+      // Décroché : si le débord dépasse 30%, on ne recalcule PAS tout le
+      // polygone (pas de rétrécissement global) — on ramène juste le sommet
+      // déplacé à sa position de départ.
       const belowFootprint = editTargetBelowFootprint(b);
-      const before = polygonOutsideAreaRatio(finalPts, belowFootprint);
-      finalPts = shrinkPolygonToFitOverlap(finalPts, belowFootprint, 0.30);
-      if(before > 0.30) flashStatus('Décroché ajusté : débord ramené à 30% maximum', true);
+      const movedEntries = clickedStartPoint ? [{index:clickedIndex, start:clickedStartPoint}] : [];
+      const { pts: settled, reverted } = revertBandOverflowIfNeeded(pts, belowFootprint, movedEntries);
+      if(reverted){
+        finalPts = settled;
+        flashStatus('Déplacement annulé : débord au-delà de 30% maximum', true);
+      } else {
+        const cleaned = (cleanPolygonPoints(settled) || settled);
+        finalPts = simplifyClosedPolygon(cleaned) || cleaned;
+      }
     } else {
       const repaired = buildZone.length>=3 ? repairClosedPolygonAgainstZone(pts, buildZone) : pts;
       const cleaned = (cleanPolygonPoints(repaired) || repaired);
@@ -7467,6 +7648,7 @@ function updateBldgPanelVisibility(){
 // contenu est trop grand pour l'écran.
 function syncBldgPanelMaxHeight(){
   if(!bldgPanel.classList.contains('has-selection')){
+    hideBldgConnectorLine();
     return;
   }
   const listRect = bldgPanelList.getBoundingClientRect();
@@ -7498,8 +7680,45 @@ function syncBldgPanelMaxHeight(){
     }
     bldgEditWindow.style.top = top + 'px';
   }
+  updateBldgConnectorLine();
 }
 window.addEventListener('resize', syncBldgPanelMaxHeight);
+// ------------------------------------------------------------
+// Ligne de liaison visuelle (voir #bldg-connector-svg) entre la case
+// sélectionnée dans #bldg-list et la fiche #bldg-edit-window : repositionnée
+// à chaque fois que l'un des deux bouge (sélection, redimensionnement,
+// remontée anti-débordement de syncBldgPanelMaxHeight...).
+// ------------------------------------------------------------
+const bldgConnectorSvg = document.getElementById('bldg-connector-svg');
+const bldgConnectorLine = document.getElementById('bldg-connector-line');
+function hideBldgConnectorLine(){ bldgConnectorSvg.classList.remove('show'); }
+function updateBldgConnectorLine(){
+  if(!bldgPanel.classList.contains('has-selection') || selectedId===null){
+    hideBldgConnectorLine();
+    return;
+  }
+  const card = bldgList.querySelector(`.bldg-card[data-id="${selectedId}"]`);
+  if(!card || getComputedStyle(bldgEditWindow).display==='none'){ hideBldgConnectorLine(); return; }
+  const cardRect = card.getBoundingClientRect();
+  const editRect = bldgEditWindow.getBoundingClientRect();
+  if(!cardRect.width || !editRect.width){ hideBldgConnectorLine(); return; }
+  // Part du bord (droit en desktop, bas en écran étroit) de la case
+  // sélectionnée, arrive au bord opposé de la fiche d'édition.
+  const narrow = window.innerWidth <= 980;
+  let x1, y1, x2, y2;
+  if(narrow){
+    x1 = cardRect.left + cardRect.width/2; y1 = cardRect.bottom;
+    x2 = editRect.left + editRect.width/2; y2 = editRect.top;
+  } else {
+    x1 = cardRect.right; y1 = cardRect.top + cardRect.height/2;
+    x2 = editRect.left; y2 = editRect.top + editRect.height/2;
+  }
+  bldgConnectorLine.setAttribute('x1', x1);
+  bldgConnectorLine.setAttribute('y1', y1);
+  bldgConnectorLine.setAttribute('x2', x2);
+  bldgConnectorLine.setAttribute('y2', y2);
+  bldgConnectorSvg.classList.add('show');
+}
 
 function renderList(){
   emptyNote.style.display = buildings.length ? 'none' : 'block';
@@ -7856,6 +8075,32 @@ function focusOn(b){
    GRID TOGGLE
    ============================================================ */
 /* ============================================================
+   EMPILEMENT DES FENÊTRES FLOTTANTES — "Éclairage", "Options d'affichage"
+   et "Légendes" peuvent être ouvertes en même temps ; on recalcule leur
+   position à chaque bascule pour les empiler verticalement (droite de
+   l'écran, sous la boussole) sans jamais se chevaucher, quelle que soit la
+   hauteur réelle de leur contenu (variable selon les usages/stats du site).
+   Utilise getElementById directement (plutôt que les const définies plus
+   bas) pour rester utilisable dès que le DOM existe, sans dépendre de
+   l'ordre d'exécution du script.
+   ============================================================ */
+function layoutFloatingPanels(){
+  const panels = ['sun-panel', 'admin-panel', 'legend-window']
+    .map(id=>document.getElementById(id))
+    .filter(el=>el && el.classList.contains('show'));
+  const mobile = window.innerWidth <= 980;
+  const right = mobile ? 8 : 16;
+  const gap = 12;
+  let top = mobile ? 156 : 184;
+  panels.forEach(el=>{
+    el.style.right = right + 'px';
+    el.style.top = top + 'px';
+    el.style.bottom = 'auto';
+    top += el.offsetHeight + gap;
+  });
+}
+window.addEventListener('resize', layoutFloatingPanels);
+/* ============================================================
    LÉGENDE / MATÉRIAU VERRE
    ============================================================ */
 const btnToggleLegend = document.getElementById('btn-toggle-legend');
@@ -7869,6 +8114,16 @@ btnToggleLegend.addEventListener('click', ()=>{
   legendWindow.classList.toggle('show', legendEnabled);
   document.querySelectorAll('.legend-item').forEach(el=> el.style.opacity = legendEnabled ? '1' : '.35');
   rebuildAll();
+  layoutFloatingPanels();
+});
+document.getElementById('legend-window-close').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  legendEnabled = false;
+  btnToggleLegend.classList.remove('active');
+  legendWindow.classList.remove('show');
+  document.querySelectorAll('.legend-item').forEach(el=> el.style.opacity = '.35');
+  rebuildAll();
+  layoutFloatingPanels();
 });
 
 /* ============================================================
@@ -7880,8 +8135,16 @@ btnToggleLegend.addEventListener('click', ()=>{
 const adminPanel = document.getElementById('admin-panel');
 const btnAdminPanel = document.getElementById('btn-admin-panel');
 if(btnAdminPanel){
-  btnAdminPanel.addEventListener('click', ()=> adminPanel.classList.toggle('show'));
+  btnAdminPanel.addEventListener('click', ()=>{
+    adminPanel.classList.toggle('show');
+    layoutFloatingPanels();
+  });
 }
+document.getElementById('admin-panel-close').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  adminPanel.classList.remove('show');
+  layoutFloatingPanels();
+});
 
 /* ============================================================
    MODALE À PROPOS
@@ -8193,16 +8456,23 @@ function refreshSunPanelUI(){
   const timeLabel = document.getElementById('sun-time-label');
   const statusLabel = document.getElementById('sun-status-label');
   const warning = document.getElementById('night-warning');
+  const warningText = document.getElementById('night-warning-text');
+  // L'avertissement reste toujours visible (avertir à l'avance, avant même
+  // d'activer le mode Nuit) — seuls le ton et le texte changent selon l'état.
+  warning.classList.toggle('is-night', isNight);
+  if(warningText){
+    warningText.textContent = isNight
+      ? 'Mode Nuit actif : sollicite fortement le GPU (nombreux lampadaires et ombres) et un peu le CPU.'
+      : 'Le mode Nuit sollicite fortement le GPU (nombreux lampadaires et ombres) et un peu le CPU.';
+  }
   if(isNight){
     timeLabel.textContent = '--:--';
     statusLabel.textContent = 'NUIT';
     statusLabel.classList.add('is-night');
-    warning.classList.add('show');
   } else {
     timeLabel.textContent = hourToClock(currentHour);
     statusLabel.textContent = 'JOUR';
     statusLabel.classList.remove('is-night');
-    warning.classList.remove('show');
   }
   const sunPanelBtn = document.getElementById('btn-sun-panel');
   const iconEl = sunPanelBtn.querySelector('svg, i');
@@ -8231,10 +8501,12 @@ const sunPanel = document.getElementById('sun-panel');
 document.getElementById('btn-sun-panel').addEventListener('click', (ev)=>{
   ev.stopPropagation();
   sunPanel.classList.toggle('show');
+  layoutFloatingPanels();
 });
 document.getElementById('sun-panel-close').addEventListener('click', (ev)=>{
   ev.stopPropagation();
   sunPanel.classList.remove('show');
+  layoutFloatingPanels();
 });
 const sunSliderEl = document.getElementById('sun-slider');
 sunSliderEl.addEventListener('input', (ev)=> handleSliderInput(ev.target.value));
