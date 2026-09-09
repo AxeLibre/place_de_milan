@@ -297,11 +297,12 @@
   /* ---------- Ligne de liaison entre la case sélectionnée dans la liste des
      bâtiments et sa fiche d'édition flottante (#bldg-edit-window) — repère
      visuel évitant de perdre le fil entre les deux quand elles sont
-     éloignées à l'écran. Un simple <svg> plein écran, non interactif,
-     posé sous les deux panneaux (z-index inférieur) : seul le segment
-     dans l'espace ENTRE eux reste visible. ---------- */
+     éloignées à l'écran. Un simple <svg> plein écran, non interactif, posé
+     AU-DESSUS des deux panneaux (z-index supérieur à #bldg-panel) : sinon le
+     point côté liste se retrouve caché sous le fond opaque du panneau,
+     puisque la case ne remplit pas tout à fait sa largeur. ---------- */
   #bldg-connector-svg{
-    position:fixed;inset:0;width:100vw;height:100vh;z-index:15;
+    position:fixed;inset:0;width:100vw;height:100vh;z-index:17;
     pointer-events:none;display:none;
   }
   #bldg-connector-svg.show{display:block;}
