@@ -3024,24 +3024,35 @@ function exitArchitectMode(){
   btnArchitectMode.classList.remove('active');
   window.removeEventListener('resize', scheduleArchitectRecompose);
   if(architectSavedState){
+    // Ordre important : on purge D'ABORD tout mouvement résiduel des
+    // OrbitControls (delta sphérique de rotation / offset de pan dus à
+    // l'amortissement, hérités d'un geste juste avant l'entrée en mode
+    // Architecte) SUR L'ÉTAT ACTUEL — peu importe où ça l'envoie, cet état
+    // est de toute façon jeté juste après. Couper enableDamping le temps
+    // d'un update() applique ce résidu d'un coup PUIS le mets à zéro
+    // (c'est le comportement documenté des OrbitControls : sans damping,
+    // delta et panOffset sont vidés à chaque update()).
+    //
+    // Le bug précédent faisait l'inverse : restaurer la position exacte
+    // PUIS purger — mais purger, ce n'est pas "mettre à zéro sans effet",
+    // c'est "appliquer une fois, puis mettre à zéro". Ce résidu (de taille
+    // imprévisible selon le geste fait juste avant d'ouvrir la planche)
+    // venait donc systématiquement décaler la position qu'on venait tout
+    // juste de restaurer — d'où l'instabilité qui variait "à chaque essai".
+    const dampingWas = controls.enableDamping;
+    controls.enableDamping = false;
+    controls.update();
+    controls.enableDamping = dampingWas;
+    // Seulement maintenant, une fois les deltas internes garantis à zéro,
+    // on restaure la position/cible exactes sauvegardées à l'entrée.
     camera.position.copy(architectSavedState.camPos);
     camera.up.copy(architectSavedState.camUp);
     camera.zoom = architectSavedState.zoom;
     camera.updateProjectionMatrix();
     controls.target.copy(architectSavedState.target);
     planViewActive = architectSavedState.planViewWasActive;
-    // Purge le delta sphérique / l'offset de pan interne des OrbitControls
-    // AVANT de les réactiver : par construction, OrbitControls ne remet ces
-    // deltas à zéro immédiatement que lorsque enableDamping est false le
-    // temps d'un update() ; sinon un vieux mouvement resterait "en attente"
-    // et se rejouerait au premier déplacement de l'utilisateur, donnant
-    // l'impression que le centre de rotation saute à chaque geste.
-    const dampingWas = controls.enableDamping;
-    controls.enableDamping = false;
-    controls.update();
-    controls.enableDamping = dampingWas;
     controls.enabled = architectSavedState.controlsWasEnabled;
-    controls.update();
+    controls.update(); // resynchronise la spherical interne avec la position imposée (delta nul désormais : aucun effet de bord)
   }
   architectSavedState = null;
 }
@@ -9871,19 +9882,15 @@ function updateLabelPositions(){
       return;
     }
     l.chip.style.display = ''; l.line.style.display = '';
-    // Position de base : décalée en haut-à-droite du point, puis repoussée
-    // vers le bas si elle chevauche une étiquette déjà placée cette frame —
-    // évite la superposition sans jamais cacher un label sous un autre.
+    // Position de base : décalée en haut-à-droite du point, repoussée si elle
+    // chevauche une étiquette déjà placée cette frame — réutilise la même
+    // recherche en spirale à rayon plafonné que la planche Architecte (voir
+    // architectPlaceLabel) plutôt que l'ancien empilement vertical pur, qui
+    // pouvait projeter des étiquettes très loin de leur point dès que
+    // plusieurs anchors se retrouvaient proches à l'écran.
     const w = l.chip.offsetWidth || 60, h = l.chip.offsetHeight || 22;
-    let cx = sx + 22, cy = sy - 18;
-    let tries = 0;
-    while(tries < 40){
-      const r = { left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy };
-      const overlap = placedRects.some(o => !(r.right<o.left || r.left>o.right || r.bottom<o.top || r.top>o.bottom));
-      if(!overlap) break;
-      cy += h+4; tries++;
-    }
-    placedRects.push({ left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy });
+    const pos = architectPlaceLabel(placedRects, sx + 22 + w/2, sy - 18, w, h);
+    const cx = pos.x, cy = pos.y;
     l.chip.style.left = cx+'px'; l.chip.style.top = cy+'px';
     l.screenX = cx; l.screenY = cy - h/2;
     l.line.setAttribute('x1', sx); l.line.setAttribute('y1', sy);
