@@ -3130,6 +3130,7 @@ function architectFlattenLighting(){
     hemiGround: hemiLight.groundColor.getHex(),
     shadowsEnabled: renderer.shadowMap.enabled,
     exposure: renderer.toneMappingExposure,
+    fog: scene.fog,
   };
   // Éclairage "planche" : gardé plat (pas d'ombres portées dures d'une
   // façade à l'autre) mais avec assez de lumière directionnelle pour que
@@ -3142,6 +3143,13 @@ function architectFlattenLighting(){
   hemiLight.groundColor.setHex(0x9aa2a8);
   renderer.shadowMap.enabled = false;
   renderer.toneMappingExposure = 1.0;
+  // Le brouillard de la scène (near≈420 / far≈950) commence bien avant la
+  // distance de recul de la caméra en élévation, ce qui délavait tout le
+  // contexte en gris pâle uniforme — c'était la cause principale de l'aspect
+  // "brumeux" qui persistait malgré le réglage des lumières. Sur une
+  // planche, on veut des silhouettes nettes, pas une perspective
+  // atmosphérique.
+  scene.fog = null;
   return state;
 }
 function architectRestoreLighting(state){
@@ -3151,6 +3159,7 @@ function architectRestoreLighting(state){
   hemiLight.groundColor.setHex(state.hemiGround);
   renderer.shadowMap.enabled = state.shadowsEnabled;
   renderer.toneMappingExposure = state.exposure;
+  scene.fog = state.fog;
 }
 // Arbres semi-transparents sur la planche (matériaux partagés entre tous
 // les arbres → on ne les touche qu'une fois via un Set).
@@ -3273,8 +3282,14 @@ function architectMainBox(){
     buildZone.forEach(p=> siteBox.expandByPoint(new THREE.Vector3(p.x, 0, p.z)));
   }
   const contentBox = new THREE.Box3();
-  buildings.forEach(b=>{ if(b.group) contentBox.expandByObject(b.group); });
+  // Uniquement les NOUVEAUX bâtiments (pas ceux du contexte existant,
+  // marqués noRoofInset:true à leur chargement) : les inclure tous rendait
+  // cette boîte quasi aussi grande que le polygone entier (le contexte
+  // existant couvre large), ce qui empêchait le resserrement ci-dessous de
+  // jamais se déclencher.
+  buildings.forEach(b=>{ if(!b.noRoofInset && b.group) contentBox.expandByObject(b.group); });
   if(treesGroup) contentBox.expandByObject(treesGroup);
+  if(!siteBox.isEmpty()) contentBox.intersect(siteBox);
 
   let box;
   if(!siteBox.isEmpty() && !contentBox.isEmpty()){
@@ -3650,15 +3665,29 @@ const ARCHITECT_DIM_TINT = 'rgba(238,236,229,0.34)';
 // donner un minimum de relief (plus clair en haut, plus dense en pied de
 // façade) au lieu d'un aplat uniforme façon carton découpé.
 function architectAddDepthShading(cnv){
+  const w = cnv.width, h = cnv.height;
+  // On construit le dégradé sur un canvas à part, qu'on découpe à la forme
+  // exacte du rendu (silhouette du/des bâtiment(s), alpha du canvas source)
+  // via 'destination-in' AVANT de l'appliquer en 'multiply' sur l'original.
+  // Sans ce découpage, un fillRect en mode 'multiply' sur un canvas à fond
+  // transparent peint quand même le dégradé sur les pixels transparents
+  // (ils devenaient un voile translucide sur tout le ciel) — c'est ce qui
+  // annulait l'effet et ajoutait de la brume au lieu de donner du relief.
+  const shade = document.createElement('canvas');
+  shade.width = w; shade.height = h;
+  const sc = shade.getContext('2d');
+  const g = sc.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, 'rgba(255,255,255,0.20)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.02)');
+  g.addColorStop(1, 'rgba(6,10,14,0.30)');
+  sc.fillStyle = g;
+  sc.fillRect(0, 0, w, h);
+  sc.globalCompositeOperation = 'destination-in';
+  sc.drawImage(cnv, 0, 0);
   const c = cnv.getContext('2d');
-  const g = c.createLinearGradient(0, 0, 0, cnv.height);
-  g.addColorStop(0, 'rgba(255,255,255,0.18)');
-  g.addColorStop(0.5, 'rgba(255,255,255,0.03)');
-  g.addColorStop(1, 'rgba(8,12,16,0.24)');
   c.save();
   c.globalCompositeOperation = 'multiply';
-  c.fillStyle = g;
-  c.fillRect(0, 0, cnv.width, cnv.height);
+  c.drawImage(shade, 0, 0);
   c.restore();
   return cnv;
 }
