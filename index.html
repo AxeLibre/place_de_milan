@@ -3469,6 +3469,7 @@ function architectDrawDebugOverlay(ctx, mainRect, scale, debug, worldWidthMeters
     `axe comparé: ${fmt(debug.axis)}`,
     `ratio: ${fmt(debug.ratio)}  (seuil: ${fmt(debug.threshold)})`,
     `resserré ?: ${debug.tightened===undefined ? '—' : (debug.tightened ? 'OUI' : 'non')}`,
+    `ratio panneau visé: ${fmt(debug.idealAspect)}`,
     `largeur réelle image: ${fmt(worldWidthMeters)} m`,
   ];
   ctx.save();
@@ -3563,11 +3564,46 @@ function composeArchitectSheet(ctx, W, H, scale){
   ctx.fillText(rightTxt, W-14*scale, HEADER_H*0.56);
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
+  // ---- Cadrage de l'image principale (calculé AVANT la mise en page pour
+  // pouvoir adapter la forme du panneau à la forme réelle de ce qu'il
+  // montre — voir plus bas) ----
+  const mainDir = architectDir, mainTop = architectTopView;
+  const mainBox = architectMainBox(mainDir, mainTop);
+  const mbSize = mainBox.getSize(new THREE.Vector3());
+  let idealAspect;
+  if(mainTop){
+    // Vue de haut : la boussole tourne selon la direction choisie, donc
+    // l'axe qui se retrouve à l'horizontale à l'écran dépend de `dir`.
+    const rotated = Math.abs(ARCHITECT_VIEW_DIRS[mainDir].x) > 0.5;
+    idealAspect = rotated ? (mbSize.z / Math.max(mbSize.x,1)) : (mbSize.x / Math.max(mbSize.z,1));
+  } else {
+    // Élévation : l'axe horizontal visible (voir architectMainBox) contre
+    // la hauteur des bâtiments (avec un peu de ciel au-dessus).
+    const axis = Math.abs(ARCHITECT_VIEW_DIRS[mainDir].x) > 0.5 ? 'z' : 'x';
+    idealAspect = Math.max(mbSize[axis],1) / Math.max(mbSize.y*2.2, 30);
+  }
+  // Bornes pour rester dans un format de planche raisonnable (jamais un
+  // timbre-poste vertical, jamais un bandeau démesurément large).
+  idealAspect = Math.min(3.6, Math.max(1.15, idealAspect));
+  if(mainBox.__debug) Object.assign(mainBox.__debug, { idealAspect });
+
   // ---- Mise en page ----
   const RIGHT_W = Math.round(Math.min(320, W*0.24) * scale);
   const BOTTOM_H = Math.round(Math.min(260, H*0.28) * scale);
   const PAD = Math.round(12*scale);
-  const mainRect = { x:PAD, y:HEADER_H+PAD, w:W-RIGHT_W-PAD*2, h:H-HEADER_H-BOTTOM_H-PAD*2 };
+  const envelope = { x:PAD, y:HEADER_H+PAD, w:W-RIGHT_W-PAD*2, h:H-HEADER_H-BOTTOM_H-PAD*2 };
+  // Le panneau principal tient dans cette enveloppe en respectant
+  // idealAspect (comme un "object-fit: contain") au lieu de forcer un
+  // rectangle fixe indépendant de ce qui est réellement cadré à l'intérieur
+  // — c'était ça, la vraie cause du vide : le site (souvent plus proche du
+  // carré) devait remplir une case bien plus large que lui sans être
+  // déformé, donc la caméra gonflait le champ horizontal pour compenser.
+  let mainRect;
+  {
+    let w = envelope.w, h = w / idealAspect;
+    if(h > envelope.h){ h = envelope.h; w = h * idealAspect; }
+    mainRect = { x: envelope.x + (envelope.w - w)/2, y: envelope.y + (envelope.h - h)/2, w, h };
+  }
 
   const PANEL_MIN_H = 160*scale;
   const rightCapacity = Math.max(1, Math.floor(mainRect.h / PANEL_MIN_H));
@@ -3578,8 +3614,6 @@ function composeArchitectSheet(ctx, W, H, scale){
 
   // ---- Image principale (matériaux réalistes normaux — pas de couleurs
   // d'usage ici, réservées aux fiches) ----
-  const mainDir = architectDir, mainTop = architectTopView;
-  const mainBox = architectMainBox(mainDir, mainTop);
   const newGroups = new Set(sortedNew.map(b=> b.group));
   const restOfSceneSet = new Set(worldRoot.children.filter(c=> !newGroups.has(c)));
 
