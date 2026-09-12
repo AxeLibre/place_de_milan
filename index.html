@@ -3401,18 +3401,26 @@ function architectDrawFootprintIcon(ctx, cx, cy, size, points, scale){
   ctx.restore();
 }
 
-/* ---- Anti-superposition simple (numéros + labels de l'image principale) ---- */
+/* ---- Anti-superposition (numéros + labels de l'image principale) : cherche
+   une place libre en spirale AUTOUR du point réel, rayon plafonné — jamais
+   la fuite en avant d'une poussée verticale sans limite (qui pouvait jadis
+   éloigner un numéro à des centaines de pixels de son bâtiment, donnant
+   l'impression d'un mauvais placement). Au-delà du rayon maximum, on
+   accepte un léger chevauchement plutôt que de partir loin. ---- */
 function architectPlaceLabel(placedRects, cx, cy, w, h){
-  let x = cx, y = cy, tries = 0;
-  while(tries < 40){
+  const maxRadius = 85, tries = 28;
+  for(let i=0; i<tries; i++){
+    const radius = maxRadius * (i/tries);
+    const angle = i * 2.399963; // angle d'or : répartit les essais dans toutes les directions
+    const x = cx + Math.cos(angle)*radius;
+    const y = cy - Math.abs(Math.sin(angle))*radius; // reste toujours au-dessus du point d'origine
     const r = { left:x-w/2, right:x+w/2, top:y-h, bottom:y };
     const overlap = placedRects.some(o=> !(r.right<o.left || r.left>o.right || r.bottom<o.top || r.top>o.bottom));
     if(!overlap){ placedRects.push(r); return { x, y }; }
-    y -= (h + 4);
-    tries++;
   }
-  placedRects.push({ left:x-w/2, right:x+w/2, top:y-h, bottom:y });
-  return { x, y };
+  const r = { left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy };
+  placedRects.push(r);
+  return { x:cx, y:cy };
 }
 
 /* ------------------------------------------------------------
@@ -3472,7 +3480,10 @@ function composeArchitectSheet(ctx, W, H, scale){
   // ---- Image principale : un seul rendu 3D normal (matériaux réalistes) ----
   const mainDir = architectDir, mainMode = architectViewMode;
   vehiclesVisible = (mainMode==='haut') ? false : vehiclesWereVisible; applyAgentTypeVisibility();
-  const mainRes = renderArchitectPanelCanvas(mainBox, mainDir, mainMode, mainRect.w, mainRect.h, 1.4);
+  const globalRootWasVisibleMain = globalRoot.visible;
+  globalRoot.visible = false; // seule la maquette du site réel (place_de_milan.glb) est montrée
+  const mainRes = renderArchitectPanelCanvas(mainBox, mainDir, mainMode, mainRect.w, mainRect.h, 1.8);
+  globalRoot.visible = globalRootWasVisibleMain;
   vehiclesVisible = vehiclesWereVisible; applyAgentTypeVisibility();
 
   architectPanelShadow(ctx, mainRect, scale);
@@ -3666,6 +3677,13 @@ function drawArchitectGarePanel(ctx, rect, scale){
   box.expandByScalar(70); // marge de contexte : on voit ce qui l'entoure
   const mode = architectViewMode==='elevation' ? 'elevation' : architectViewMode;
 
+  // Seule la maquette du site réel (siteRoot / place_de_milan.glb) doit
+  // être visible ici — la maquette élargie (global.glb) est normalement
+  // masquée en dehors de la Vue Globale, mais on le garantit explicitement
+  // pour cette fiche : elle cachait l'extension.
+  const globalRootWasVisible = globalRoot.visible;
+  globalRoot.visible = false;
+
   const savedMats = [];
   extensionGareMesh.traverse(o=>{
     if(!o.isMesh) return;
@@ -3686,6 +3704,7 @@ function drawArchitectGarePanel(ctx, rect, scale){
     if(c!==null) m.color.setHex(c);
     if(e!==null) m.emissive.setHex(e);
   });
+  globalRoot.visible = globalRootWasVisible;
 
   ctx.drawImage(res.cnv, rect.x, rect.y, rect.w, imgH);
   if(mode==='elevation') architectDrawGroundMask(ctx, rect, imgH, res.groundY);
