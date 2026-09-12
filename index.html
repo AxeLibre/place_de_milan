@@ -1284,6 +1284,7 @@
     <button id="architect-dir-est" data-architect-dir="est" title="Orientation Est"><i data-lucide="panel-right"></i><span>Est</span></button>
     <button id="architect-dir-ouest" data-architect-dir="ouest" title="Orientation Ouest"><i data-lucide="panel-left"></i><span>Ouest</span></button>
     <button id="architect-dir-haut" data-architect-dir="haut" title="Vue de haut (plan) — concerne l'image principale et l'extension gare"><i data-lucide="layers"></i><span>Vue de haut</span></button>
+    <button id="architect-dir-axo" data-architect-dir="axo" title="Vue axonométrique (perspective) — concerne l'image principale et l'extension gare"><i data-lucide="box"></i><span>Axonométrie</span></button>
     <div id="architect-bar-sep"></div>
     <button id="architect-toggle-labels" class="active" title="Afficher/masquer les labels sur l'image principale"><i data-lucide="tag"></i><span>Labels</span></button>
     <button id="architect-btn-export" title="Exporter la planche en PNG"><i data-lucide="camera"></i><span>Exporter</span></button>
@@ -2958,11 +2959,30 @@ function drawSkylineRuler(){
    sélection, jamais à chaque frame. La même fonction de composition sert
    à l'affichage écran et à l'export PNG (résolution plus élevée).
    ------------------------------------------------------------ */
+/* ------------------------------------------------------------
+   MODE ARCHITECTE — planche de nomenclature plein écran.
+   Une image d'ensemble RENDUE EN 3D (plan de haut, élévation orientable
+   N/S/E/O, ou axonométrie — au choix) montre le site réel (existant +
+   nouveaux bâtiments + extension gare + gazon/arbres), tandis que CHAQUE
+   nouveau bâtiment reçoit une fiche entièrement calculée à partir des
+   données du projet (pas un rendu 3D) : une "coupe" schématique — pile de
+   niveaux colorés par usage, largeur en retrait selon l'emprise réelle de
+   chaque bande — plus sa nomenclature complète (hauteur, étages, m² au
+   sol, m² développés, m² par usage). Cette approche évite tout problème
+   d'éclairage/cadrage 3D pour les fiches, qui sont garanties lisibles
+   quel que soit l'état de la scène.
+   L'image d'ensemble et la fiche "extension gare" sont, elles, de vrais
+   rendus 3D : caméra orthographique partagée `orthoCamera`, cadrée sur la
+   boîte du polygone d'implantation (jamais sur les objets 3D eux-mêmes,
+   pour ne jamais dépendre d'une géométrie qui pourrait fausser le
+   cadrage), avec un mini "rig" de projecteurs temporaires (un par face +
+   un zénithal) pour un éclairage homogène quelle que soit l'orientation.
+   ------------------------------------------------------------ */
 let architectModeActive = false;
 let architectSavedState = null;
-let architectDir = 'nord';    // 'nord'|'sud'|'est'|'ouest' — axe des élévations, collectif à tous les panneaux
-let architectTopView = false; // vue de haut : ne concerne QUE l'image principale + l'extension gare
-let architectLabelsOn = true; // labels visibles sur l'image principale uniquement
+let architectDir = 'nord';        // 'nord'|'sud'|'est'|'ouest' — axe des élévations et de l'axonométrie
+let architectViewMode = 'elevation'; // 'elevation' | 'haut' | 'axo' — ne concerne QUE l'image principale + l'extension gare
+let architectLabelsOn = true;     // labels visibles sur l'image principale uniquement
 const btnArchitectMode = document.getElementById('btn-architect-mode');
 const architectCloseBar = document.getElementById('architect-close-bar');
 const btnArchitectClose = document.getElementById('btn-architect-close');
@@ -2992,23 +3012,15 @@ function enterArchitectMode(){
   // `controls` pendant son fonctionnement (seule la caméra orthographique
   // partagée `orthoCamera`, dédiée aux rendus hors-écran, est manipulée) —
   // cette sauvegarde/restauration explicite garantit un retour exact et
-  // stable, sans dépendre de togglePlanView() (dont l'appel programmatique
-  // imbriqué provoquait une dérive de la cible d'orbite à la sortie).
+  // stable, sans dépendre de togglePlanView().
   architectSavedState = {
     planViewWasActive: planViewActive,
     camPos: camera.position.clone(),
     camUp: camera.up.clone(),
     target: controls.target.clone(),
     zoom: camera.zoom,
-    controlsWasEnabled: controls.enabled,
   };
-  // Coupe complètement les OrbitControls pendant la planche : un micro-drag
-  // accidentel qui passerait sous l'overlay (ou un événement de resize/scroll)
-  // ferait dériver `camera`/`controls.target` en arrière-plan sans que rien
-  // à l'écran ne le montre, puisque la vue 3D normale est masquée. C'est
-  // cette dérive silencieuse qui rendait l'orbite instable après la sortie.
-  controls.enabled = false;
-  planViewActive = false; // coupe la synchro plan-view pendant le mode Architecte, sans toucher la caméra
+  planViewActive = false;
   architectModeActive = true;
   document.body.classList.add('architect-mode');
   btnArchitectMode.classList.add('active');
@@ -3024,35 +3036,13 @@ function exitArchitectMode(){
   btnArchitectMode.classList.remove('active');
   window.removeEventListener('resize', scheduleArchitectRecompose);
   if(architectSavedState){
-    // Ordre important : on purge D'ABORD tout mouvement résiduel des
-    // OrbitControls (delta sphérique de rotation / offset de pan dus à
-    // l'amortissement, hérités d'un geste juste avant l'entrée en mode
-    // Architecte) SUR L'ÉTAT ACTUEL — peu importe où ça l'envoie, cet état
-    // est de toute façon jeté juste après. Couper enableDamping le temps
-    // d'un update() applique ce résidu d'un coup PUIS le mets à zéro
-    // (c'est le comportement documenté des OrbitControls : sans damping,
-    // delta et panOffset sont vidés à chaque update()).
-    //
-    // Le bug précédent faisait l'inverse : restaurer la position exacte
-    // PUIS purger — mais purger, ce n'est pas "mettre à zéro sans effet",
-    // c'est "appliquer une fois, puis mettre à zéro". Ce résidu (de taille
-    // imprévisible selon le geste fait juste avant d'ouvrir la planche)
-    // venait donc systématiquement décaler la position qu'on venait tout
-    // juste de restaurer — d'où l'instabilité qui variait "à chaque essai".
-    const dampingWas = controls.enableDamping;
-    controls.enableDamping = false;
-    controls.update();
-    controls.enableDamping = dampingWas;
-    // Seulement maintenant, une fois les deltas internes garantis à zéro,
-    // on restaure la position/cible exactes sauvegardées à l'entrée.
     camera.position.copy(architectSavedState.camPos);
     camera.up.copy(architectSavedState.camUp);
     camera.zoom = architectSavedState.zoom;
     camera.updateProjectionMatrix();
     controls.target.copy(architectSavedState.target);
     planViewActive = architectSavedState.planViewWasActive;
-    controls.enabled = architectSavedState.controlsWasEnabled;
-    controls.update(); // resynchronise la spherical interne avec la position imposée (delta nul désormais : aucun effet de bord)
+    controls.update();
   }
   architectSavedState = null;
 }
@@ -3068,15 +3058,20 @@ window.addEventListener('mousemove', (ev)=>{
 function setArchitectActiveButtons(){
   architectModeBar.querySelectorAll('[data-architect-dir]').forEach(btn=>{
     const d = btn.dataset.architectDir;
-    btn.classList.toggle('active', d==='haut' ? architectTopView : (!architectTopView && d===architectDir));
+    if(d==='haut') btn.classList.toggle('active', architectViewMode==='haut');
+    else if(d==='axo') btn.classList.toggle('active', architectViewMode==='axo');
+    else btn.classList.toggle('active', d===architectDir); // la direction reste affichée active quel que soit le mode (élévation, plan ou axo)
   });
   architectBtnLabels.classList.toggle('active', architectLabelsOn);
 }
 architectModeBar.querySelectorAll('[data-architect-dir]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     const d = btn.dataset.architectDir;
-    if(d==='haut'){ architectTopView = !architectTopView; }
-    else { architectDir = d; architectTopView = false; }
+    if(d==='haut') architectViewMode = (architectViewMode==='haut') ? 'elevation' : 'haut';
+    else if(d==='axo') architectViewMode = (architectViewMode==='axo') ? 'elevation' : 'axo';
+    // Nord/Sud/Est/Ouest ne fait plus que tourner l'axe — le mode en cours
+    // (vue de haut ou axonométrie) reste actif, plus besoin de recliquer dessus.
+    else { architectDir = d; }
     setArchitectActiveButtons();
     renderArchitectComposition();
   });
@@ -3095,9 +3090,7 @@ function scheduleArchitectRecompose(){
   architectRecomposeTimer = setTimeout(renderArchitectComposition, 150);
 }
 
-/* ---- Isolation d'objets dans worldRoot (pour "bâtiment/gare seul" et pour
-   le calque "reste de la maquette" blanchi) — bascule uniquement `.visible`,
-   restauré juste après lecture des pixels. ---- */
+/* ---- Isolation d'objets dans worldRoot (pour "gare seule") ---- */
 function architectIsolateChildren(keepSet){
   const saved = [];
   worldRoot.children.forEach(c=>{
@@ -3106,9 +3099,6 @@ function architectIsolateChildren(keepSet){
   return saved;
 }
 function architectRestore(saved){ saved.forEach(c=> c.visible = true); }
-// Isole un nœud qui n'est PAS un enfant direct de worldRoot (ex. l'extension
-// gare, imbriquée dans siteRoot) : masque tous ses "cousins" à chaque niveau
-// de la chaîne de parenté jusqu'à worldRoot.
 function architectIsolateSubtree(target){
   const saved = [];
   let forced = null;
@@ -3129,11 +3119,13 @@ function architectRestoreSubtree(state){
   if(state.forced) state.forced.visible = false;
 }
 
-/* ---- Éclairage à plat, homogène quelle que soit l'orientation de la
-   caméra (sinon la façade côté opposé au soleil ressort noire) : on réduit
-   le soleil directionnel et on monte l'ambiance/hémisphère, et on coupe les
-   ombres portées, uniquement le temps des rendus de la planche. ---- */
-function architectFlattenLighting(){
+/* ---- Éclairage : un petit "studio" de projecteurs temporaires (un par
+   face cardinale + un zénithal), en plus d'une ambiance renforcée et d'une
+   exposition relevée — garantit une façade toujours lisible quelle que
+   soit l'orientation de la caméra, sans dépendre du réglage jour/nuit en
+   cours. Tout est retiré/restauré juste après les rendus de la planche. ---- */
+let architectStudioGroup = null;
+function architectSetupLighting(box){
   const state = {
     sunIntensity: sun.intensity,
     hemiIntensity: hemiLight.intensity,
@@ -3141,26 +3133,31 @@ function architectFlattenLighting(){
     hemiGround: hemiLight.groundColor.getHex(),
     shadowsEnabled: renderer.shadowMap.enabled,
     exposure: renderer.toneMappingExposure,
-    fog: scene.fog,
   };
-  // Éclairage "planche" : gardé plat (pas d'ombres portées dures d'une
-  // façade à l'autre) mais avec assez de lumière directionnelle pour que
-  // les volumes se lisent — l'ancien réglage (soleil quasi éteint + hémi et
-  // exposition très hauts) délavait tout en gris-blanc, en particulier la
-  // vue de haut.
-  sun.intensity = 1.35;
-  hemiLight.intensity = 1.05;
+  sun.intensity = 0.5;
+  hemiLight.intensity = 1.4;
   hemiLight.color.setHex(0xffffff);
-  hemiLight.groundColor.setHex(0x9aa2a8);
+  hemiLight.groundColor.setHex(0xb7bec3);
   renderer.shadowMap.enabled = false;
-  renderer.toneMappingExposure = 1.0;
-  // Le brouillard de la scène (near≈420 / far≈950) commence bien avant la
-  // distance de recul de la caméra en élévation, ce qui délavait tout le
-  // contexte en gris pâle uniforme — c'était la cause principale de l'aspect
-  // "brumeux" qui persistait malgré le réglage des lumières. Sur une
-  // planche, on veut des silhouettes nettes, pas une perspective
-  // atmosphérique.
-  scene.fog = null;
+  renderer.toneMappingExposure = 1.15;
+
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const dist = Math.max(size.x, size.y, size.z, 30) * 1.6;
+  const rigDirs = [
+    new THREE.Vector3(0,0.15,1), new THREE.Vector3(0,0.15,-1),
+    new THREE.Vector3(1,0.15,0), new THREE.Vector3(-1,0.15,0),
+    new THREE.Vector3(0.15,1,0.15),
+  ];
+  const group = new THREE.Group();
+  rigDirs.forEach(d=>{
+    const l = new THREE.DirectionalLight(0xffffff, 0.5);
+    l.position.copy(center).addScaledVector(d.normalize(), dist);
+    l.target.position.copy(center);
+    group.add(l); group.add(l.target);
+  });
+  scene.add(group);
+  architectStudioGroup = group;
   return state;
 }
 function architectRestoreLighting(state){
@@ -3170,10 +3167,8 @@ function architectRestoreLighting(state){
   hemiLight.groundColor.setHex(state.hemiGround);
   renderer.shadowMap.enabled = state.shadowsEnabled;
   renderer.toneMappingExposure = state.exposure;
-  scene.fog = state.fog;
+  if(architectStudioGroup){ scene.remove(architectStudioGroup); architectStudioGroup = null; }
 }
-// Arbres semi-transparents sur la planche (matériaux partagés entre tous
-// les arbres → on ne les touche qu'une fois via un Set).
 function architectSetTreesTransparent(){
   const mats = new Set();
   treesGroup.traverse(o=>{
@@ -3186,10 +3181,8 @@ function architectSetTreesTransparent(){
 }
 function architectRestoreTrees(saved){ saved.forEach(([m,t,o])=>{ m.transparent = t; m.opacity = o; }); }
 
-/* ---- Rendu d'un panneau (caméra ortho cadrée sur une boîte, vue élévation
-   ou vue de haut) dans une cible hors-écran, puis lecture en canvas 2D.
-   Retourne aussi `groundY` (ligne du niveau 0 m en pixels, uniquement en
-   élévation) pour permettre de griser le "sous-sol" au moment du montage. ---- */
+/* ---- Rendu 3D d'un panneau (image d'ensemble ou extension gare) dans une
+   cible hors-écran, lu en canvas 2D. `viewMode` = 'elevation'|'haut'|'axo'. ---- */
 let architectRT = null;
 function ensureArchitectRT(w, h){
   w = Math.max(2, Math.round(w)); h = Math.max(2, Math.round(h));
@@ -3213,16 +3206,14 @@ function architectRTToCanvas(target, w, h){
   cctx.putImageData(imgData, 0, 0);
   return cnv;
 }
-const ARCHITECT_BG = 0xf3f4f5; // fond clair "planche"
-// Cadre orthoCamera sur `box`, vue élévation (dir) ou vue de haut (topView),
-// "haut image" toujours aligné sur `dir` (Nord=haut par défaut, etc.).
-function frameArchitectCamera(box, dir, topView, aspect, marginFactor){
-  const margin = marginFactor || 1.1;
+const ARCHITECT_BG = 0xeef1f3;
+function frameArchitectCamera(box, dir, viewMode, aspect, marginFactor){
+  const margin = marginFactor || 1.15;
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
-  if(topView){
-    const vertExtent = Math.max(size.y, 1);
-    const standoff = vertExtent + 80;
+  const diag = Math.max(size.x, size.y, size.z, 10);
+  if(viewMode === 'haut'){
+    const standoff = size.y + 100;
     orthoCamera.position.set(center.x, box.max.y + standoff, center.z);
     const upDir = ARCHITECT_VIEW_DIRS[dir].clone().multiplyScalar(-1);
     orthoCamera.up.set(upDir.x, 0, upDir.z);
@@ -3230,19 +3221,32 @@ function frameArchitectCamera(box, dir, topView, aspect, marginFactor){
     let halfW = Math.max(size.x, size.z, 10) * margin / 2;
     let halfH = halfW;
     if(halfW/halfH < aspect) halfW = halfH*aspect; else halfH = halfW/aspect;
-    orthoCamera.left = -halfW; orthoCamera.right = halfW; orthoCamera.top = halfH; orthoCamera.bottom = -halfH;
-    orthoCamera.near = 0.5; orthoCamera.far = standoff*2 + vertExtent + 40;
+    orthoCamera.left=-halfW; orthoCamera.right=halfW; orthoCamera.top=halfH; orthoCamera.bottom=-halfH;
+    orthoCamera.near = 0.5; orthoCamera.far = standoff*2 + size.y + 40;
+  } else if(viewMode === 'axo'){
+    const elev = THREE.MathUtils.degToRad(32);
+    const horiz = ARCHITECT_VIEW_DIRS[dir].clone().multiplyScalar(-1);
+    const camDir = new THREE.Vector3(horiz.x*Math.cos(elev), Math.sin(elev), horiz.z*Math.cos(elev)).normalize();
+    const standoff = diag*1.4 + 60;
+    orthoCamera.position.copy(center).addScaledVector(camDir, standoff);
+    orthoCamera.up.set(0,1,0);
+    orthoCamera.lookAt(center);
+    let halfW = diag * margin / 2;
+    let halfH = halfW;
+    if(halfW/halfH < aspect) halfW = halfH*aspect; else halfH = halfW/aspect;
+    orthoCamera.left=-halfW; orthoCamera.right=halfW; orthoCamera.top=halfH; orthoCamera.bottom=-halfH;
+    orthoCamera.near = 0.5; orthoCamera.far = standoff*2 + diag;
   } else {
     const viewDir = ARCHITECT_VIEW_DIRS[dir];
     const horizExtent = Math.abs(viewDir.x) > 0.5 ? size.z : size.x;
     const depthExtent  = Math.abs(viewDir.x) > 0.5 ? size.x : size.z;
     const vertExtent = Math.max(size.y, 3);
-    const standoff = Math.max(depthExtent, 10) + 80;
+    const standoff = Math.max(depthExtent, 10) + 100;
     orthoCamera.position.copy(center).addScaledVector(viewDir, -(depthExtent/2 + standoff));
     orthoCamera.up.set(0,1,0);
     orthoCamera.lookAt(center);
     let halfW = Math.max(horizExtent, 6) * margin / 2;
-    let halfH = Math.max(vertExtent, 6) * margin / 2 + vertExtent*0.06;
+    let halfH = Math.max(vertExtent, 6) * margin / 2;
     if(halfW/halfH < aspect) halfW = halfH*aspect; else halfH = halfW/aspect;
     orthoCamera.left = -halfW; orthoCamera.right = halfW; orthoCamera.top = halfH; orthoCamera.bottom = -halfH;
     orthoCamera.near = standoff*0.5; orthoCamera.far = depthExtent + standoff*1.5;
@@ -3250,8 +3254,7 @@ function frameArchitectCamera(box, dir, topView, aspect, marginFactor){
   orthoCamera.updateProjectionMatrix();
   return center;
 }
-function renderArchitectPanelCanvas(box, dir, topView, pxW, pxH, marginFactor, opts){
-  opts = opts || {};
+function renderArchitectPanelCanvas(box, dir, viewMode, pxW, pxH, marginFactor){
   const w = Math.max(48, Math.round(pxW)), h = Math.max(48, Math.round(pxH));
   const rt = ensureArchitectRT(w, h);
   const prevTarget = renderer.getRenderTarget();
@@ -3259,9 +3262,8 @@ function renderArchitectPanelCanvas(box, dir, topView, pxW, pxH, marginFactor, o
   const prevClearColor = new THREE.Color(); renderer.getClearColor(prevClearColor);
   const prevClearAlpha = renderer.getClearAlpha();
   scene.background = null;
-  if(opts.transparent) renderer.setClearColor(0x000000, 0);
-  else renderer.setClearColor(ARCHITECT_BG, 1);
-  const center = frameArchitectCamera(box, dir, topView, w/h, marginFactor);
+  renderer.setClearColor(ARCHITECT_BG, 1);
+  const center = frameArchitectCamera(box, dir, viewMode, w/h, marginFactor);
   renderer.setRenderTarget(rt);
   renderer.setViewport(0, 0, w, h);
   renderer.clear(true, true, false);
@@ -3271,13 +3273,12 @@ function renderArchitectPanelCanvas(box, dir, topView, pxW, pxH, marginFactor, o
   scene.background = prevBg;
   renderer.setClearColor(prevClearColor, prevClearAlpha);
   let groundY;
-  if(!topView){
+  if(viewMode === 'elevation'){
     const g = new THREE.Vector3(center.x, 0, center.z).project(orthoCamera);
     groundY = (1 - (g.y*0.5+0.5)) * h;
   }
   return { cnv, groundY };
 }
-// Grise la zone sous le niveau 0 m (sous-sol) sur un panneau déjà collé.
 function architectDrawGroundMask(ctx, rect, imgH, groundY){
   if(groundY===undefined) return;
   const y = rect.y + Math.max(0, Math.min(imgH, groundY));
@@ -3286,100 +3287,32 @@ function architectDrawGroundMask(ctx, rect, imgH, groundY){
   ctx.fillRect(rect.x, y, rect.w, rect.y+imgH-y);
 }
 
-/* ---- Boîtes englobantes des sujets ---- */
-function architectMainBox(dir, topView){
-  const siteBox = new THREE.Box3();
+/* ---- Boîte englobante de l'image principale : UNIQUEMENT le polygone
+   d'implantation (buildZone), à plat — jamais une boîte 3D d'objets, pour
+   ne jamais dépendre d'une géométrie annexe qui pourrait décentrer tout le
+   cadrage. La hauteur de cadrage vient d'un SCALAIRE (hauteur du plus haut
+   nouveau bâtiment), pas d'une bounding-box 3D. Les nouveaux bâtiments sont
+   en plus TOUJOURS inclus via leur empreinte au sol `b.points` (donnée 2D
+   fiable, jamais une bounding-box 3D d'objet) pour être garantis dans le
+   cadre même s'ils débordent légèrement du polygone `buildZone`. ---- */
+function architectMainBox(){
+  const box = new THREE.Box3();
+  architectNewBuildings().forEach(b=> b.points.forEach(p=> box.expandByPoint(new THREE.Vector3(p.x, 0, p.z))));
   if(buildZone && buildZone.length>=3){
-    buildZone.forEach(p=> siteBox.expandByPoint(new THREE.Vector3(p.x, 0, p.z)));
+    buildZone.forEach(p=> box.expandByPoint(new THREE.Vector3(p.x, 0, p.z)));
   }
-  const contentBox = new THREE.Box3();
-  // Uniquement les NOUVEAUX bâtiments (pas ceux du contexte existant,
-  // marqués noRoofInset:true à leur chargement) : les inclure tous rendait
-  // cette boîte quasi aussi grande que le polygone entier (le contexte
-  // existant couvre large), ce qui empêchait le resserrement ci-dessous de
-  // jamais se déclencher.
-  buildings.forEach(b=>{ if(!b.noRoofInset && b.group) contentBox.expandByObject(b.group); });
-  // NB : la végétation (treesGroup) est volontairement exclue de cette boîte.
-  // Des arbres décoratifs isolés loin des bâtiments (un rond-point planté,
-  // par ex.) gonflaient l'étendue mesurée sans qu'il y ait de bâti entre les
-  // deux, ce qui empêchait le resserrement de se déclencher là où il aurait
-  // dû. Le cadrage doit s'ancrer sur les nouveaux bâtiments eux-mêmes.
-  if(!siteBox.isEmpty()) contentBox.intersect(siteBox);
-
-  const debug = { topView: !!topView, dir };
-  let box;
-  if(!siteBox.isEmpty() && !contentBox.isEmpty()){
-    const siteSize = siteBox.getSize(new THREE.Vector3());
-    const contentSize = contentBox.getSize(new THREE.Vector3());
-    debug.siteSize = siteSize; debug.contentSize = contentSize;
-    box = siteBox.clone();
-    if(topView){
-      // Vue de haut : les DEUX axes écran (x et z) comptent pour le vide
-      // visible — comparer les aires 2D a du sens ici.
-      const siteArea = Math.max(siteSize.x,1) * Math.max(siteSize.z,1);
-      const contentArea = Math.max(contentSize.x,1) * Math.max(contentSize.z,1);
-      const ratio = contentArea / siteArea;
-      debug.axis = 'x+z (aire)'; debug.ratio = ratio; debug.threshold = 0.55;
-      if(ratio < 0.55){
-        box = contentBox.clone();
-        const pad = Math.max(contentSize.x, contentSize.z, 20) * 0.22;
-        box.expandByVector(new THREE.Vector3(pad, 0, pad));
-        debug.tightened = true;
-      } else debug.tightened = false;
-    } else {
-      // Élévation : SEUL l'axe affiché horizontalement à l'écran détermine
-      // le vide visible (x pour Nord/Sud, z pour Est/Ouest) — l'étendue en
-      // profondeur (perpendiculaire à la vue) n'a aucune influence sur le
-      // cadrage, seulement sur le recul de la caméra. Comparer une aire 2D
-      // ici ratait complètement ce cas : un terrain profond dans l'axe
-      // perpendiculaire gonflait l'aire du site sans jamais faire baisser
-      // le ratio, même quand tout le bâti est plaqué sur un seul bord de
-      // l'axe visible.
-      const viewDir = ARCHITECT_VIEW_DIRS[dir] || ARCHITECT_VIEW_DIRS.nord;
-      const axis = Math.abs(viewDir.x) > 0.5 ? 'z' : 'x';
-      const siteHoriz = Math.max(siteSize[axis], 1);
-      const contentHoriz = Math.max(contentSize[axis], 1);
-      const ratio = contentHoriz / siteHoriz;
-      debug.axis = axis; debug.ratio = ratio; debug.threshold = 0.6;
-      if(ratio < 0.6){
-        const pad = Math.max(contentHoriz, 20) * 0.25;
-        box.min[axis] = contentBox.min[axis] - pad;
-        box.max[axis] = contentBox.max[axis] + pad;
-        debug.tightened = true;
-      } else debug.tightened = false;
-    }
-  } else if(!siteBox.isEmpty()){
-    box = siteBox.clone();
-    debug.tightened = false; debug.axis = 'n/a (contenu vide)';
-  } else if(!contentBox.isEmpty()){
-    box = contentBox.clone();
-    debug.tightened = false; debug.axis = 'n/a (site vide)';
-  } else {
-    box = new THREE.Box3().setFromObject(worldRoot);
-    debug.tightened = false; debug.axis = 'n/a (rien)';
-  }
-  // Les nouveaux bâtiments doivent de toute façon toujours être entièrement
-  // visibles, quel que soit le cadrage retenu ci-dessus.
-  buildings.forEach(b=>{ if(!b.noRoofInset && b.group) box.expandByObject(b.group); });
-  // L'extension gare N'EST PAS incluse ici : son emprise réelle peut
-  // s'étendre très loin du polygone d'implantation (vers la gare existante),
-  // ce qui déformait complètement le cadrage de l'image principale. Elle
-  // reste visible si elle tombe dans le champ, et possède de toute façon
-  // sa propre fiche dédiée.
-  box.min.y = Math.min(box.min.y, 0);
-  box.__debug = debug;
+  if(box.isEmpty()) box.setFromObject(worldRoot);
+  const maxH = Math.max(20, ...architectNewBuildings().map(b=> buildingTotalHeight(b)), 0);
+  box.min.y = Math.min(box.min.y, -5);
+  box.max.y = Math.max(box.max.y, maxH);
   return box;
 }
-// "Nouveaux bâtiments" = bâtiments proposés dans l'outil, PAS ceux de
-// depart.json (marqués noRoofInset:true à leur chargement).
 function architectNewBuildings(){ return buildings.filter(b=> !b.noRoofInset); }
-// Triés du plus haut au plus bas — numérotation et rangement des fiches
-// ("le plus haut placé en haut, le plus bas en bas").
 function architectSortedNewBuildings(){
   return architectNewBuildings().slice().sort((a,b)=> buildingTotalHeight(b) - buildingTotalHeight(a));
 }
 
-/* ---- Nomenclature (texte) d'un bâtiment ---- */
+/* ---- Nomenclature + données de "coupe" (100% calculées, pas de rendu 3D) ---- */
 function architectBuildingUsageTotals(b){
   const totals = {};
   b.bands.forEach(band=>{
@@ -3404,129 +3337,75 @@ function architectBuildingSheet(b){
     usageLines,
   };
 }
-
-/* ---- Anti-superposition simple (numéros + labels de l'image principale) :
-   pousse un texte vers le haut tant que son rectangle chevauche un texte
-   déjà posé, jusqu'à 40 tentatives. ---- */
-function architectPlaceLabel(placedRects, cx, cy, w, h){
-  const fits = (x,y)=>{
-    const r = { left:x-w/2, right:x+w/2, top:y-h, bottom:y };
-    const overlap = placedRects.some(o=> !(r.right<o.left || r.left>o.right || r.bottom<o.top || r.top>o.bottom));
-    return overlap ? null : r;
-  };
-  // 1) essaie la position idéale telle quelle.
-  let r = fits(cx, cy);
-  if(r){ placedRects.push(r); return { x:cx, y:cy }; }
-  // 2) sinon explore en spirale AUTOUR du point d'ancrage (pas uniquement
-  // vers le haut) avec un rayon plafonné : un label qui ne trouve pas de
-  // place proche reste discret plutôt que de finir loin de son sujet avec
-  // un long fil qui traverse toute la planche.
-  const maxRadius = Math.max(w, h) * 3.2;
-  const step = Math.max(6, h*0.6);
-  for(let radius = step; radius <= maxRadius; radius += step){
-    const angleStep = Math.PI/6;
-    for(let a = -Math.PI/2; a > -Math.PI/2 - Math.PI*2; a -= angleStep){
-      const x = cx + Math.cos(a)*radius;
-      const y = cy + Math.sin(a)*radius;
-      r = fits(x, y);
-      if(r){ placedRects.push(r); return { x, y }; }
-    }
-  }
-  // 3) dernier recours : position d'origine (léger chevauchement toléré,
-  // préférable à un label égaré très loin de son point réel).
-  r = { left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy };
-  placedRects.push(r);
-  return { x:cx, y:cy };
+// Un "étage" par ligne, coloré par son usage, largeur en retrait selon
+// l'emprise RÉELLE (bounding box, pas une racine carrée d'aire qui perdrait
+// le rapport largeur/profondeur) de la bande à laquelle il appartient, vue
+// depuis la façade actuellement affichée (`dir`) — comme une vraie coupe.
+function architectFootprintExtent(poly, dir){
+  let minX=Infinity, maxX=-Infinity, minZ=Infinity, maxZ=-Infinity;
+  poly.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minZ=Math.min(minZ,p.z); maxZ=Math.max(maxZ,p.z); });
+  const viewDir = ARCHITECT_VIEW_DIRS[dir];
+  return Math.abs(viewDir.x) > 0.5 ? Math.max(1,maxZ-minZ) : Math.max(1,maxX-minX);
 }
-
-/* ------------------------------------------------------------
-   COMPOSITION — dispose l'image principale + les fiches secondaires sur un
-   seul canvas 2D. `scale` (1 = résolution écran, >1 = export) agrandit la
-   résolution de rendu de chaque panneau, la mise en page restant identique.
-   ------------------------------------------------------------ */
-/* ------------------------------------------------------------
-   COMPOSITION — dispose l'image principale + les fiches secondaires sur un
-   seul canvas 2D. `scale` (1 = résolution écran, >1 = export) agrandit la
-   résolution de rendu de chaque panneau, la mise en page restant identique.
-   Aspect "planche d'architecte" : bandeau de titre plein largeur en haut,
-   fond papier chaud, cartes d'ombre légère, liseré coloré par usage sur
-   chaque fiche bâtiment.
-   ------------------------------------------------------------ */
-const ARCHITECT_PAPER = '#f2f0ea';
-// Flèche de nord (vue de haut uniquement, orientée selon la direction
-// actuellement "en haut" de l'image) + barre d'échelle métrique — deux
-// éléments attendus sur toute planche d'architecte et qui manquaient
-// entièrement, contribuant à l'aspect "pas fini".
-// Debug cadrage : affiche sur la planche les vraies valeurs calculées par
-// architectMainBox (tailles site/contenu, axe retenu, ratio, décision).
-// Activé par défaut pour l'instant — désactivable depuis la console avec
-// `architectDebugOverlay = false` puis en rouvrant/rafraîchissant la planche.
-let architectDebugOverlay = true;
-function architectDrawDebugOverlay(ctx, mainRect, scale, debug, worldWidthMeters){
-  if(!architectDebugOverlay || !debug) return;
-  const fmt = (v)=> (v===undefined || v===null || Number.isNaN(v)) ? '—' : (typeof v==='number' ? v.toFixed(2) : String(v));
-  const lines = [
-    `[debug cadrage]`,
-    `vue: ${debug.topView ? 'haut' : 'élévation'} · dir: ${debug.dir}`,
-    `site (x,z): ${debug.siteSize ? `${fmt(debug.siteSize.x)} × ${fmt(debug.siteSize.z)} m` : '—'}`,
-    `contenu (x,z): ${debug.contentSize ? `${fmt(debug.contentSize.x)} × ${fmt(debug.contentSize.z)} m` : '—'}`,
-    `axe comparé: ${fmt(debug.axis)}`,
-    `ratio: ${fmt(debug.ratio)}  (seuil: ${fmt(debug.threshold)})`,
-    `resserré ?: ${debug.tightened===undefined ? '—' : (debug.tightened ? 'OUI' : 'non')}`,
-    `ratio panneau visé: ${fmt(debug.idealAspect)}`,
-    `largeur réelle image: ${fmt(worldWidthMeters)} m`,
-  ];
+function architectBuildingCoupeData(b, dir){
+  const bandWidth = new Map();
+  b.bands.forEach(band=> bandWidth.set(band, architectFootprintExtent(footprintForBand(b, band), dir)));
+  const maxW = Math.max(...bandWidth.values(), 1);
+  const floors = [];
+  let y = 0;
+  for(let f=1; f<=b.floors; f++){
+    const usage = usageAtFloor(b, f);
+    const h = floorHeightFor(usage);
+    const band = b.bands.find(bd=> f>=bd.from && f<=bd.to) || b.bands[0];
+    const w = band ? bandWidth.get(band) : maxW;
+    floors.push({ f, usage, h, y, widthRatio: (w||maxW)/maxW });
+    y += h;
+  }
+  return { totalH: y, floors };
+}
+// Petit pictogramme d'emprise au sol (forme réelle du polygone du
+// bâtiment, à l'échelle) — donnée directement reconstructible depuis
+// `b.points`, affichée sur chaque fiche pour montrer la vraie forme.
+function architectDrawFootprintIcon(ctx, cx, cy, size, points, scale){
+  if(!points || points.length<3) return;
+  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  points.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minZ=Math.min(minZ,p.z); maxZ=Math.max(maxZ,p.z); });
+  const w = Math.max(1,maxX-minX), d = Math.max(1,maxZ-minZ);
+  const s = (size*0.82) / Math.max(w,d);
   ctx.save();
-  ctx.font = `500 ${9.5*scale}px 'Space Mono', 'Courier New', monospace`;
-  const padX = 9*scale, padY = 7*scale, lineH = 13*scale;
-  const w = Math.max(...lines.map(l=> ctx.measureText(l).width)) + padX*2;
-  const h = lines.length*lineH + padY*1.6;
-  const x = mainRect.x + mainRect.w - w - 12*scale, y = mainRect.y + 12*scale;
-  ctx.fillStyle = 'rgba(10,14,18,0.82)';
-  architectRoundRectPath(ctx, x, y, w, h, 6*scale);
-  ctx.fill();
-  lines.forEach((l,i)=>{
-    ctx.fillStyle = i===0 ? '#ffd166' : '#8ef58e';
-    ctx.fillText(l, x+padX, y+padY+lineH*(i+0.8));
+  ctx.translate(cx, cy);
+  ctx.beginPath();
+  points.forEach((p,i)=>{
+    const px = (p.x - (minX+maxX)/2)*s;
+    const py = (p.z - (minZ+maxZ)/2)*s;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
   });
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(20,26,30,.09)';
+  ctx.fill();
+  ctx.strokeStyle = '#20262b'; ctx.lineWidth = 1*scale;
+  ctx.stroke();
   ctx.restore();
 }
-function architectDrawNorthArrowAndScale(ctx, mainRect, scale, worldWidthMeters, mainTop, mainDir){
-  if(mainTop){
-    const cx = mainRect.x + mainRect.w - 30*scale;
-    const cy = mainRect.y + mainRect.h - 62*scale;
-    const rot = { nord:0, est:Math.PI/2, sud:Math.PI, ouest:-Math.PI/2 }[mainDir] || 0;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(rot);
-    ctx.fillStyle = '#141a1e';
-    ctx.beginPath();
-    ctx.moveTo(0, -15*scale); ctx.lineTo(6*scale, 9*scale); ctx.lineTo(0, 4*scale); ctx.lineTo(-6*scale, 9*scale);
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = '#141a1e';
-    ctx.font = `700 ${10*scale}px 'Space Grotesk', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText('N', cx, cy - 19*scale);
-    ctx.textAlign = 'left';
+
+/* ---- Anti-superposition simple (numéros + labels de l'image principale) ---- */
+function architectPlaceLabel(placedRects, cx, cy, w, h){
+  let x = cx, y = cy, tries = 0;
+  while(tries < 40){
+    const r = { left:x-w/2, right:x+w/2, top:y-h, bottom:y };
+    const overlap = placedRects.some(o=> !(r.right<o.left || r.left>o.right || r.bottom<o.top || r.top>o.bottom));
+    if(!overlap){ placedRects.push(r); return { x, y }; }
+    y -= (h + 4);
+    tries++;
   }
-  // Barre d'échelle, calculée à partir de la largeur réelle (m) exactement
-  // couverte par le cadrage courant du panneau principal.
-  if(!(worldWidthMeters > 0)) return;
-  const pxPerMeter = mainRect.w / worldWidthMeters;
-  const steps = [5,10,20,25,50,100,200,500];
-  let barMeters = steps[0];
-  steps.forEach(s=>{ if(s*pxPerMeter <= mainRect.w*0.16) barMeters = s; });
-  const barW = barMeters * pxPerMeter;
-  const bx = mainRect.x + 16*scale, by = mainRect.y + mainRect.h - 16*scale;
-  ctx.strokeStyle = 'rgba(20,26,30,.85)'; ctx.lineWidth = 1.5*scale;
-  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx+barW, by); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(bx, by-4*scale); ctx.lineTo(bx, by+4*scale); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(bx+barW, by-4*scale); ctx.lineTo(bx+barW, by+4*scale); ctx.stroke();
-  ctx.fillStyle = 'rgba(20,26,30,.85)';
-  ctx.font = `600 ${9.5*scale}px 'Space Grotesk', sans-serif`;
-  ctx.fillText(`${barMeters} m`, bx, by-7*scale);
+  placedRects.push({ left:x-w/2, right:x+w/2, top:y-h, bottom:y });
+  return { x, y };
 }
+
+/* ------------------------------------------------------------
+   COMPOSITION
+   ------------------------------------------------------------ */
+const ARCHITECT_PAPER = '#f2f0ea';
 function composeArchitectSheet(ctx, W, H, scale){
   scale = scale || 1;
   ctx.clearRect(0,0,W,H);
@@ -3538,16 +3417,12 @@ function composeArchitectSheet(ctx, W, H, scale){
   const gareWasVisible = hasGare ? extensionGareMesh.visible : false;
   if(hasGare) extensionGareMesh.visible = true;
 
-  // Réglages globaux valables pour toute la planche : piétons masqués,
-  // éclairage à plat (couleur homogène quelle que soit l'orientation),
-  // arbres semi-transparents. Les couleurs de légende par usage ne sont
-  // forcées que plus loin, le temps des fiches bâtiments (l'image
-  // principale garde ses matériaux réalistes habituels).
   const pedestriansWereVisible = pedestriansVisible;
   pedestriansVisible = false; applyAgentTypeVisibility();
-  const lightState = architectFlattenLighting();
-  const treeState = architectSetTreesTransparent();
   const vehiclesWereVisible = vehiclesVisible;
+  const mainBox = architectMainBox();
+  const lightState = architectSetupLighting(mainBox);
+  const treeState = architectSetTreesTransparent();
 
   // ---- Bandeau de titre plein largeur ----
   const HEADER_H = Math.round(52*scale);
@@ -3560,116 +3435,55 @@ function composeArchitectSheet(ctx, W, H, scale){
   ctx.font = `600 ${10.5*scale}px 'Space Grotesk', sans-serif`;
   ctx.fillStyle = '#9fb0bd';
   ctx.fillText('PLANCHE ARCHITECTE — NOMENCLATURE', 14*scale, HEADER_H*0.74);
-  const mainTop0 = architectTopView, mainDir0 = architectDir;
-  const rightTxt = `${mainTop0 ? 'Vue de haut' : 'Élévation'} ${ARCHITECT_DIR_LABELS[mainDir0]} · ${sortedNew.length} nouveau${sortedNew.length>1?'x':''} bâtiment${sortedNew.length>1?'s':''} · ${new Date().toLocaleDateString('fr-FR')}`;
+  const viewLabel = architectViewMode==='haut' ? 'Vue de haut' : architectViewMode==='axo' ? 'Axonométrie' : 'Élévation';
+  const rightTxt = `${viewLabel} ${architectViewMode==='elevation'?ARCHITECT_DIR_LABELS[architectDir]:''} · ${sortedNew.length} nouveau${sortedNew.length>1?'x':''} bâtiment${sortedNew.length>1?'s':''} · ${new Date().toLocaleDateString('fr-FR')}`;
   ctx.font = `600 ${11.5*scale}px 'Space Grotesk', sans-serif`;
   ctx.textAlign = 'right';
   ctx.fillStyle = '#dfe8ef';
   ctx.fillText(rightTxt, W-14*scale, HEADER_H*0.56);
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-  // ---- Cadrage de l'image principale (calculé AVANT la mise en page de la
-  // vue de haut pour pouvoir adapter la forme du panneau à la forme réelle
-  // du site — voir plus bas) ----
-  const mainDir = architectDir, mainTop = architectTopView;
-  const mainBox = architectMainBox(mainDir, mainTop);
-  const mbSize = mainBox.getSize(new THREE.Vector3());
-
   // ---- Mise en page ----
-  const RIGHT_W = Math.round(Math.min(320, W*0.24) * scale);
-  const BOTTOM_H = Math.round(Math.min(260, H*0.28) * scale);
+  const RIGHT_W = Math.round(Math.min(340, W*0.25) * scale);
+  const BOTTOM_H = Math.round(Math.min(230, H*0.26) * scale);
   const PAD = Math.round(12*scale);
-  const envelope = { x:PAD, y:HEADER_H+PAD, w:W-RIGHT_W-PAD*2, h:H-HEADER_H-BOTTOM_H-PAD*2 };
+  const mainRect = { x:PAD, y:HEADER_H+PAD, w:W-RIGHT_W-PAD*2, h:H-HEADER_H-BOTTOM_H-PAD*2 };
 
-  let idealAspect;
-  if(mainTop){
-    // Vue de haut : la boussole tourne selon la direction choisie, donc
-    // l'axe qui se retrouve à l'horizontale à l'écran dépend de `dir`. On
-    // adapte la forme du panneau à la forme réelle du site (voir le
-    // resserrement de architectMainBox pour la boîte elle-même).
-    const rotated = Math.abs(ARCHITECT_VIEW_DIRS[mainDir].x) > 0.5;
-    idealAspect = rotated ? (mbSize.z / Math.max(mbSize.x,1)) : (mbSize.x / Math.max(mbSize.z,1));
-    idealAspect = Math.min(3.6, Math.max(1.15, idealAspect));
-  } else {
-    // Élévation : format large classique, INDÉPENDANT de la hauteur du
-    // bâtiment. Le dériver de la hauteur (comme précédemment) écrasait le
-    // panneau vers un carré dès qu'une tour était haute par rapport à la
-    // largeur du site — une élévation reste large par convention, quelle
-    // que soit la hauteur de ce qu'elle montre. Le vide horizontal
-    // excessif est déjà traité par le resserrement de architectMainBox.
-    idealAspect = envelope.w / envelope.h;
-  }
-  if(mainBox.__debug) Object.assign(mainBox.__debug, { idealAspect });
-
-  // Le panneau principal tient dans cette enveloppe en respectant
-  // idealAspect (comme un "object-fit: contain") au lieu de forcer un
-  // rectangle fixe indépendant de ce qui est réellement cadré à l'intérieur
-  // — c'était ça, la vraie cause du vide : le site (souvent plus proche du
-  // carré) devait remplir une case bien plus large que lui sans être
-  // déformé, donc la caméra gonflait le champ horizontal pour compenser.
-  let mainRect;
-  {
-    let w = envelope.w, h = w / idealAspect;
-    if(h > envelope.h){ h = envelope.h; w = h * idealAspect; }
-    mainRect = { x: envelope.x + (envelope.w - w)/2, y: envelope.y + (envelope.h - h)/2, w, h };
-  }
-
-  const PANEL_MIN_H = 160*scale;
+  const PANEL_MIN_H = 150*scale;
   const rightCapacity = Math.max(1, Math.floor(mainRect.h / PANEL_MIN_H));
   const rightList = sortedNew.slice(0, Math.min(rightCapacity, sortedNew.length));
   const bottomBuildings = sortedNew.slice(rightList.length);
   const bottomList = hasGare ? [{ gare:true }, ...bottomBuildings] : bottomBuildings;
   const indexOf = new Map(sortedNew.map((b,i)=> [b, i+1]));
 
-  // ---- Image principale (matériaux réalistes normaux — pas de couleurs
-  // d'usage ici, réservées aux fiches) ----
-  const newGroups = new Set(sortedNew.map(b=> b.group));
-  const restOfSceneSet = new Set(worldRoot.children.filter(c=> !newGroups.has(c)));
-
-  vehiclesVisible = mainTop ? false : vehiclesWereVisible; applyAgentTypeVisibility();
-  let hidden = architectIsolateChildren(restOfSceneSet);
-  const bgRes = renderArchitectPanelCanvas(mainBox, mainDir, mainTop, mainRect.w, mainRect.h, 1.08, {transparent:false});
-  architectRestore(hidden);
-  hidden = architectIsolateChildren(newGroups);
-  const fgRes = renderArchitectPanelCanvas(mainBox, mainDir, mainTop, mainRect.w, mainRect.h, 1.08, {transparent:true});
-  const mainWorldWidth = orthoCamera.right - orthoCamera.left; // largeur réelle (m) couverte par mainRect.w px, lue directement sur le cadrage qui vient d'être appliqué
-  architectRestore(hidden);
+  // ---- Image principale : un seul rendu 3D normal (matériaux réalistes) ----
+  const mainDir = architectDir, mainMode = architectViewMode;
+  vehiclesVisible = (mainMode==='haut') ? false : vehiclesWereVisible; applyAgentTypeVisibility();
+  const mainRes = renderArchitectPanelCanvas(mainBox, mainDir, mainMode, mainRect.w, mainRect.h, 1.12);
   vehiclesVisible = vehiclesWereVisible; applyAgentTypeVisibility();
 
-  const MAIN_CARD_R = 11*scale;
-  architectPanelShadow(ctx, mainRect, scale, MAIN_CARD_R);
-  if(!mainTop) architectAddDepthShading(fgRes.cnv);
-  ctx.save();
-  architectRoundRectPath(ctx, mainRect.x, mainRect.y, mainRect.w, mainRect.h, MAIN_CARD_R);
-  ctx.clip();
-  ctx.drawImage(bgRes.cnv, mainRect.x, mainRect.y, mainRect.w, mainRect.h);
-  ctx.fillStyle = ARCHITECT_DIM_TINT;
-  ctx.fillRect(mainRect.x, mainRect.y, mainRect.w, mainRect.h);
-  ctx.drawImage(fgRes.cnv, mainRect.x, mainRect.y, mainRect.w, mainRect.h);
-  if(!mainTop) architectDrawGroundMask(ctx, mainRect, mainRect.h, bgRes.groundY);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(20,26,30,.32)'; ctx.lineWidth = 1.5*scale;
-  architectRoundRectPath(ctx, mainRect.x+0.75*scale, mainRect.y+0.75*scale, mainRect.w-1.5*scale, mainRect.h-1.5*scale, MAIN_CARD_R);
-  ctx.stroke();
-  // Étiquette discrète (le titre complet est déjà dans le bandeau)
-  ctx.fillStyle = 'rgba(20,26,30,.82)';
+  architectPanelShadow(ctx, mainRect, scale);
+  ctx.drawImage(mainRes.cnv, mainRect.x, mainRect.y, mainRect.w, mainRect.h);
+  if(mainMode==='elevation') architectDrawGroundMask(ctx, mainRect, mainRect.h, mainRes.groundY);
+  ctx.strokeStyle = '#20262b'; ctx.lineWidth = 1.5*scale;
+  ctx.strokeRect(mainRect.x, mainRect.y, mainRect.w, mainRect.h);
+  ctx.fillStyle = 'rgba(20,26,30,.8)';
   ctx.font = `700 ${11*scale}px 'Space Grotesk', sans-serif`;
   const tagTxt = 'ENSEMBLE — POLYGONE D\'IMPLANTATION';
-  const tagW = ctx.measureText(tagTxt).width + 18*scale;
-  architectRoundRectPath(ctx, mainRect.x+10*scale, mainRect.y+10*scale, tagW, 22*scale, 5*scale);
-  ctx.fill();
+  const tagW = ctx.measureText(tagTxt).width + 16*scale;
+  ctx.fillRect(mainRect.x+8*scale, mainRect.y+8*scale, tagW, 22*scale);
   ctx.fillStyle = '#fff';
-  ctx.fillText(tagTxt, mainRect.x+19*scale, mainRect.y+25*scale);
+  ctx.fillText(tagTxt, mainRect.x+16*scale, mainRect.y+23*scale);
 
   // Numéros au-dessus de chaque nouveau bâtiment + labels de la maquette,
   // projetés dans le cadrage courant (orthoCamera vient d'être cadrée dessus).
   const placedRects = [];
   sortedNew.forEach(b=>{
-    const box = new THREE.Box3().setFromObject(b.group);
-    const top = new THREE.Vector3((box.min.x+box.max.x)/2, box.max.y, (box.min.z+box.max.z)/2).project(orthoCamera);
-    if(top.z>1 || Math.abs(top.x)>1.05 || Math.abs(top.y)>1.05) return;
-    const sx = mainRect.x + (top.x*0.5+0.5)*mainRect.w;
-    const sy = mainRect.y + (1-(top.y*0.5+0.5))*mainRect.h;
+    const bbox = new THREE.Box3().setFromObject(b.group);
+    const topPt = new THREE.Vector3((bbox.min.x+bbox.max.x)/2, bbox.max.y, (bbox.min.z+bbox.max.z)/2).project(orthoCamera);
+    if(topPt.z>1 || Math.abs(topPt.x)>1.05 || Math.abs(topPt.y)>1.05) return;
+    const sx = mainRect.x + (topPt.x*0.5+0.5)*mainRect.w;
+    const sy = mainRect.y + (1-(topPt.y*0.5+0.5))*mainRect.h;
     const r = 12*scale;
     const pos = architectPlaceLabel(placedRects, sx, sy-r-3*scale, r*2+6*scale, r*2+6*scale);
     if(Math.hypot(pos.x-sx, pos.y-(sy-r))>2*scale){
@@ -3697,30 +3511,23 @@ function composeArchitectSheet(ctx, W, H, scale){
         ctx.strokeStyle = 'rgba(20,26,30,.45)'; ctx.lineWidth = 1*scale;
         ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(pos.x-tw/2-9*scale, pos.y-4*scale); ctx.stroke();
       }
-      ctx.fillStyle = 'rgba(20,26,30,.85)';
-      architectRoundRectPath(ctx, pos.x-tw/2-9*scale, pos.y-15*scale, tw+18*scale, 15*scale, 4*scale);
-      ctx.fill();
+      ctx.fillStyle = 'rgba(20,26,30,.82)';
+      ctx.fillRect(pos.x-tw/2-9*scale, pos.y-15*scale, tw+18*scale, 15*scale);
       ctx.fillStyle = '#fff';
       ctx.fillText(l.text, pos.x-tw/2, pos.y-4*scale);
       ctx.fillStyle = '#2ee8ff';
       ctx.beginPath(); ctx.arc(sx, sy, 2.6*scale, 0, Math.PI*2); ctx.fill();
     });
   }
-  architectDrawNorthArrowAndScale(ctx, mainRect, scale, mainWorldWidth, mainTop, mainDir);
-  architectDrawDebugOverlay(ctx, mainRect, scale, mainBox.__debug, mainWorldWidth);
 
-  // ---- Fiches secondaires : couleurs de légende par usage forcées pour
-  // toute cette section (bâtiments), restaurées juste après ----
-  const legendWasEnabled = legendEnabled;
-  if(!legendEnabled){ legendEnabled = true; rebuildAll(); }
-
+  // ---- Fiches bâtiments (100% calculées — coupe + nomenclature) ----
   if(rightList.length){
     const colX = mainRect.x + mainRect.w + PAD;
     const colW = RIGHT_W - PAD;
     const cellH = mainRect.h / rightList.length;
     rightList.forEach((b, i)=>{
       const rect = { x:colX, y:mainRect.y + i*cellH, w:colW, h:cellH - (i<rightList.length-1?PAD*0.7:0) };
-      drawArchitectBuildingPanel(ctx, rect, b, scale, indexOf.get(b));
+      drawArchitectBuildingCard(ctx, rect, b, scale, indexOf.get(b));
     });
   }
   if(bottomList.length){
@@ -3730,16 +3537,15 @@ function composeArchitectSheet(ctx, W, H, scale){
     bottomList.forEach((item, i)=>{
       const rect = { x:mainRect.x + i*cellW, y:rowY, w:cellW - (i<bottomList.length-1?PAD*0.7:0), h:BOTTOM_H - PAD };
       if(item.gare) drawArchitectGarePanel(ctx, rect, scale);
-      else drawArchitectBuildingPanel(ctx, rect, item, scale, indexOf.get(item));
+      else drawArchitectBuildingCard(ctx, rect, item, scale, indexOf.get(item));
     });
   }
-  if(legendEnabled !== legendWasEnabled){ legendEnabled = legendWasEnabled; rebuildAll(); }
 
-  // ---- Cartouche (coin bas-droit, sous la colonne de droite) ----
+  // ---- Cartouche / légende (coin bas-droit) ----
   const titleRect = { x:mainRect.x+mainRect.w+PAD, y:mainRect.y+mainRect.h+PAD, w:RIGHT_W-PAD, h:BOTTOM_H-PAD };
-  drawArchitectTitleBlock(ctx, titleRect, scale, { mainDir, mainTop, count:sortedNew.length });
+  drawArchitectTitleBlock(ctx, titleRect, scale, { count:sortedNew.length });
 
-  // ---- Restauration de tous les réglages temporaires ----
+  // ---- Restauration ----
   if(hasGare) extensionGareMesh.visible = gareWasVisible;
   pedestriansVisible = pedestriansWereVisible; applyAgentTypeVisibility();
   architectRestoreLighting(lightState);
@@ -3748,191 +3554,135 @@ function composeArchitectSheet(ctx, W, H, scale){
   renderer.setViewport(0,0,renderer.domElement.width, renderer.domElement.height);
 }
 
-// Tracé d'un rectangle à coins arrondis, réutilisé pour toutes les cartes de
-// la planche (fiches, cartouche, légende, puces de label) — des coins nets
-// sur des cartes à ombre portée est ce qui donnait l'aspect "bas de gamme"
-// le plus visible ; l'arrondi + le clip associé règle ça d'un coup.
-function architectRoundRectPath(ctx, x, y, w, h, r){
-  r = Math.max(0, Math.min(r, w/2, h/2));
-  ctx.beginPath();
-  ctx.moveTo(x+r, y);
-  ctx.arcTo(x+w, y, x+w, y+h, r);
-  ctx.arcTo(x+w, y+h, x, y+h, r);
-  ctx.arcTo(x, y+h, x, y, r);
-  ctx.arcTo(x, y, x+w, y, r);
-  ctx.closePath();
-}
-function architectPanelShadow(ctx, rect, scale, radius){
-  const r = radius===undefined ? 9*scale : radius;
+function architectPanelShadow(ctx, rect, scale){
   ctx.save();
-  ctx.shadowColor = 'rgba(20,26,30,.30)';
-  ctx.shadowBlur = 13*scale; ctx.shadowOffsetY = 4*scale;
+  ctx.shadowColor = 'rgba(20,26,30,.28)';
+  ctx.shadowBlur = 10*scale; ctx.shadowOffsetY = 3*scale;
   ctx.fillStyle = '#fff';
-  architectRoundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, r);
-  ctx.fill();
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   ctx.restore();
 }
-// Teinte "dimming" du contexte existant : un ton papier légèrement transparent
-// (au lieu d'un blanc pur, plus dur et plus délavant) posé sur le rendu de
-// fond avant d'y superposer les nouveaux bâtiments en couleur pleine.
-const ARCHITECT_DIM_TINT = 'rgba(238,236,229,0.34)';
-// Léger dégradé multiplicatif posé sur les volumes rendus à plat, pour leur
-// donner un minimum de relief (plus clair en haut, plus dense en pied de
-// façade) au lieu d'un aplat uniforme façon carton découpé.
-function architectAddDepthShading(cnv){
-  const w = cnv.width, h = cnv.height;
-  // On construit le dégradé sur un canvas à part, qu'on découpe à la forme
-  // exacte du rendu (silhouette du/des bâtiment(s), alpha du canvas source)
-  // via 'destination-in' AVANT de l'appliquer en 'multiply' sur l'original.
-  // Sans ce découpage, un fillRect en mode 'multiply' sur un canvas à fond
-  // transparent peint quand même le dégradé sur les pixels transparents
-  // (ils devenaient un voile translucide sur tout le ciel) — c'est ce qui
-  // annulait l'effet et ajoutait de la brume au lieu de donner du relief.
-  const shade = document.createElement('canvas');
-  shade.width = w; shade.height = h;
-  const sc = shade.getContext('2d');
-  const g = sc.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, 'rgba(255,255,255,0.20)');
-  g.addColorStop(0.5, 'rgba(255,255,255,0.02)');
-  g.addColorStop(1, 'rgba(6,10,14,0.30)');
-  sc.fillStyle = g;
-  sc.fillRect(0, 0, w, h);
-  sc.globalCompositeOperation = 'destination-in';
-  sc.drawImage(cnv, 0, 0);
-  const c = cnv.getContext('2d');
-  c.save();
-  c.globalCompositeOperation = 'multiply';
-  c.drawImage(shade, 0, 0);
-  c.restore();
-  return cnv;
-}
-// Fiche d'un nouveau bâtiment : rendu SEUL (tout le reste masqué), coloré
-// par usage (légendes forcées par l'appelant), avec sa nomenclature complète.
-function drawArchitectBuildingPanel(ctx, rect, b, scale, index){
-  const CARD_R = 9*scale;
-  architectPanelShadow(ctx, rect, scale, CARD_R);
+// Fiche d'un nouveau bâtiment — ENTIÈREMENT calculée (pas de rendu 3D) :
+// à gauche une "coupe" (pile de niveaux colorés par usage, silhouette en
+// retrait selon l'emprise réelle de chaque bande), à droite sa nomenclature.
+function drawArchitectBuildingCard(ctx, rect, b, scale, index){
+  architectPanelShadow(ctx, rect, scale);
+  ctx.strokeStyle = '#c9c4b8'; ctx.lineWidth = 1*scale;
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
   const sheet = architectBuildingSheet(b);
-  const legendH = Math.min(rect.h*0.55, (58 + sheet.usageLines.length*13) * scale);
-  const imgH = rect.h - legendH;
-  const box = new THREE.Box3().setFromObject(b.group);
-  const hidden = architectIsolateChildren(new Set([b.group]));
-  const res = renderArchitectPanelCanvas(box, architectDir, false, rect.w, imgH, 1.18, {transparent:false});
-  architectRestore(hidden);
-  architectAddDepthShading(res.cnv);
+  const coupe = architectBuildingCoupeData(b, architectDir);
 
-  ctx.save();
-  architectRoundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, CARD_R);
-  ctx.clip();
-  ctx.drawImage(res.cnv, rect.x, rect.y, rect.w, imgH);
-  architectDrawGroundMask(ctx, rect, imgH, res.groundY);
-  // liseré de couleur (usage dominant) en haut de la fiche
-  const dominant = sheet.usageLines[0];
-  if(dominant){
-    ctx.fillStyle = `#${dominant.color.toString(16).padStart(6,'0')}`;
-    ctx.fillRect(rect.x, rect.y, rect.w, 4*scale);
-  }
-  ctx.strokeStyle = 'rgba(20,26,30,.14)'; ctx.lineWidth = 1*scale;
-  ctx.beginPath(); ctx.moveTo(rect.x, rect.y+imgH); ctx.lineTo(rect.x+rect.w, rect.y+imgH); ctx.stroke();
-  // bloc légende (nomenclature)
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(rect.x, rect.y+imgH, rect.w, legendH);
-  let ty = rect.y + imgH + 14*scale;
+  // en-tête (numéro, nom, pictogramme d'emprise réelle en haut à droite)
+  const padX = 10*scale, padTop = 10*scale;
+  const r = 10*scale;
+  ctx.beginPath(); ctx.arc(rect.x+padX+r, rect.y+padTop+r, r, 0, Math.PI*2);
+  ctx.fillStyle = '#141a1e'; ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = `700 ${10.5*scale}px 'Space Grotesk', sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(index), rect.x+padX+r, rect.y+padTop+r+0.5*scale);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#141a1e';
   ctx.font = `700 ${12.5*scale}px 'Space Grotesk', sans-serif`;
-  ctx.fillText(`${index}. ${sheet.name}`, rect.x+8*scale, ty); ty += 15*scale;
-  ctx.font = `600 ${10.5*scale}px 'Space Grotesk', sans-serif`;
-  ctx.fillStyle = '#4a5560';
-  ctx.fillText(`${sheet.height} · ${sheet.floors}`, rect.x+8*scale, ty); ty += 13*scale;
-  ctx.fillText(sheet.footprint, rect.x+8*scale, ty); ty += 13*scale;
-  ctx.fillText(sheet.developed, rect.x+8*scale, ty); ty += 14*scale;
-  ctx.font = `600 ${9.5*scale}px 'Space Grotesk', sans-serif`;
-  sheet.usageLines.forEach(u=>{
-    if(ty > rect.y+rect.h-3*scale) return;
-    ctx.fillStyle = `#${u.color.toString(16).padStart(6,'0')}`;
-    ctx.beginPath(); ctx.arc(rect.x+10*scale, ty-3.5*scale, 3.5*scale, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#6b7680';
-    ctx.fillText(u.text, rect.x+18*scale, ty); ty += 12.5*scale;
+  const nameMaxW = (rect.x+rect.w-padX-30*scale-6*scale) - (rect.x+padX+r*2+8*scale);
+  let nameTxt = sheet.name;
+  while(ctx.measureText(nameTxt).width > nameMaxW && nameTxt.length>3){ nameTxt = nameTxt.slice(0,-2)+'…'; }
+  ctx.fillText(nameTxt, rect.x+padX+r*2+8*scale, rect.y+padTop+r+4*scale);
+  const iconSize = 30*scale;
+  architectDrawFootprintIcon(ctx, rect.x+rect.w-padX-iconSize/2, rect.y+padTop+iconSize/2, iconSize, b.points, scale);
+
+  const bodyY = rect.y + padTop + r*2 + 14*scale;
+  const bodyH = rect.h - (bodyY-rect.y) - 10*scale;
+  const coupeW = Math.max(46*scale, rect.w*0.24);
+  const coupeX = rect.x + padX;
+  const textX = coupeX + coupeW + 16*scale;
+  const textW = rect.x + rect.w - 10*scale - textX;
+
+  // -- coupe (pile de niveaux) --
+  const baseY = bodyY + bodyH;
+  const pxPerM = bodyH / Math.max(1, coupe.totalH);
+  const barMaxW = coupeW * 0.82;
+  const barCx = coupeX + coupeW/2;
+  coupe.floors.forEach(fl=>{
+    const fh = Math.max(1, fl.h*pxPerM);
+    const fy = baseY - (fl.y+fl.h)*pxPerM;
+    const fw = Math.max(4*scale, barMaxW*fl.widthRatio);
+    ctx.fillStyle = `#${(USAGE_COLORS[fl.usage]||0x999999).toString(16).padStart(6,'0')}`;
+    ctx.fillRect(barCx-fw/2, fy, fw, Math.max(1, fh-0.6*scale));
   });
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(20,26,30,.22)'; ctx.lineWidth = 1*scale;
-  architectRoundRectPath(ctx, rect.x+0.5*scale, rect.y+0.5*scale, rect.w-scale, rect.h-scale, CARD_R);
-  ctx.stroke();
-  // pastille numérotée (même numéro que sur l'image principale) — dessinée
-  // après le clip pour rester nette au-dessus du coin arrondi
-  const r = 11*scale;
-  ctx.beginPath(); ctx.arc(rect.x+r+7*scale, rect.y+r+7*scale, r, 0, Math.PI*2);
-  ctx.fillStyle = '#141a1e'; ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = `700 ${11*scale}px 'Space Grotesk', sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(String(index), rect.x+r+7*scale, rect.y+r+7.5*scale);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.strokeStyle = '#20262b'; ctx.lineWidth = 1*scale;
+  ctx.strokeRect(barCx-barMaxW/2, bodyY, barMaxW, bodyH);
+  // ligne de sol + hauteur totale
+  ctx.fillStyle = '#4a5560'; ctx.font = `600 ${9*scale}px 'Space Grotesk', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(sheet.height, barCx, baseY + 12*scale);
+  ctx.textAlign = 'left';
+
+  // -- nomenclature --
+  let ty = bodyY + 11*scale;
+  ctx.fillStyle = '#141a1e';
+  ctx.font = `700 ${11*scale}px 'Space Grotesk', sans-serif`;
+  ctx.fillText(sheet.floors, textX, ty); ty += 15*scale;
+  ctx.font = `600 ${9.5*scale}px 'Space Grotesk', sans-serif`;
+  ctx.fillStyle = '#4a5560';
+  ctx.fillText(sheet.footprint, textX, ty); ty += 13*scale;
+  ctx.fillText(sheet.developed, textX, ty); ty += 15*scale;
+  sheet.usageLines.forEach(u=>{
+    if(ty > rect.y+rect.h-4*scale || textW < 30*scale) return;
+    ctx.fillStyle = `#${u.color.toString(16).padStart(6,'0')}`;
+    ctx.beginPath(); ctx.arc(textX+3.5*scale, ty-3.5*scale, 3.5*scale, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#6b7680';
+    ctx.fillText(u.text, textX+11*scale, ty); ty += 12.5*scale;
+  });
 }
-// Fiche extension gare : blanchit le reste de la maquette, comme l'image
-// principale (même technique fond/premier-plan), synchro top-view.
+// Fiche extension gare — seule dans son cadre (reste de la maquette
+// masqué), synchro top-view/axo avec l'image principale.
 function drawArchitectGarePanel(ctx, rect, scale){
   if(!extensionGareMesh) return;
-  const CARD_R = 9*scale;
-  architectPanelShadow(ctx, rect, scale, CARD_R);
-  const legendH = 34*scale;
+  architectPanelShadow(ctx, rect, scale);
+  const legendH = 32*scale;
   const imgH = rect.h - legendH;
   const box = new THREE.Box3().setFromObject(extensionGareMesh);
-  const topView = architectTopView;
+  const mode = architectViewMode==='elevation' ? 'elevation' : architectViewMode;
 
-  extensionGareMesh.visible = false;
-  const bgRes = renderArchitectPanelCanvas(box, architectDir, topView, rect.w, imgH, 1.18, {transparent:false});
-  extensionGareMesh.visible = true;
   const iso = architectIsolateSubtree(extensionGareMesh);
-  const fgRes = renderArchitectPanelCanvas(box, architectDir, topView, rect.w, imgH, 1.18, {transparent:true});
+  const res = renderArchitectPanelCanvas(box, architectDir, mode, rect.w, imgH, 1.2);
   architectRestoreSubtree(iso);
-  if(!topView) architectAddDepthShading(fgRes.cnv);
 
-  ctx.save();
-  architectRoundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, CARD_R);
-  ctx.clip();
-  ctx.drawImage(bgRes.cnv, rect.x, rect.y, rect.w, imgH);
-  ctx.fillStyle = ARCHITECT_DIM_TINT;
-  ctx.fillRect(rect.x, rect.y, rect.w, imgH);
-  ctx.drawImage(fgRes.cnv, rect.x, rect.y, rect.w, imgH);
-  if(!topView) architectDrawGroundMask(ctx, rect, imgH, bgRes.groundY);
-  ctx.strokeStyle = 'rgba(20,26,30,.14)'; ctx.lineWidth = 1*scale;
-  ctx.beginPath(); ctx.moveTo(rect.x, rect.y+imgH); ctx.lineTo(rect.x+rect.w, rect.y+imgH); ctx.stroke();
+  ctx.drawImage(res.cnv, rect.x, rect.y, rect.w, imgH);
+  if(mode==='elevation') architectDrawGroundMask(ctx, rect, imgH, res.groundY);
+  ctx.strokeStyle = '#20262b'; ctx.lineWidth = 1*scale;
+  ctx.strokeRect(rect.x, rect.y, rect.w, imgH);
   ctx.fillStyle = '#fff';
   ctx.fillRect(rect.x, rect.y+imgH, rect.w, legendH);
+  ctx.strokeStyle = '#c9c4b8';
+  ctx.strokeRect(rect.x, rect.y+imgH, rect.w, legendH);
   ctx.fillStyle = '#141a1e';
-  ctx.font = `700 ${12.5*scale}px 'Space Grotesk', sans-serif`;
+  ctx.font = `700 ${12*scale}px 'Space Grotesk', sans-serif`;
   ctx.textBaseline = 'top';
-  ctx.fillText('Extension Gare', rect.x+8*scale, rect.y+imgH+8*scale);
-  ctx.font = `600 ${10*scale}px 'Space Grotesk', sans-serif`;
+  ctx.fillText('Extension Gare', rect.x+8*scale, rect.y+imgH+7*scale);
+  ctx.font = `600 ${9.5*scale}px 'Space Grotesk', sans-serif`;
   ctx.fillStyle = '#4a5560';
-  ctx.fillText(topView ? 'Vue de haut' : `Élévation ${ARCHITECT_DIR_LABELS[architectDir]}`, rect.x+8*scale, rect.y+imgH+22*scale);
+  const modeLabel = mode==='haut' ? 'Vue de haut' : mode==='axo' ? 'Axonométrie' : `Élévation ${ARCHITECT_DIR_LABELS[architectDir]}`;
+  ctx.fillText(modeLabel, rect.x+8*scale, rect.y+imgH+20*scale);
   ctx.textBaseline = 'alphabetic';
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(20,26,30,.22)'; ctx.lineWidth = 1*scale;
-  architectRoundRectPath(ctx, rect.x+0.5*scale, rect.y+0.5*scale, rect.w-scale, rect.h-scale, CARD_R);
-  ctx.stroke();
 }
 function drawArchitectTitleBlock(ctx, rect, scale, info){
-  const CARD_R = 9*scale;
-  architectPanelShadow(ctx, rect, scale, CARD_R);
-  ctx.save();
-  architectRoundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, CARD_R);
-  ctx.clip();
+  architectPanelShadow(ctx, rect, scale);
   ctx.fillStyle = '#141a1e';
   ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   let ty = rect.y + 20*scale;
   ctx.fillStyle = '#fff';
   ctx.font = `700 ${13*scale}px 'Space Grotesk', sans-serif`;
-  ctx.fillText('LÉGENDE', rect.x+12*scale, ty); ty += 20*scale;
+  ctx.fillText('LÉGENDE DES USAGES', rect.x+10*scale, ty); ty += 20*scale;
   ctx.font = `600 ${10*scale}px 'Space Grotesk', sans-serif`;
   Object.keys(USAGE_LABELS).forEach(usage=>{
     if(ty > rect.y+rect.h-6*scale) return;
     ctx.fillStyle = `#${(USAGE_COLORS[usage]||0x999999).toString(16).padStart(6,'0')}`;
-    ctx.beginPath(); ctx.arc(rect.x+15*scale, ty-3.5*scale, 4*scale, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(rect.x+13*scale, ty-3.5*scale, 4*scale, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = '#cfd8de';
-    ctx.fillText(USAGE_LABELS[usage], rect.x+25*scale, ty);
+    ctx.fillText(USAGE_LABELS[usage], rect.x+23*scale, ty);
     ty += 15*scale;
   });
-  ctx.restore();
 }
 
 function renderArchitectComposition(){
@@ -9986,15 +9736,19 @@ function updateLabelPositions(){
       return;
     }
     l.chip.style.display = ''; l.line.style.display = '';
-    // Position de base : décalée en haut-à-droite du point, repoussée si elle
-    // chevauche une étiquette déjà placée cette frame — réutilise la même
-    // recherche en spirale à rayon plafonné que la planche Architecte (voir
-    // architectPlaceLabel) plutôt que l'ancien empilement vertical pur, qui
-    // pouvait projeter des étiquettes très loin de leur point dès que
-    // plusieurs anchors se retrouvaient proches à l'écran.
+    // Position de base : décalée en haut-à-droite du point, puis repoussée
+    // vers le bas si elle chevauche une étiquette déjà placée cette frame —
+    // évite la superposition sans jamais cacher un label sous un autre.
     const w = l.chip.offsetWidth || 60, h = l.chip.offsetHeight || 22;
-    const pos = architectPlaceLabel(placedRects, sx + 22 + w/2, sy - 18, w, h);
-    const cx = pos.x, cy = pos.y;
+    let cx = sx + 22, cy = sy - 18;
+    let tries = 0;
+    while(tries < 40){
+      const r = { left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy };
+      const overlap = placedRects.some(o => !(r.right<o.left || r.left>o.right || r.bottom<o.top || r.top>o.bottom));
+      if(!overlap) break;
+      cy += h+4; tries++;
+    }
+    placedRects.push({ left:cx-w/2, right:cx+w/2, top:cy-h, bottom:cy });
     l.chip.style.left = cx+'px'; l.chip.style.top = cy+'px';
     l.screenX = cx; l.screenY = cy - h/2;
     l.line.setAttribute('x1', sx); l.line.setAttribute('y1', sy);
