@@ -3287,7 +3287,7 @@ function architectDrawGroundMask(ctx, rect, imgH, groundY){
 }
 
 /* ---- Boîtes englobantes des sujets ---- */
-function architectMainBox(){
+function architectMainBox(dir, topView){
   const siteBox = new THREE.Box3();
   if(buildZone && buildZone.length>=3){
     buildZone.forEach(p=> siteBox.expandByPoint(new THREE.Vector3(p.x, 0, p.z)));
@@ -3302,31 +3302,57 @@ function architectMainBox(){
   if(treesGroup) contentBox.expandByObject(treesGroup);
   if(!siteBox.isEmpty()) contentBox.intersect(siteBox);
 
+  const debug = { topView: !!topView, dir };
   let box;
   if(!siteBox.isEmpty() && !contentBox.isEmpty()){
     const siteSize = siteBox.getSize(new THREE.Vector3());
     const contentSize = contentBox.getSize(new THREE.Vector3());
-    const siteArea = Math.max(siteSize.x,1) * Math.max(siteSize.z,1);
-    const contentArea = Math.max(contentSize.x,1) * Math.max(contentSize.z,1);
-    // Le polygone d'implantation inclut souvent une large réserve foncière
-    // ou une emprise technique quasi vide (voies, futures phases...) : le
-    // cadrer en entier laisse alors la moitié de la planche blanche. Quand
-    // le contenu réel (bâtiments + végétation) n'occupe qu'une fraction du
-    // polygone, on cadre sur ce contenu (avec une marge confortable)
-    // plutôt que sur le polygone complet.
-    if(contentArea < siteArea * 0.55){
-      box = contentBox.clone();
-      const pad = Math.max(contentSize.x, contentSize.z, 20) * 0.22;
-      box.expandByVector(new THREE.Vector3(pad, 0, pad));
+    debug.siteSize = siteSize; debug.contentSize = contentSize;
+    box = siteBox.clone();
+    if(topView){
+      // Vue de haut : les DEUX axes écran (x et z) comptent pour le vide
+      // visible — comparer les aires 2D a du sens ici.
+      const siteArea = Math.max(siteSize.x,1) * Math.max(siteSize.z,1);
+      const contentArea = Math.max(contentSize.x,1) * Math.max(contentSize.z,1);
+      const ratio = contentArea / siteArea;
+      debug.axis = 'x+z (aire)'; debug.ratio = ratio; debug.threshold = 0.55;
+      if(ratio < 0.55){
+        box = contentBox.clone();
+        const pad = Math.max(contentSize.x, contentSize.z, 20) * 0.22;
+        box.expandByVector(new THREE.Vector3(pad, 0, pad));
+        debug.tightened = true;
+      } else debug.tightened = false;
     } else {
-      box = siteBox.clone();
+      // Élévation : SEUL l'axe affiché horizontalement à l'écran détermine
+      // le vide visible (x pour Nord/Sud, z pour Est/Ouest) — l'étendue en
+      // profondeur (perpendiculaire à la vue) n'a aucune influence sur le
+      // cadrage, seulement sur le recul de la caméra. Comparer une aire 2D
+      // ici ratait complètement ce cas : un terrain profond dans l'axe
+      // perpendiculaire gonflait l'aire du site sans jamais faire baisser
+      // le ratio, même quand tout le bâti est plaqué sur un seul bord de
+      // l'axe visible.
+      const viewDir = ARCHITECT_VIEW_DIRS[dir] || ARCHITECT_VIEW_DIRS.nord;
+      const axis = Math.abs(viewDir.x) > 0.5 ? 'z' : 'x';
+      const siteHoriz = Math.max(siteSize[axis], 1);
+      const contentHoriz = Math.max(contentSize[axis], 1);
+      const ratio = contentHoriz / siteHoriz;
+      debug.axis = axis; debug.ratio = ratio; debug.threshold = 0.6;
+      if(ratio < 0.6){
+        const pad = Math.max(contentHoriz, 20) * 0.25;
+        box.min[axis] = contentBox.min[axis] - pad;
+        box.max[axis] = contentBox.max[axis] + pad;
+        debug.tightened = true;
+      } else debug.tightened = false;
     }
   } else if(!siteBox.isEmpty()){
     box = siteBox.clone();
+    debug.tightened = false; debug.axis = 'n/a (contenu vide)';
   } else if(!contentBox.isEmpty()){
     box = contentBox.clone();
+    debug.tightened = false; debug.axis = 'n/a (site vide)';
   } else {
     box = new THREE.Box3().setFromObject(worldRoot);
+    debug.tightened = false; debug.axis = 'n/a (rien)';
   }
   // Les nouveaux bâtiments doivent de toute façon toujours être entièrement
   // visibles, quel que soit le cadrage retenu ci-dessus.
@@ -3337,6 +3363,7 @@ function architectMainBox(){
   // reste visible si elle tombe dans le champ, et possède de toute façon
   // sa propre fiche dédiée.
   box.min.y = Math.min(box.min.y, 0);
+  box.__debug = debug;
   return box;
 }
 // "Nouveaux bâtiments" = bâtiments proposés dans l'outil, PAS ceux de
@@ -3426,6 +3453,39 @@ const ARCHITECT_PAPER = '#f2f0ea';
 // actuellement "en haut" de l'image) + barre d'échelle métrique — deux
 // éléments attendus sur toute planche d'architecte et qui manquaient
 // entièrement, contribuant à l'aspect "pas fini".
+// Debug cadrage : affiche sur la planche les vraies valeurs calculées par
+// architectMainBox (tailles site/contenu, axe retenu, ratio, décision).
+// Activé par défaut pour l'instant — désactivable depuis la console avec
+// `architectDebugOverlay = false` puis en rouvrant/rafraîchissant la planche.
+let architectDebugOverlay = true;
+function architectDrawDebugOverlay(ctx, mainRect, scale, debug, worldWidthMeters){
+  if(!architectDebugOverlay || !debug) return;
+  const fmt = (v)=> (v===undefined || v===null || Number.isNaN(v)) ? '—' : (typeof v==='number' ? v.toFixed(2) : String(v));
+  const lines = [
+    `[debug cadrage]`,
+    `vue: ${debug.topView ? 'haut' : 'élévation'} · dir: ${debug.dir}`,
+    `site (x,z): ${debug.siteSize ? `${fmt(debug.siteSize.x)} × ${fmt(debug.siteSize.z)} m` : '—'}`,
+    `contenu (x,z): ${debug.contentSize ? `${fmt(debug.contentSize.x)} × ${fmt(debug.contentSize.z)} m` : '—'}`,
+    `axe comparé: ${fmt(debug.axis)}`,
+    `ratio: ${fmt(debug.ratio)}  (seuil: ${fmt(debug.threshold)})`,
+    `resserré ?: ${debug.tightened===undefined ? '—' : (debug.tightened ? 'OUI' : 'non')}`,
+    `largeur réelle image: ${fmt(worldWidthMeters)} m`,
+  ];
+  ctx.save();
+  ctx.font = `500 ${9.5*scale}px 'Space Mono', 'Courier New', monospace`;
+  const padX = 9*scale, padY = 7*scale, lineH = 13*scale;
+  const w = Math.max(...lines.map(l=> ctx.measureText(l).width)) + padX*2;
+  const h = lines.length*lineH + padY*1.6;
+  const x = mainRect.x + mainRect.w - w - 12*scale, y = mainRect.y + 12*scale;
+  ctx.fillStyle = 'rgba(10,14,18,0.82)';
+  architectRoundRectPath(ctx, x, y, w, h, 6*scale);
+  ctx.fill();
+  lines.forEach((l,i)=>{
+    ctx.fillStyle = i===0 ? '#ffd166' : '#8ef58e';
+    ctx.fillText(l, x+padX, y+padY+lineH*(i+0.8));
+  });
+  ctx.restore();
+}
 function architectDrawNorthArrowAndScale(ctx, mainRect, scale, worldWidthMeters, mainTop, mainDir){
   if(mainTop){
     const cx = mainRect.x + mainRect.w - 30*scale;
@@ -3519,7 +3579,7 @@ function composeArchitectSheet(ctx, W, H, scale){
   // ---- Image principale (matériaux réalistes normaux — pas de couleurs
   // d'usage ici, réservées aux fiches) ----
   const mainDir = architectDir, mainTop = architectTopView;
-  const mainBox = architectMainBox();
+  const mainBox = architectMainBox(mainDir, mainTop);
   const newGroups = new Set(sortedNew.map(b=> b.group));
   const restOfSceneSet = new Set(worldRoot.children.filter(c=> !newGroups.has(c)));
 
@@ -3604,6 +3664,7 @@ function composeArchitectSheet(ctx, W, H, scale){
     });
   }
   architectDrawNorthArrowAndScale(ctx, mainRect, scale, mainWorldWidth, mainTop, mainDir);
+  architectDrawDebugOverlay(ctx, mainRect, scale, mainBox.__debug, mainWorldWidth);
 
   // ---- Fiches secondaires : couleurs de légende par usage forcées pour
   // toute cette section (bâtiments), restaurées juste après ----
