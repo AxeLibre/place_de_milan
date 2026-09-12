@@ -3341,27 +3341,40 @@ function architectBuildingSheet(b){
 // l'emprise RÉELLE (bounding box, pas une racine carrée d'aire qui perdrait
 // le rapport largeur/profondeur) de la bande à laquelle il appartient, vue
 // depuis la façade actuellement affichée (`dir`) — comme une vraie coupe.
-function architectFootprintExtent(poly, dir){
+function architectFootprintCenter(points){
+  let sx=0, sz=0;
+  points.forEach(p=>{ sx+=p.x; sz+=p.z; });
+  return { x: sx/points.length, z: sz/points.length };
+}
+// Retourne [min,max] de l'emprise d'une bande le long de l'axe visible
+// depuis `dir` (X pour Nord/Sud, Z pour Est/Ouest) — sert à dessiner une
+// VRAIE silhouette en coupe (retraits asymétriques respectés), pas une
+// simple largeur centrée.
+function architectFootprintRange(poly, dir){
   let minX=Infinity, maxX=-Infinity, minZ=Infinity, maxZ=-Infinity;
   poly.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minZ=Math.min(minZ,p.z); maxZ=Math.max(maxZ,p.z); });
   const viewDir = ARCHITECT_VIEW_DIRS[dir];
-  return Math.abs(viewDir.x) > 0.5 ? Math.max(1,maxZ-minZ) : Math.max(1,maxX-minX);
+  return Math.abs(viewDir.x) > 0.5 ? [minZ,maxZ] : [minX,maxX];
 }
+// Silhouette réelle : chaque étage garde le [gauche,droite] réel de sa
+// bande (retraits asymétriques respectés), tous alignés sur le même
+// centre de référence (la bande la plus large, en général le socle).
 function architectBuildingCoupeData(b, dir){
-  const bandWidth = new Map();
-  b.bands.forEach(band=> bandWidth.set(band, architectFootprintExtent(footprintForBand(b, band), dir)));
-  const maxW = Math.max(...bandWidth.values(), 1);
+  const bandRange = new Map();
+  b.bands.forEach(band=> bandRange.set(band, architectFootprintRange(footprintForBand(b, band), dir)));
+  let refCenter = 0, refSpan = 1;
+  bandRange.forEach(([mn,mx])=>{ const span = mx-mn; if(span>refSpan){ refSpan = span; refCenter = (mn+mx)/2; } });
   const floors = [];
   let y = 0;
   for(let f=1; f<=b.floors; f++){
     const usage = usageAtFloor(b, f);
     const h = floorHeightFor(usage);
     const band = b.bands.find(bd=> f>=bd.from && f<=bd.to) || b.bands[0];
-    const w = band ? bandWidth.get(band) : maxW;
-    floors.push({ f, usage, h, y, widthRatio: (w||maxW)/maxW });
+    const range = band ? bandRange.get(band) : [refCenter-refSpan/2, refCenter+refSpan/2];
+    floors.push({ f, usage, h, y, left: range[0]-refCenter, right: range[1]-refCenter });
     y += h;
   }
-  return { totalH: y, floors };
+  return { totalH: y, floors, maxSpan: refSpan };
 }
 // Petit pictogramme d'emprise au sol (forme réelle du polygone du
 // bâtiment, à l'échelle) — donnée directement reconstructible depuis
@@ -3459,7 +3472,7 @@ function composeArchitectSheet(ctx, W, H, scale){
   // ---- Image principale : un seul rendu 3D normal (matériaux réalistes) ----
   const mainDir = architectDir, mainMode = architectViewMode;
   vehiclesVisible = (mainMode==='haut') ? false : vehiclesWereVisible; applyAgentTypeVisibility();
-  const mainRes = renderArchitectPanelCanvas(mainBox, mainDir, mainMode, mainRect.w, mainRect.h, 1.12);
+  const mainRes = renderArchitectPanelCanvas(mainBox, mainDir, mainMode, mainRect.w, mainRect.h, 1.4);
   vehiclesVisible = vehiclesWereVisible; applyAgentTypeVisibility();
 
   architectPanelShadow(ctx, mainRect, scale);
@@ -3477,10 +3490,13 @@ function composeArchitectSheet(ctx, W, H, scale){
 
   // Numéros au-dessus de chaque nouveau bâtiment + labels de la maquette,
   // projetés dans le cadrage courant (orthoCamera vient d'être cadrée dessus).
+  // Position calculée UNIQUEMENT à partir de données 2D fiables (`b.points`,
+  // hauteur scalaire) — jamais une bounding-box 3D d'objet, qui peut être
+  // faussée par un marqueur/sommet d'édition ailleurs dans la hiérarchie.
   const placedRects = [];
   sortedNew.forEach(b=>{
-    const bbox = new THREE.Box3().setFromObject(b.group);
-    const topPt = new THREE.Vector3((bbox.min.x+bbox.max.x)/2, bbox.max.y, (bbox.min.z+bbox.max.z)/2).project(orthoCamera);
+    const c = architectFootprintCenter(b.points);
+    const topPt = new THREE.Vector3(c.x, buildingTotalHeight(b), c.z).project(orthoCamera);
     if(topPt.z>1 || Math.abs(topPt.x)>1.05 || Math.abs(topPt.y)>1.05) return;
     const sx = mainRect.x + (topPt.x*0.5+0.5)*mainRect.w;
     const sy = mainRect.y + (1-(topPt.y*0.5+0.5))*mainRect.h;
@@ -3597,17 +3613,19 @@ function drawArchitectBuildingCard(ctx, rect, b, scale, index){
   const textX = coupeX + coupeW + 16*scale;
   const textW = rect.x + rect.w - 10*scale - textX;
 
-  // -- coupe (pile de niveaux) --
+  // -- coupe (silhouette réelle, retraits asymétriques respectés) --
   const baseY = bodyY + bodyH;
   const pxPerM = bodyH / Math.max(1, coupe.totalH);
   const barMaxW = coupeW * 0.82;
+  const pxPerMw = barMaxW / Math.max(1, coupe.maxSpan);
   const barCx = coupeX + coupeW/2;
   coupe.floors.forEach(fl=>{
     const fh = Math.max(1, fl.h*pxPerM);
     const fy = baseY - (fl.y+fl.h)*pxPerM;
-    const fw = Math.max(4*scale, barMaxW*fl.widthRatio);
+    const fx = barCx + fl.left*pxPerMw;
+    const fw = Math.max(4*scale, (fl.right-fl.left)*pxPerMw);
     ctx.fillStyle = `#${(USAGE_COLORS[fl.usage]||0x999999).toString(16).padStart(6,'0')}`;
-    ctx.fillRect(barCx-fw/2, fy, fw, Math.max(1, fh-0.6*scale));
+    ctx.fillRect(fx, fy, fw, Math.max(1, fh-0.6*scale));
   });
   ctx.strokeStyle = '#20262b'; ctx.lineWidth = 1*scale;
   ctx.strokeRect(barCx-barMaxW/2, bodyY, barMaxW, bodyH);
@@ -3634,19 +3652,40 @@ function drawArchitectBuildingCard(ctx, rect, b, scale, index){
     ctx.fillText(u.text, textX+11*scale, ty); ty += 12.5*scale;
   });
 }
-// Fiche extension gare — seule dans son cadre (reste de la maquette
-// masqué), synchro top-view/axo avec l'image principale.
+// Fiche extension gare — vue FILAIRE de l'extension, dans son contexte
+// (le reste de la maquette reste visible normalement, rien n'est masqué) :
+// seuls les matériaux de l'extension basculent temporairement en fil de
+// fer (couleur vive) pour qu'elle ressorte nettement au milieu du site
+// réel, synchro top-view/axo avec l'image principale.
 function drawArchitectGarePanel(ctx, rect, scale){
   if(!extensionGareMesh) return;
   architectPanelShadow(ctx, rect, scale);
   const legendH = 32*scale;
   const imgH = rect.h - legendH;
   const box = new THREE.Box3().setFromObject(extensionGareMesh);
+  box.expandByScalar(70); // marge de contexte : on voit ce qui l'entoure
   const mode = architectViewMode==='elevation' ? 'elevation' : architectViewMode;
 
-  const iso = architectIsolateSubtree(extensionGareMesh);
-  const res = renderArchitectPanelCanvas(box, architectDir, mode, rect.w, imgH, 1.2);
-  architectRestoreSubtree(iso);
+  const savedMats = [];
+  extensionGareMesh.traverse(o=>{
+    if(!o.isMesh) return;
+    (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{
+      if(m && !savedMats.find(s=>s[0]===m)){
+        savedMats.push([m, m.wireframe, m.color ? m.color.getHex() : null, m.emissive ? m.emissive.getHex() : null]);
+      }
+    });
+  });
+  savedMats.forEach(([m])=>{
+    m.wireframe = true;
+    if(m.color) m.color.setHex(0x2ee8ff);
+    if(m.emissive) m.emissive.setHex(0x0d3a42);
+  });
+  const res = renderArchitectPanelCanvas(box, architectDir, mode, rect.w, imgH, 1.15);
+  savedMats.forEach(([m,w,c,e])=>{
+    m.wireframe = w;
+    if(c!==null) m.color.setHex(c);
+    if(e!==null) m.emissive.setHex(e);
+  });
 
   ctx.drawImage(res.cnv, rect.x, rect.y, rect.w, imgH);
   if(mode==='elevation') architectDrawGroundMask(ctx, rect, imgH, res.groundY);
@@ -3659,7 +3698,7 @@ function drawArchitectGarePanel(ctx, rect, scale){
   ctx.fillStyle = '#141a1e';
   ctx.font = `700 ${12*scale}px 'Space Grotesk', sans-serif`;
   ctx.textBaseline = 'top';
-  ctx.fillText('Extension Gare', rect.x+8*scale, rect.y+imgH+7*scale);
+  ctx.fillText('Extension Gare (fil de fer, en contexte)', rect.x+8*scale, rect.y+imgH+7*scale);
   ctx.font = `600 ${9.5*scale}px 'Space Grotesk', sans-serif`;
   ctx.fillStyle = '#4a5560';
   const modeLabel = mode==='haut' ? 'Vue de haut' : mode==='axo' ? 'Axonométrie' : `Élévation ${ARCHITECT_DIR_LABELS[architectDir]}`;
