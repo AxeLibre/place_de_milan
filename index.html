@@ -3299,7 +3299,11 @@ function architectMainBox(dir, topView){
   // existant couvre large), ce qui empêchait le resserrement ci-dessous de
   // jamais se déclencher.
   buildings.forEach(b=>{ if(!b.noRoofInset && b.group) contentBox.expandByObject(b.group); });
-  if(treesGroup) contentBox.expandByObject(treesGroup);
+  // NB : la végétation (treesGroup) est volontairement exclue de cette boîte.
+  // Des arbres décoratifs isolés loin des bâtiments (un rond-point planté,
+  // par ex.) gonflaient l'étendue mesurée sans qu'il y ait de bâti entre les
+  // deux, ce qui empêchait le resserrement de se déclencher là où il aurait
+  // dû. Le cadrage doit s'ancrer sur les nouveaux bâtiments eux-mêmes.
   if(!siteBox.isEmpty()) contentBox.intersect(siteBox);
 
   const debug = { topView: !!topView, dir };
@@ -3564,34 +3568,39 @@ function composeArchitectSheet(ctx, W, H, scale){
   ctx.fillText(rightTxt, W-14*scale, HEADER_H*0.56);
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-  // ---- Cadrage de l'image principale (calculé AVANT la mise en page pour
-  // pouvoir adapter la forme du panneau à la forme réelle de ce qu'il
-  // montre — voir plus bas) ----
+  // ---- Cadrage de l'image principale (calculé AVANT la mise en page de la
+  // vue de haut pour pouvoir adapter la forme du panneau à la forme réelle
+  // du site — voir plus bas) ----
   const mainDir = architectDir, mainTop = architectTopView;
   const mainBox = architectMainBox(mainDir, mainTop);
   const mbSize = mainBox.getSize(new THREE.Vector3());
-  let idealAspect;
-  if(mainTop){
-    // Vue de haut : la boussole tourne selon la direction choisie, donc
-    // l'axe qui se retrouve à l'horizontale à l'écran dépend de `dir`.
-    const rotated = Math.abs(ARCHITECT_VIEW_DIRS[mainDir].x) > 0.5;
-    idealAspect = rotated ? (mbSize.z / Math.max(mbSize.x,1)) : (mbSize.x / Math.max(mbSize.z,1));
-  } else {
-    // Élévation : l'axe horizontal visible (voir architectMainBox) contre
-    // la hauteur des bâtiments (avec un peu de ciel au-dessus).
-    const axis = Math.abs(ARCHITECT_VIEW_DIRS[mainDir].x) > 0.5 ? 'z' : 'x';
-    idealAspect = Math.max(mbSize[axis],1) / Math.max(mbSize.y*2.2, 30);
-  }
-  // Bornes pour rester dans un format de planche raisonnable (jamais un
-  // timbre-poste vertical, jamais un bandeau démesurément large).
-  idealAspect = Math.min(3.6, Math.max(1.15, idealAspect));
-  if(mainBox.__debug) Object.assign(mainBox.__debug, { idealAspect });
 
   // ---- Mise en page ----
   const RIGHT_W = Math.round(Math.min(320, W*0.24) * scale);
   const BOTTOM_H = Math.round(Math.min(260, H*0.28) * scale);
   const PAD = Math.round(12*scale);
   const envelope = { x:PAD, y:HEADER_H+PAD, w:W-RIGHT_W-PAD*2, h:H-HEADER_H-BOTTOM_H-PAD*2 };
+
+  let idealAspect;
+  if(mainTop){
+    // Vue de haut : la boussole tourne selon la direction choisie, donc
+    // l'axe qui se retrouve à l'horizontale à l'écran dépend de `dir`. On
+    // adapte la forme du panneau à la forme réelle du site (voir le
+    // resserrement de architectMainBox pour la boîte elle-même).
+    const rotated = Math.abs(ARCHITECT_VIEW_DIRS[mainDir].x) > 0.5;
+    idealAspect = rotated ? (mbSize.z / Math.max(mbSize.x,1)) : (mbSize.x / Math.max(mbSize.z,1));
+    idealAspect = Math.min(3.6, Math.max(1.15, idealAspect));
+  } else {
+    // Élévation : format large classique, INDÉPENDANT de la hauteur du
+    // bâtiment. Le dériver de la hauteur (comme précédemment) écrasait le
+    // panneau vers un carré dès qu'une tour était haute par rapport à la
+    // largeur du site — une élévation reste large par convention, quelle
+    // que soit la hauteur de ce qu'elle montre. Le vide horizontal
+    // excessif est déjà traité par le resserrement de architectMainBox.
+    idealAspect = envelope.w / envelope.h;
+  }
+  if(mainBox.__debug) Object.assign(mainBox.__debug, { idealAspect });
+
   // Le panneau principal tient dans cette enveloppe en respectant
   // idealAspect (comme un "object-fit: contain") au lieu de forcer un
   // rectangle fixe indépendant de ce qui est réellement cadré à l'intérieur
