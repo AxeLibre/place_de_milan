@@ -63,6 +63,23 @@
   }
   .tool-btn:disabled{opacity:.35;cursor:not-allowed;}
   .tool-btn.ghost{background:transparent;}
+
+  /* ---------- Groupes déroulants du ruban (Caméra / Affichage / Rendu
+     final) — même principe que #draw-mode-popout (menu positionné en
+     "fixed", calculé en JS depuis le bouton déclencheur), mais ouvert VERS
+     LE BAS puisque le déclencheur est dans le ruban horizontal du haut. ---------- */
+  .grp-trigger.active-group{
+    background:rgba(46,232,255,.12);border-color:var(--accent);color:#eafeff;
+  }
+  .grp-chevron{width:12px !important;height:12px !important;margin-left:-2px;opacity:.7;}
+  .ribbon-popout{
+    position:fixed;z-index:60;display:none;flex-direction:column;gap:3px;
+    min-width:206px;padding:6px;border-radius:8px;
+    background:rgba(24,36,48,.97);border:1px solid #2a3946;
+    backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.45);
+  }
+  .ribbon-popout.show{display:flex;}
+  .ribbon-popout .tool-btn{width:100%;justify-content:flex-start;}
   /* Les boutons "ghost" n'ont pas de fond plein : sur un ciel clair (mode
      jour), leur libellé clair devenait illisible. Une ombre portée sombre
      leur redonne du contraste quel que soit l'arrière-plan 3D. */
@@ -85,6 +102,9 @@
   body.pedestrian-mode #draw-mode-popout,
   body.pedestrian-mode #grass-brush-popout,
   body.pedestrian-mode #label-mode-popout,
+  body.pedestrian-mode #camera-group-popout,
+  body.pedestrian-mode #display-group-popout,
+  body.pedestrian-mode #render-group-popout,
   body.pedestrian-mode #label-layer,
   body.pedestrian-mode #label-lines,
   body.pedestrian-mode #site-banner{
@@ -127,6 +147,9 @@
   body.global-view-mode #draw-mode-popout,
   body.global-view-mode #grass-brush-popout,
   body.global-view-mode #label-mode-popout,
+  body.global-view-mode #camera-group-popout,
+  body.global-view-mode #display-group-popout,
+  body.global-view-mode #render-group-popout,
   body.global-view-mode #label-layer,
   body.global-view-mode #label-lines,
   body.global-view-mode #site-banner{
@@ -193,6 +216,9 @@
   body.architect-mode #draw-mode-popout,
   body.architect-mode #grass-brush-popout,
   body.architect-mode #label-mode-popout,
+  body.architect-mode #camera-group-popout,
+  body.architect-mode #display-group-popout,
+  body.architect-mode #render-group-popout,
   body.architect-mode #label-layer,
   body.architect-mode #label-lines,
   body.architect-mode #skyline-mode-bar,
@@ -711,7 +737,9 @@
   /* ---------- Mode "construction" : cache toute l'UI sauf la boussole, les
      boutons Vue plan/Grille/Voir PLU, et le bandeau de tracé/édition — cadre
      chantier chevron jaune/noir autour de la fenêtre ---------- */
-  body.construction-mode #ribbon > *:not(#btn-plan-view):not(#btn-toggle-grid):not(#btn-toggle-plu){ display:none !important; }
+  body.construction-mode #ribbon > *:not(#grp-camera):not(#grp-display){ display:none !important; }
+  body.construction-mode #camera-group-popout .tool-btn:not(#btn-plan-view),
+  body.construction-mode #display-group-popout .tool-btn:not(#btn-toggle-grid):not(#btn-toggle-plu){ display:none !important; }
   body.construction-mode #left-stack,
   body.construction-mode #legend-window,
   body.construction-mode #sun-panel,
@@ -1301,25 +1329,35 @@
     <div id="ribbon">
       <div id="brand"><b>LYON PART-DIEU | PLACE DE MILAN</b><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
       <button class="tool-btn ghost admin-only" id="btn-load-glb"><i data-lucide="upload"></i><span class="tool-btn-label">Charger maquette (.glb)</span></button>
-      <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
-      <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
+      <button class="tool-btn ghost grp-trigger" id="btn-grp-camera" aria-haspopup="true" aria-expanded="false" title="Caméra : positions et déplacements de la vue (Vue plan, Mode piéton)"><i data-lucide="video"></i><span class="tool-btn-label">Caméra</span><i data-lucide="chevron-down" class="grp-chevron"></i></button>
+      <button class="tool-btn ghost grp-trigger" id="btn-grp-display" aria-haspopup="true" aria-expanded="false" title="Affichage : ce qui est visible sur la maquette (Grille, PLU, Légendes, Éclairage, Options)"><i data-lucide="sliders-horizontal"></i><span class="tool-btn-label">Affichage</span><i data-lucide="chevron-down" class="grp-chevron"></i></button>
       <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons, constructions en cours)"><i data-lucide="pause"></i><span class="tool-btn-label">Simulation</span></button>
-      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + T/B haut-bas + flèches + ±). Souris : clic gauche glissé = regarder, molette = vitesse de croisière avant/arrière, clic molette = stop, clic droit glissé = translation. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
-      <button class="tool-btn ghost" id="btn-global-view" title="Vue Globale : affiche la maquette élargie (global.glb) autour du site, éclairée en plein midi d'équinoxe, avec la même navigation libre que le mode piéton (WASD + souris). Impossible de passer sous la maquette. Échap ou le bouton en haut pour quitter."><i data-lucide="globe"></i><span class="tool-btn-label">Vue Globale</span></button>
-      <button class="tool-btn ghost" id="btn-architect-mode" title="Mode Architecte : planche de nomenclature plein écran — vue d'ensemble orthogonale du polygone d'implantation (orientable N/S/E/O ou vue de haut, avec/sans labels) entourée des fiches de chaque nouveau bâtiment (élévation orthogonale, hauteur, étages, m² au sol, m² développés, m² par usage) et de l'extension gare."><i data-lucide="ruler"></i><span class="tool-btn-label">Mode Architecte</span></button>
-      <button class="tool-btn ghost" id="btn-open-welcome" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="tool-btn-label">Aide</span></button>
+      <button class="tool-btn ghost grp-trigger" id="btn-grp-render" aria-haspopup="true" aria-expanded="false" title="Rendu final : modes de présentation plein écran (Global, Skyline, Mode Architecte)"><i data-lucide="presentation"></i><span class="tool-btn-label">Rendu final</span><i data-lucide="chevron-down" class="grp-chevron"></i></button>
       <div id="ribbon-sep"></div>
       <div id="bottom-left-menu">
         <button id="btn-help" class="mini-fab" title="À propos"><i data-lucide="info"></i><span class="mini-fab-label">À propos</span></button>
+        <button id="btn-open-welcome" class="mini-fab" title="Comment fonctionne l'outil"><i data-lucide="help-circle"></i><span class="mini-fab-label">Aide</span></button>
         <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><i data-lucide="camera"></i><span class="mini-fab-label">Capture</span></button>
         <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><i data-lucide="save"></i><span class="mini-fab-label">Enregistrer</span></button>
         <button id="btn-load-json" class="mini-fab" title="Charger un projet"><i data-lucide="folder-open"></i><span class="mini-fab-label">Charger</span></button>
         <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><i data-lucide="map-pin"></i><span class="mini-fab-label">Départ</span></button>
-        <button id="btn-admin-panel" class="mini-fab" title="Options d'affichage"><i data-lucide="settings"></i><span class="mini-fab-label">Options</span></button>
       </div>
+    </div>
+    <div id="camera-group-popout" class="ribbon-popout">
+      <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
+      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + T/B haut-bas + flèches + ±). Souris : clic gauche glissé = regarder, molette = vitesse de croisière avant/arrière, clic molette = stop, clic droit glissé = translation. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><i data-lucide="footprints"></i><span class="tool-btn-label">Mode piéton</span></button>
+    </div>
+    <div id="display-group-popout" class="ribbon-popout">
+      <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-plu"><i data-lucide="map"></i><span class="tool-btn-label">Voir PLU</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-legend"><i data-lucide="palette"></i><span class="tool-btn-label">Légendes</span></button>
+      <button class="tool-btn ghost" id="btn-sun-panel"><i data-lucide="sun-medium"></i><span class="tool-btn-label">Éclairage</span></button>
+      <button class="tool-btn ghost" id="btn-admin-panel" title="Options d'affichage (véhicules, piétons)"><i data-lucide="settings"></i><span class="tool-btn-label">Options d'affichage</span></button>
+    </div>
+    <div id="render-group-popout" class="ribbon-popout">
+      <button class="tool-btn ghost" id="btn-global-view" title="Vue Globale : affiche la maquette élargie (global.glb) autour du site, éclairée en plein midi d'équinoxe, avec la même navigation libre que le mode piéton (WASD + souris). Impossible de passer sous la maquette. Échap ou le bouton en haut pour quitter."><i data-lucide="globe"></i><span class="tool-btn-label">Global</span></button>
+      <button class="tool-btn ghost" id="btn-skyline-entry" title="Skyline : élévations orthographiques techniques (Nord/Sud/Est/Ouest) de la maquette élargie, avec graduation de hauteur. Échap ou le bouton en haut pour quitter."><i data-lucide="panel-top"></i><span class="tool-btn-label">Skyline</span></button>
+      <button class="tool-btn ghost" id="btn-architect-mode" title="Mode Architecte : planche de nomenclature plein écran — vue d'ensemble orthogonale du polygone d'implantation (orientable N/S/E/O ou vue de haut, avec/sans labels) entourée des fiches de chaque nouveau bâtiment (élévation orthogonale, hauteur, étages, m² au sol, m² développés, m² par usage) et de l'extension gare."><i data-lucide="ruler"></i><span class="tool-btn-label">Architecte</span></button>
     </div>
     <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     <div id="edit-banner">
@@ -1621,102 +1659,30 @@ const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
 // un matériau "verre" neutre (façade vitrée) plutôt que la couleur par usage —
 // pratique pour juger des volumes/masses sans être distrait par les couleurs.
 let legendEnabled = false;
-
-// Fenêtres allumées la nuit, au niveau du MATÉRIAU (pas de géométrie en plus,
-// pas de mesh par fenêtre) : une petite texture canvas générée une seule fois
-// par hauteur d'étage rencontrée (quelques Ko chacune), posée en emissiveMap
-// et répétée via RepeatWrapping. Astuce clé : ExtrudeGeometry mappe l'UV des
-// faces latérales directement sur les coordonnées MONDE (mètres), pas en
-// 0..1 — donc texture.repeat réglé en "1 / mètres" donne une échelle de
-// fenêtres cohérente ET à l'échelle réelle de la maquette, sans rien
-// recalculer à la main par bâtiment.
-//
-// Échelle calée sur le matériau "glass" (grandes baies vitrées) tel que
-// modélisé dans place_de_milan.glb : baies de 1 m de large, quasi pleine
-// hauteur d'étage. La hauteur de la tuile suit donc la hauteur de plancher
-// RÉELLE de l'usage du bâtiment (résidentiel 3m / hôtel 3.5m / bureaux,
-// commerces, services 4m — voir floorHeightFor) au lieu d'une valeur moyenne
-// arbitraire, pour que les lignes de fenêtres tombent pile sur chaque étage.
-const GLASS_BAY_WIDTH_M = 1;       // largeur d'une baie, cf. matériau "glass" du .glb (1m de large)
-const GLASS_BAYS_PER_TILE = 9;     // nb de baies (largeur) avant répétition — évite que tout un étage s'allume d'un bloc
-const GLASS_FLOORS_PER_TILE = 6;   // nb d'étages couverts avant que le motif ne se répète (variété)
-const GLASS_PX_PER_METER = 24;     // résolution du canvas — largement suffisant pour un emissiveMap
-const GLASS_WINDOW_EMISSIVE_INTENSITY = 1.6;
-const glassWindowTextures = new Map(); // cache : hauteur d'étage (m, arrondie) -> CanvasTexture déjà générée
-
-function createGlassWindowTexture(floorHeightM){
-  const colsPerBay = GLASS_PX_PER_METER; // 1 baie = GLASS_PX_PER_METER px de large
-  const cols = colsPerBay * GLASS_BAYS_PER_TILE;
-  const rowsPerFloor = Math.round(floorHeightM * GLASS_PX_PER_METER);
-  const rows = rowsPerFloor * GLASS_FLOORS_PER_TILE;
-  const canvas = document.createElement('canvas');
-  canvas.width = cols; canvas.height = rows;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#000'; ctx.fillRect(0,0,cols,rows);
-  for(let f=0; f<GLASS_FLOORS_PER_TILE; f++){
-    for(let bay=0; bay<GLASS_BAYS_PER_TILE; bay++){
-      if(Math.random() > 0.38) continue; // ~38% des baies allumées, indépendamment par baie ET par étage
-      const warmth = 0.65 + Math.random()*0.35; // légère variation d'intensité d'une baie à l'autre
-      ctx.fillStyle = `rgb(${Math.round(255*warmth)}, ${Math.round(214*warmth)}, ${Math.round(140*warmth)})`;
-      // Quasi pleine hauteur/largeur de l'étage (vraie "grande baie vitrée"), avec
-      // un fin joint de menuiserie sur les côtés et une fine allège séparant les étages.
-      const x0 = bay*colsPerBay;
-      const padX = colsPerBay*0.06;
-      const padTop = rowsPerFloor*0.04, padBottom = rowsPerFloor*0.06;
-      const y0 = f*rowsPerFloor;
-      ctx.fillRect(x0+padX, y0+padTop, colsPerBay-2*padX, rowsPerFloor-padTop-padBottom);
-    }
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-  if('SRGBColorSpace' in THREE) tex.colorSpace = THREE.SRGBColorSpace;
-  tex.repeat.set(1/(GLASS_BAY_WIDTH_M*GLASS_BAYS_PER_TILE), 1/(floorHeightM*GLASS_FLOORS_PER_TILE));
-  return tex;
-}
-function getGlassWindowTexture(floorHeightM){
-  const key = floorHeightM.toFixed(2);
-  let tex = glassWindowTextures.get(key);
-  if(!tex){ tex = createGlassWindowTexture(floorHeightM); glassWindowTextures.set(key, tex); }
-  return tex;
-}
-// Pose la texture "fenêtres" sur un matériau glass (réel ou fallback) sans
-// écraser sa teinte de base — seule l'émission (allumée la nuit) l'utilise.
-function applyGlassWindowTexture(mat, floorHeightM){
-  mat.emissiveMap = getGlassWindowTexture(floorHeightM);
-  if(!mat.emissive || mat.emissive.getHex()===0) mat.emissive = new THREE.Color(0xfff2c2);
-  mat.emissiveIntensity = 0; // état par défaut (jour) ; basculé par applyGlassWindowEmissive()
-  return mat;
-}
-function glassMaterialFor(editing, floorHeightM){
+function glassMaterialFor(editing){
   // Réutilise le VRAI matériau "glass" de la maquette (.glb) quand il est
   // disponible, plutôt qu'un matériau générique recréé à la main — mêmes
   // reflets/teinte que les vitrages déjà modélisés dans Blender. On clone
   // pour pouvoir ajuster l'opacité en mode édition sans affecter les autres
   // bâtiments (qui partagent sinon le même matériau de base).
-  let m;
   if(glassMaterial){
-    m = glassMaterial.clone();
+    const m = glassMaterial.clone();
     m.transparent = true;
     m.opacity = editing ? 0.2 : (m.opacity || 0.85);
-  } else {
-    m = new THREE.MeshPhysicalMaterial({
-      color: 0xaecbe0,
-      metalness: 0.1,
-      roughness: 0.12,
-      transmission: 0.55,
-      thickness: 0.6,
-      ior: 1.4,
-      reflectivity: 0.5,
-      clearcoat: 0.3,
-      transparent: true,
-      opacity: editing ? 0.2 : 0.85
-    });
+    return m;
   }
-  applyGlassWindowTexture(m, floorHeightM || 3);
-  // En cours d'édition (aperçu quasi-transparent) on n'allume jamais les
-  // fenêtres, même de nuit — ça n'a pas de sens sur un volume fantôme.
-  m.emissiveIntensity = (!editing && typeof isNight!=='undefined' && isNight) ? GLASS_WINDOW_EMISSIVE_INTENSITY : 0;
-  return m;
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xaecbe0,
+    metalness: 0.1,
+    roughness: 0.12,
+    transmission: 0.55,
+    thickness: 0.6,
+    ior: 1.4,
+    reflectivity: 0.5,
+    clearcoat: 0.3,
+    transparent: true,
+    opacity: editing ? 0.2 : 0.85
+  });
 }
 
 /* ============================================================
@@ -2447,13 +2413,16 @@ function frameCameraOnGlobalModel(){
   controls.target.copy(center);
   return radius;
 }
-function enterGlobalView(){
-  if(globalViewActive) return;
+function enterGlobalView(then){
+  // `then` (optionnel) : callback exécuté juste après activation — utilisé
+  // par l'entrée directe "Skyline" du ruban pour enchaîner sur une élévation
+  // sans passer par un second clic sur "Maquette 3D".
+  if(globalViewActive){ if(typeof then==='function') then(); return; }
   loadingSpinner.classList.add('show');
   requestAnimationFrame(()=>{ requestAnimationFrame(()=>{
     loadGlobalGlbIfNeeded((ok)=>{
       loadingSpinner.classList.remove('show');
-      if(ok) activateGlobalView();
+      if(ok){ activateGlobalView(); if(typeof then==='function') then(); }
     });
   }); });
 }
@@ -2602,6 +2571,73 @@ function exitGlobalView(){
 }
 btnGlobalView.addEventListener('click', ()=>{ globalViewActive ? exitGlobalView() : enterGlobalView(); });
 btnGlobalViewClose.addEventListener('click', ()=>exitGlobalView());
+// Entrée directe "Skyline" (groupe Rendu final du ruban) : ouvre la Vue
+// Globale si besoin, puis bascule immédiatement sur l'élévation Nord —
+// setSkylineDirection() est déclarée plus bas, mais utilisable ici car les
+// déclarations de fonction sont hissées dans tout le script.
+const btnSkylineEntry = document.getElementById('btn-skyline-entry');
+btnSkylineEntry.addEventListener('click', ()=>{
+  enterGlobalView(()=>{ if(!skylineDirection) setSkylineDirection('nord'); });
+});
+
+/* ============================================================
+   GROUPES DÉROULANTS DU RUBAN (Caméra / Affichage / Rendu final)
+   ------------------------------------------------------------
+   Même mécanique que #draw-mode-popout (position "fixed" calculée
+   depuis le bouton déclencheur), mais ouverture VERS LE BAS et un seul
+   groupe ouvert à la fois. Les boutons déplacés à l'intérieur (Vue plan,
+   Grille, Vue Globale, etc.) gardent tous leurs ids et leurs écouteurs
+   d'origine : seule leur position dans le DOM a changé.
+   ============================================================ */
+const ribbonGroups = [
+  { trigger: document.getElementById('btn-grp-camera'),  popout: document.getElementById('camera-group-popout') },
+  { trigger: document.getElementById('btn-grp-display'), popout: document.getElementById('display-group-popout') },
+  { trigger: document.getElementById('btn-grp-render'),  popout: document.getElementById('render-group-popout') },
+];
+let openRibbonGroup = null;
+function closeRibbonGroups(){
+  if(!openRibbonGroup) return;
+  ribbonGroups.forEach(g=>{
+    g.popout.classList.remove('show');
+    g.trigger.classList.remove('active-group');
+    g.trigger.setAttribute('aria-expanded','false');
+  });
+  openRibbonGroup = null;
+}
+function openRibbonGroupAt(g){
+  closeRibbonGroups();
+  g.popout.classList.add('show');
+  const r = g.trigger.getBoundingClientRect();
+  g.popout.style.top = (r.bottom + 6) + 'px';
+  g.popout.style.left = r.left + 'px';
+  // Filet de sécurité : si le menu déborde à droite de l'écran (groupe
+  // "Rendu final", souvent proche du bord), on le recale vers la gauche.
+  const pr = g.popout.getBoundingClientRect();
+  let left = r.left;
+  if(pr.right > window.innerWidth - 8) left -= (pr.right - (window.innerWidth - 8));
+  if(left < 8) left = 8;
+  g.popout.style.left = left + 'px';
+  g.trigger.classList.add('active-group');
+  g.trigger.setAttribute('aria-expanded','true');
+  openRibbonGroup = g;
+}
+ribbonGroups.forEach(g=>{
+  g.trigger.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    openRibbonGroup === g ? closeRibbonGroups() : openRibbonGroupAt(g);
+  });
+});
+// Choisir une action dans un menu le referme (comme un vrai menu déroulant).
+document.querySelectorAll('.ribbon-popout .tool-btn').forEach(btn=>{
+  btn.addEventListener('click', closeRibbonGroups);
+});
+document.addEventListener('click', (ev)=>{
+  if(!openRibbonGroup) return;
+  if(openRibbonGroup.trigger.contains(ev.target) || openRibbonGroup.popout.contains(ev.target)) return;
+  closeRibbonGroups();
+});
+window.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeRibbonGroups(); });
+window.addEventListener('resize', closeRibbonGroups);
 window.addEventListener('keydown', (ev)=>{
   if(ev.key!=='Escape' || !globalViewActive) return;
   if(skylineDirection) setSkylineDirection(null); else exitGlobalView();
@@ -4691,14 +4727,12 @@ let extensionGareMesh = null; // Object3D "Extension_Gare" — masqué par défa
 let polygonParts = [];    // toutes les pièces "polygone_implantation" (pour le bouton "Voir PLU")
 let plzMaterialPLU = null, plzMaterialNormal = null, showingPLU = false;
 let glassMaterial = null; // matériau "glass" du .glb, réutilisé pour les nouveaux bâtiments
-let glassEmissiveMaterials = []; // toutes les instances clonées de "glass" actuellement dans la scène (pour bascule jour/nuit)
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
 
 function clearSite(){
   siteRoot.clear();
   polygonMesh = null; hallMesh = null; quartierGroup = null;
   extensionGareMesh = null; polygonParts = []; plzMaterialPLU = null; plzMaterialNormal = null; glassMaterial = null;
-  glassEmissiveMaterials = [];
   treeTemplate = null; // sera recapturé depuis la nouvelle maquette au prochain arbre planté
   roofSphereTemplate = null; // idem pour le gabarit "sphère" des coins de toit
   siteUpCorrected = false;
@@ -6906,7 +6940,7 @@ function setupGrassPaintOverlay(parts){
     const size = 1024;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true }); // computeGrassAreaM2() relit ce canvas régulièrement via getImageData
+    const ctx = canvas.getContext('2d');
     ctx.clearRect(0,0,size,size); // rien de peint au départ : transparent partout
     const texture = new THREE.CanvasTexture(canvas);
     const mat = new THREE.MeshStandardMaterial({
@@ -7440,13 +7474,6 @@ function rebuildMesh(b){
     // — un décroché n'est qu'une tranche dont le contour est plus petit que le
     // socle, donc l'effet d'escalier apparaît automatiquement à la bonne
     // hauteur, sans rien de spécial à gérer ici.
-    // Ce rendu n'utilise pas le matériau "glass" : on purge les éventuels
-    // clones enregistrés pour ce bâtiment lors d'un rendu "glass" précédent
-    // (ex. bascule de la légende), sinon ils restent fantômes dans le registre.
-    if(b._glassMats && b._glassMats.length){
-      glassEmissiveMaterials = glassEmissiveMaterials.filter(m => !b._glassMats.includes(m));
-      b._glassMats = [];
-    }
     let yCursor = 0;
     for(let f=1; f<=b.floors; f++){
       const band = b.bands.find(bd=>f>=bd.from && f<=bd.to);
@@ -7493,13 +7520,6 @@ function rebuildMesh(b){
     // Légende désactivée + matériau "glass" : un bloc plein par TRANCHE (pas
     // par étage) — assez pour afficher l'effet d'escalier des décrochés sans
     // multiplier les faces internes inutiles au sein d'une même tranche.
-    // On purge d'abord les clones "glass" enregistrés lors d'un précédent
-    // rebuild de CE bâtiment (rebuildMesh est appelé en continu pendant une
-    // édition/drag) pour ne pas faire grossir glassEmissiveMaterials à l'infini.
-    if(b._glassMats && b._glassMats.length){
-      glassEmissiveMaterials = glassEmissiveMaterials.filter(m => !b._glassMats.includes(m));
-    }
-    b._glassMats = [];
     let yCursor = 0;
     b.bands.forEach((band, idx)=>{
       const footprint = footprintForBand(b, band);
@@ -7508,9 +7528,7 @@ function rebuildMesh(b){
       for(let f=band.from; f<=band.to; f++) bandHeight += floorHeightFor(usageAtFloor(b,f));
       const geo = new THREE.ExtrudeGeometry(shape, { depth: bandHeight, bevelEnabled:false, curveSegments:1 });
       geo.rotateX(-Math.PI/2);
-      const mat = glassMaterialFor(editing, floorHeightFor(band.usage || DEFAULT_USAGE));
-      b._glassMats.push(mat);
-      glassEmissiveMaterials.push(mat);
+      const mat = glassMaterialFor(editing);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.y = yCursor;
       mesh.castShadow = !editing; mesh.receiveShadow = true;
@@ -10207,7 +10225,7 @@ function applyDayAtHour(hourDecimal, opts){
   const frac = (hourDecimal - sunrise) / ((sunset - sunrise) || 1);
   const { top, bottom } = skyColorsForDayFrac(frac);
   paintSkyGradient('#'+top.getHexString(), '#'+bottom.getHexString());
-  if(opts.heavy){ applyVehicleLightState(); applyTrainWindowEmissive(); applyGlassWindowEmissive(); }
+  if(opts.heavy){ applyVehicleLightState(); applyTrainWindowEmissive(); }
   refreshSunPanelUI();
 }
 function applyNight(){
@@ -10215,7 +10233,6 @@ function applyNight(){
   ensureNightVisualEnvironment();
   applyVehicleLightState();
   applyTrainWindowEmissive();
-  applyGlassWindowEmissive();
   refreshSunPanelUI();
 }
 /* ------------------------------------------------------------
@@ -11192,15 +11209,6 @@ function applyTrainWindowEmissive(){
   if(!trainWindowMaterial) return;
   const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
   trainWindowMaterial.emissiveIntensity = on ? 0.5 : 0;
-}
-// Fenêtres allumées des bâtiments ("glass") : contrairement aux phares/vitres
-// de trains (un seul matériau partagé par toutes les instances), chaque
-// bâtiment/tranche a son PROPRE clone du matériau "glass" — on doit donc
-// parcourir le registre glassEmissiveMaterials pour (dés)allumer tout le monde
-// d'un coup au lieu de modifier une seule instance.
-function applyGlassWindowEmissive(){
-  const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
-  glassEmissiveMaterials.forEach(m=>{ m.emissiveIntensity = on ? GLASS_WINDOW_EMISSIVE_INTENSITY : 0; });
 }
 function loadTrainsFromGLB(){
   return new Promise((resolve)=>{
