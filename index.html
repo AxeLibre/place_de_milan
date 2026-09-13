@@ -2978,7 +2978,6 @@ function drawSkylineRuler(){
    un zénithal) pour un éclairage homogène quelle que soit l'orientation.
    ------------------------------------------------------------ */
 let architectModeActive = false;
-let architectSavedState = null;
 let architectDir = 'nord';        // 'nord'|'sud'|'est'|'ouest' — axe des élévations et de l'axonométrie
 let architectViewMode = 'elevation'; // 'elevation' | 'axo' — ne concerne QUE l'image principale + l'extension gare.
                                       // La vue de haut n'est plus un état exclusif : elle est désormais TOUJOURS
@@ -2995,6 +2994,7 @@ const architectBtnExport = document.getElementById('architect-btn-export');
 const ARCHITECT_VIEW_DIRS = SKYLINE_VIEW_DIRS; // même convention (Nord réel = -Z), voir plus haut
 const ARCHITECT_DIR_LABELS = { nord:'NORD', sud:'SUD', est:'EST', ouest:'OUEST' };
 
+let architectSavedState = null;
 function enterArchitectMode(){
   if(architectModeActive) return;
   if(pedestrianModeActive) exitPedestrianMode();
@@ -3008,20 +3008,32 @@ function enterArchitectMode(){
   if(movingBuildingId) stopMoveBuilding();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   closeBldgEditWindow();
-  // Sauvegarde complète et indépendante de la caméra perspective/OrbitControls
-  // AVANT toute manipulation. Le Mode Architecte ne touche jamais `camera`/
-  // `controls` pendant son fonctionnement (seule la caméra orthographique
-  // partagée `orthoCamera`, dédiée aux rendus hors-écran, est manipulée) —
-  // cette sauvegarde/restauration explicite garantit un retour exact et
-  // stable, sans dépendre de togglePlanView().
+  // Sauvegarde COMPLÈTE de la caméra perspective + OrbitControls, AVANT
+  // toute manipulation — un retour exact à la sortie (voir exitArchitectMode)
+  // suppose de capturer tout ce qui peut varier, pas seulement position et
+  // cible : quaternion (au cas où une composition intermédiaire l'aurait
+  // modifié via lookAt), fov (Vue Globale peut le changer), et les
+  // contraintes d'OrbitControls (enabled, min/maxPolarAngle, min/maxDistance).
   architectSavedState = {
     planViewWasActive: planViewActive,
     camPos: camera.position.clone(),
+    camQuat: camera.quaternion.clone(),
     camUp: camera.up.clone(),
+    camFov: camera.fov,
+    camZoom: camera.zoom,
     target: controls.target.clone(),
-    zoom: camera.zoom,
+    controlsEnabled: controls.enabled,
+    controlsMinPolar: controls.minPolarAngle,
+    controlsMaxPolar: controls.maxPolarAngle,
+    controlsMinDist: controls.minDistance,
+    controlsMaxDist: controls.maxDistance,
   };
-  planViewActive = false;
+  // Sortie PROPRE de la vue plan si elle était active — via togglePlanView()
+  // (restaure la position/cible/contraintes d'avant la vue plan et remet le
+  // bouton #btn-plan-view en cohérence), plutôt qu'un simple `planViewActive
+  // = false` qui laissait le bouton actif et `planViewSaved` dans un état
+  // intermédiaire incohérent.
+  if(planViewActive) togglePlanView();
   architectModeActive = true;
   document.body.classList.add('architect-mode');
   btnArchitectMode.classList.add('active');
@@ -3037,24 +3049,35 @@ function exitArchitectMode(){
   btnArchitectMode.classList.remove('active');
   window.removeEventListener('resize', scheduleArchitectRecompose);
   if(architectSavedState){
+    // Re-entrée PROPRE en vue plan si elle était active — via
+    // togglePlanView() (remet le bouton #btn-plan-view en cohérence et
+    // recalcule `planViewSaved`), puis on écrase sa position hard-codée
+    // (dist=160) par la valeur exacte sauvegardée juste après, pour un
+    // retour au pixel près plutôt qu'un cadrage approximatif.
+    if(architectSavedState.planViewWasActive && !planViewActive) togglePlanView();
     camera.position.copy(architectSavedState.camPos);
+    camera.quaternion.copy(architectSavedState.camQuat);
     camera.up.copy(architectSavedState.camUp);
-    camera.zoom = architectSavedState.zoom;
+    camera.fov = architectSavedState.camFov;
+    camera.zoom = architectSavedState.camZoom;
     camera.updateProjectionMatrix();
     controls.target.copy(architectSavedState.target);
-    planViewActive = architectSavedState.planViewWasActive;
+    controls.enabled = architectSavedState.controlsEnabled;
+    controls.minPolarAngle = architectSavedState.controlsMinPolar;
+    controls.maxPolarAngle = architectSavedState.controlsMaxPolar;
+    controls.minDistance = architectSavedState.controlsMinDist;
+    controls.maxDistance = architectSavedState.controlsMaxDist;
     controls.update();
   }
   architectSavedState = null;
-  // Filet de sécurité : composeArchitectSheet() restaure déjà tout ce qu'il
-  // mute (voir son try/finally), mais si jamais une composition précédente
-  // a planté avant que son propre `finally` ait pu s'exécuter, on garantit
-  // ici que le rendu normal reprend dans un état sain — cible/viewport du
-  // renderer sur le plein canvas, et orthoCamera dans son orientation par
-  // défaut (elle peut avoir été laissée avec un "up" non vertical par la
-  // vue de haut de l'Architecte).
+  // Filet de sécurité : composeArchitectSheet() et renderArchitectPanelCanvas()
+  // restaurent déjà symétriquement tout ce qu'ils mutent (render target,
+  // viewport, scissor — voir leurs try/finally et sauvegardes en tête de
+  // fonction), mais si jamais une composition précédente a planté avant que
+  // sa restauration ait pu s'exécuter, on garantit ici que le rendu normal
+  // reprend dans un état sain.
   renderer.setRenderTarget(null);
-  renderer.setViewport(0,0,renderer.domElement.width, renderer.domElement.height);
+  renderer.setViewport(0, 0, renderer.domElement.clientWidth, renderer.domElement.clientHeight);
   orthoCamera.up.set(0,1,0);
   controls.enabled = true;
 }
@@ -3477,19 +3500,49 @@ function architectNorthArrowAngle(framing){
 function renderArchitectPanelCanvas(box, dir, viewMode, pxW, pxH, marginFactor){
   const w = Math.max(48, Math.round(pxW)), h = Math.max(48, Math.round(pxH));
   const rt = ensureArchitectRT(w, h);
+
+  // Sauvegarde COMPLÈTE et symétrique de l'état de rendu courant (jamais de
+  // reconstruction à la main à partir de domElement.width/height).
   const prevTarget = renderer.getRenderTarget();
+  const prevViewport = new THREE.Vector4();
+  renderer.getViewport(prevViewport);
+  const prevScissor = new THREE.Vector4();
+  renderer.getScissor(prevScissor);
+  const prevScissorTest = renderer.getScissorTest();
   const prevBg = scene.background;
   const prevClearColor = new THREE.Color(); renderer.getClearColor(prevClearColor);
   const prevClearAlpha = renderer.getClearAlpha();
+
   scene.background = null;
   renderer.setClearColor(ARCHITECT_BG, 1);
   const { center, framing } = frameArchitectCamera(box, dir, viewMode, w/h, marginFactor);
+
   renderer.setRenderTarget(rt);
+  // IMPORTANT : `setViewport`/`setScissor` attendent des dimensions en
+  // pixels LOGIQUES (CSS), pas des pixels de buffer — le renderer multiplie
+  // toujours par son pixelRatio courant avant de transmettre à gl.viewport().
+  // On force temporairement le pixelRatio à 1 pour que 1 unité passée ici
+  // corresponde exactement à 1 pixel de la render target `rt` (qui fait
+  // exactement w × h, sans notion de pixelRatio) — sinon, sur un écran
+  // Retina/HiDPI, le viewport réel dépasserait la RT et son contenu
+  // apparaîtrait rogné/zoomé dans les vignettes. Restauré juste après le
+  // rendu, avant tout autre rendu (y compris celui de la boucle animate()).
+  const prevPixelRatio = renderer.getPixelRatio();
+  renderer.setPixelRatio(1);
   renderer.setViewport(0, 0, w, h);
+  renderer.setScissor(0, 0, w, h);
+  renderer.setScissorTest(true);
   renderer.clear(true, true, false);
   renderer.render(scene, orthoCamera);
+  renderer.setPixelRatio(prevPixelRatio);
+
   const cnv = architectRTToCanvas(rt, w, h);
+
+  // Restauration symétrique de tout ce qui a été sauvegardé plus haut.
   renderer.setRenderTarget(prevTarget);
+  renderer.setViewport(prevViewport);
+  renderer.setScissor(prevScissor);
+  renderer.setScissorTest(prevScissorTest);
   scene.background = prevBg;
   renderer.setClearColor(prevClearColor, prevClearAlpha);
   let groundY;
@@ -3887,6 +3940,19 @@ function composeArchitectSheet(ctx, W, H, scale){
   ctx.fillStyle = ARCHITECT_PAPER;
   ctx.fillRect(0,0,W,H);
 
+  // Sauvegarde COMPLÈTE et symétrique de l'état de rendu du renderer WebGL
+  // partagé, AVANT tout rendu de panneau — jamais de reconstruction à la
+  // main à partir de `renderer.domElement.width/height` (unité physique,
+  // pas logique : c'était la cause du viewport 4× trop grand après sortie
+  // du Mode Architecte sur un écran Retina/HiDPI). On restaure exactement
+  // cet état (quel qu'il soit) à la toute fin, dans le `finally`.
+  const prevRenderTarget = renderer.getRenderTarget();
+  const prevViewport = new THREE.Vector4();
+  renderer.getViewport(prevViewport);
+  const prevScissor = new THREE.Vector4();
+  renderer.getScissor(prevScissor);
+  const prevScissorTest = renderer.getScissorTest();
+
   const sortedNew = architectSortedNewBuildings();
   // ATTENTION : `extensionGareMesh` ("Extension_Gare" du GLB) n'est qu'un
   // GABARIT invisible utilisé pour déformer/cloner les tranches — ce n'est
@@ -4004,8 +4070,17 @@ function composeArchitectSheet(ctx, W, H, scale){
     pedestriansVisible = pedestriansWereVisible; applyAgentTypeVisibility();
     architectRestoreLighting(lightState);
     architectRestoreTrees(treeState);
-    renderer.setRenderTarget(null);
-    renderer.setViewport(0,0,renderer.domElement.width, renderer.domElement.height);
+    // Restauration SYMÉTRIQUE de l'état de rendu sauvegardé en tout début de
+    // fonction — jamais de reconstruction à la main à partir de
+    // `renderer.domElement.width/height` (unité physique, pas logique :
+    // c'était le vrai bug à l'origine du viewport 4× trop grand sur écran
+    // Retina/HiDPI). On revient exactement à l'état d'avant, quel qu'il ait
+    // été (y compris si un scissor test était actif, ou un autre render
+    // target que le canvas principal).
+    renderer.setRenderTarget(prevRenderTarget);
+    renderer.setViewport(prevViewport);
+    renderer.setScissor(prevScissor);
+    renderer.setScissorTest(prevScissorTest);
   }
 }
 
