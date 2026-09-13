@@ -1638,13 +1638,15 @@ let legendEnabled = false;
 // commerces, services 4m — voir floorHeightFor) au lieu d'une valeur moyenne
 // arbitraire, pour que les lignes de fenêtres tombent pile sur chaque étage.
 const GLASS_BAY_WIDTH_M = 1;       // largeur d'une baie, cf. matériau "glass" du .glb (1m de large)
+const GLASS_BAYS_PER_TILE = 9;     // nb de baies (largeur) avant répétition — évite que tout un étage s'allume d'un bloc
 const GLASS_FLOORS_PER_TILE = 6;   // nb d'étages couverts avant que le motif ne se répète (variété)
 const GLASS_PX_PER_METER = 24;     // résolution du canvas — largement suffisant pour un emissiveMap
 const GLASS_WINDOW_EMISSIVE_INTENSITY = 1.6;
 const glassWindowTextures = new Map(); // cache : hauteur d'étage (m, arrondie) -> CanvasTexture déjà générée
 
 function createGlassWindowTexture(floorHeightM){
-  const cols = Math.round(GLASS_BAY_WIDTH_M * GLASS_PX_PER_METER); // 1 baie = 1 colonne de la tuile
+  const colsPerBay = GLASS_PX_PER_METER; // 1 baie = GLASS_PX_PER_METER px de large
+  const cols = colsPerBay * GLASS_BAYS_PER_TILE;
   const rowsPerFloor = Math.round(floorHeightM * GLASS_PX_PER_METER);
   const rows = rowsPerFloor * GLASS_FLOORS_PER_TILE;
   const canvas = document.createElement('canvas');
@@ -1652,20 +1654,23 @@ function createGlassWindowTexture(floorHeightM){
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0,0,cols,rows);
   for(let f=0; f<GLASS_FLOORS_PER_TILE; f++){
-    if(Math.random() > 0.38) continue; // ~38% des baies allumées, une par étage max (comme la vraie baie pleine largeur)
-    const warmth = 0.65 + Math.random()*0.35; // légère variation d'intensité d'une baie à l'autre
-    ctx.fillStyle = `rgb(${Math.round(255*warmth)}, ${Math.round(214*warmth)}, ${Math.round(140*warmth)})`;
-    // Quasi pleine hauteur/largeur de l'étage (vraie "grande baie vitrée"), avec
-    // un fin joint de menuiserie sur les côtés et une fine allège séparant les étages.
-    const padX = cols*0.06;
-    const padTop = rowsPerFloor*0.04, padBottom = rowsPerFloor*0.06;
-    const y0 = f*rowsPerFloor;
-    ctx.fillRect(padX, y0+padTop, cols-2*padX, rowsPerFloor-padTop-padBottom);
+    for(let bay=0; bay<GLASS_BAYS_PER_TILE; bay++){
+      if(Math.random() > 0.38) continue; // ~38% des baies allumées, indépendamment par baie ET par étage
+      const warmth = 0.65 + Math.random()*0.35; // légère variation d'intensité d'une baie à l'autre
+      ctx.fillStyle = `rgb(${Math.round(255*warmth)}, ${Math.round(214*warmth)}, ${Math.round(140*warmth)})`;
+      // Quasi pleine hauteur/largeur de l'étage (vraie "grande baie vitrée"), avec
+      // un fin joint de menuiserie sur les côtés et une fine allège séparant les étages.
+      const x0 = bay*colsPerBay;
+      const padX = colsPerBay*0.06;
+      const padTop = rowsPerFloor*0.04, padBottom = rowsPerFloor*0.06;
+      const y0 = f*rowsPerFloor;
+      ctx.fillRect(x0+padX, y0+padTop, colsPerBay-2*padX, rowsPerFloor-padTop-padBottom);
+    }
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
   if('SRGBColorSpace' in THREE) tex.colorSpace = THREE.SRGBColorSpace;
-  tex.repeat.set(1/GLASS_BAY_WIDTH_M, 1/(floorHeightM*GLASS_FLOORS_PER_TILE));
+  tex.repeat.set(1/(GLASS_BAY_WIDTH_M*GLASS_BAYS_PER_TILE), 1/(floorHeightM*GLASS_FLOORS_PER_TILE));
   return tex;
 }
 function getGlassWindowTexture(floorHeightM){
@@ -6901,7 +6906,7 @@ function setupGrassPaintOverlay(parts){
     const size = 1024;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }); // computeGrassAreaM2() relit ce canvas régulièrement via getImageData
     ctx.clearRect(0,0,size,size); // rien de peint au départ : transparent partout
     const texture = new THREE.CanvasTexture(canvas);
     const mat = new THREE.MeshStandardMaterial({
