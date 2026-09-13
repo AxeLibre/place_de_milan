@@ -1722,8 +1722,8 @@ function createGlassWindowTexture(floorHeightM, allLit, variantSeed){
       const v = Math.round(255*warmth);
       ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
       const x0 = bay*colsPerBay;
-      const padX = colsPerBay*0.06;
-      const padTop = rowsPerFloor*0.04, padBottom = rowsPerFloor*0.06;
+      const padX = colsPerBay*0.13;
+      const padTop = rowsPerFloor*0.18, padBottom = rowsPerFloor*0.34;
       const y0 = f*rowsPerFloor;
       ctx.fillRect(x0+padX, y0+padTop, colsPerBay-2*padX, rowsPerFloor-padTop-padBottom);
     }
@@ -1865,15 +1865,15 @@ function setupStaticWindowMaterials(root){
   const rawBatimentsFenetre = findMaterialByName(root, 'BATIMENTS_fenetre');
   const replacements = new Map(); // matériau brut -> matériau "fenêtres" dédié au bâti existant
   if(rawGlass) replacements.set(rawGlass, makeStaticNightWindowMaterial(rawGlass, {
-    pitch: 1, floorH: 3, winW: 0.9, winH: 2.7, litProb: 1.0, // grandes baies vitrées 1m x 3m — TOUTES allumées, pas d'aléatoire
+    pitch: 1, floorH: 3, winW: 0.72, winH: 1.5, litProb: 1.0, // grandes baies vitrées — TOUTES allumées, plancher bien visible entre étages
     color: [1.0, 0.86, 0.58]
   }));
   if(rawGlassFenetre) replacements.set(rawGlassFenetre, makeStaticNightWindowMaterial(rawGlassFenetre, {
-    pitch: 1, floorH: 3, winW: 0.75, winH: 1.5, litProb: GLASS_WINDOW_LIT_PROB, // portrait 1.5x0.75, répété tous les 1m
+    pitch: 1, floorH: 3, winW: 0.65, winH: 1.3, litProb: GLASS_WINDOW_LIT_PROB, // portrait, répété tous les 1m
     color: [1.0, 0.86, 0.58]
   }));
   if(rawBatimentsFenetre) replacements.set(rawBatimentsFenetre, makeStaticNightWindowMaterial(rawBatimentsFenetre, {
-    pitch: 2, floorH: 2.5, winW: 0.75, winH: 1, litProb: GLASS_WINDOW_LIT_PROB, // portrait 1x0.75, répété tous les 2m
+    pitch: 2, floorH: 2.5, winW: 0.65, winH: 0.85, litProb: GLASS_WINDOW_LIT_PROB, // portrait, répété tous les 2m
     color: [1.0, 0.82, 0.5] // plus chaud que glass/glass_fenetre — anciennement la teinte des nouveaux bâtiments
   }));
   if(!replacements.size) return;
