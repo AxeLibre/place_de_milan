@@ -1624,49 +1624,65 @@ let legendEnabled = false;
 
 // Fenêtres allumées la nuit, au niveau du MATÉRIAU (pas de géométrie en plus,
 // pas de mesh par fenêtre) : une petite texture canvas générée une seule fois
-// (quelques dizaines de Ko en mémoire GPU), posée en emissiveMap et répétée
-// via RepeatWrapping. Astuce clé : ExtrudeGeometry mappe l'UV des faces
-// latérales directement sur les coordonnées MONDE (mètres), pas en 0..1 — donc
-// texture.repeat réglé en "1 / mètres" donne une échelle de fenêtres cohérente
-// sur TOUTES les façades, quelle que soit leur taille, sans rien recalculer
-// par bâtiment. Un seul CanvasTexture est partagé par tous les clones du
-// matériau "glass" (clone() copie la référence de map, pas les pixels).
-const GLASS_WINDOW_MODULE_W = 6;   // largeur (m) d'une "tuile" de motif avant répétition
-const GLASS_WINDOW_MODULE_H = 17;  // hauteur (m) d'une tuile ≈ 5 étages avant répétition
+// par hauteur d'étage rencontrée (quelques Ko chacune), posée en emissiveMap
+// et répétée via RepeatWrapping. Astuce clé : ExtrudeGeometry mappe l'UV des
+// faces latérales directement sur les coordonnées MONDE (mètres), pas en
+// 0..1 — donc texture.repeat réglé en "1 / mètres" donne une échelle de
+// fenêtres cohérente ET à l'échelle réelle de la maquette, sans rien
+// recalculer à la main par bâtiment.
+//
+// Échelle calée sur le matériau "glass" (grandes baies vitrées) tel que
+// modélisé dans place_de_milan.glb : baies de 1 m de large, quasi pleine
+// hauteur d'étage. La hauteur de la tuile suit donc la hauteur de plancher
+// RÉELLE de l'usage du bâtiment (résidentiel 3m / hôtel 3.5m / bureaux,
+// commerces, services 4m — voir floorHeightFor) au lieu d'une valeur moyenne
+// arbitraire, pour que les lignes de fenêtres tombent pile sur chaque étage.
+const GLASS_BAY_WIDTH_M = 1;       // largeur d'une baie, cf. matériau "glass" du .glb (1m de large)
+const GLASS_FLOORS_PER_TILE = 6;   // nb d'étages couverts avant que le motif ne se répète (variété)
+const GLASS_PX_PER_METER = 24;     // résolution du canvas — largement suffisant pour un emissiveMap
 const GLASS_WINDOW_EMISSIVE_INTENSITY = 1.6;
-function createGlassWindowTexture(){
-  const cols = 24, rows = 68; // résolution du canvas, pas la densité de fenêtres (voir cellCols/cellRows)
-  const cellCols = 6, cellRows = 17; // 1 cellule ≈ 1m de large x 1m de haut
+const glassWindowTextures = new Map(); // cache : hauteur d'étage (m, arrondie) -> CanvasTexture déjà générée
+
+function createGlassWindowTexture(floorHeightM){
+  const cols = Math.round(GLASS_BAY_WIDTH_M * GLASS_PX_PER_METER); // 1 baie = 1 colonne de la tuile
+  const rowsPerFloor = Math.round(floorHeightM * GLASS_PX_PER_METER);
+  const rows = rowsPerFloor * GLASS_FLOORS_PER_TILE;
   const canvas = document.createElement('canvas');
   canvas.width = cols; canvas.height = rows;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0,0,cols,rows);
-  const cw = cols/cellCols, ch = rows/cellRows;
-  for(let ry=0; ry<cellRows; ry++){
-    for(let rx=0; rx<cellCols; rx++){
-      if(Math.random() > 0.38) continue; // ~38% de fenêtres allumées, le reste reste noir (= éteint)
-      const warmth = 0.65 + Math.random()*0.35; // légère variation d'intensité d'une fenêtre à l'autre
-      ctx.fillStyle = `rgb(${Math.round(255*warmth)}, ${Math.round(214*warmth)}, ${Math.round(140*warmth)})`;
-      const pad = Math.max(1, cw*0.22);
-      ctx.fillRect(rx*cw+pad, ry*ch+pad*0.6, cw-2*pad, ch-1.2*pad);
-    }
+  for(let f=0; f<GLASS_FLOORS_PER_TILE; f++){
+    if(Math.random() > 0.38) continue; // ~38% des baies allumées, une par étage max (comme la vraie baie pleine largeur)
+    const warmth = 0.65 + Math.random()*0.35; // légère variation d'intensité d'une baie à l'autre
+    ctx.fillStyle = `rgb(${Math.round(255*warmth)}, ${Math.round(214*warmth)}, ${Math.round(140*warmth)})`;
+    // Quasi pleine hauteur/largeur de l'étage (vraie "grande baie vitrée"), avec
+    // un fin joint de menuiserie sur les côtés et une fine allège séparant les étages.
+    const padX = cols*0.06;
+    const padTop = rowsPerFloor*0.04, padBottom = rowsPerFloor*0.06;
+    const y0 = f*rowsPerFloor;
+    ctx.fillRect(padX, y0+padTop, cols-2*padX, rowsPerFloor-padTop-padBottom);
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
   if('SRGBColorSpace' in THREE) tex.colorSpace = THREE.SRGBColorSpace;
-  tex.repeat.set(1/GLASS_WINDOW_MODULE_W, 1/GLASS_WINDOW_MODULE_H);
+  tex.repeat.set(1/GLASS_BAY_WIDTH_M, 1/(floorHeightM*GLASS_FLOORS_PER_TILE));
+  return tex;
+}
+function getGlassWindowTexture(floorHeightM){
+  const key = floorHeightM.toFixed(2);
+  let tex = glassWindowTextures.get(key);
+  if(!tex){ tex = createGlassWindowTexture(floorHeightM); glassWindowTextures.set(key, tex); }
   return tex;
 }
 // Pose la texture "fenêtres" sur un matériau glass (réel ou fallback) sans
 // écraser sa teinte de base — seule l'émission (allumée la nuit) l'utilise.
-function applyGlassWindowTexture(mat){
-  if(!glassWindowTexture) glassWindowTexture = createGlassWindowTexture();
-  mat.emissiveMap = glassWindowTexture;
+function applyGlassWindowTexture(mat, floorHeightM){
+  mat.emissiveMap = getGlassWindowTexture(floorHeightM);
   if(!mat.emissive || mat.emissive.getHex()===0) mat.emissive = new THREE.Color(0xfff2c2);
   mat.emissiveIntensity = 0; // état par défaut (jour) ; basculé par applyGlassWindowEmissive()
   return mat;
 }
-function glassMaterialFor(editing){
+function glassMaterialFor(editing, floorHeightM){
   // Réutilise le VRAI matériau "glass" de la maquette (.glb) quand il est
   // disponible, plutôt qu'un matériau générique recréé à la main — mêmes
   // reflets/teinte que les vitrages déjà modélisés dans Blender. On clone
@@ -1691,7 +1707,7 @@ function glassMaterialFor(editing){
       opacity: editing ? 0.2 : 0.85
     });
   }
-  applyGlassWindowTexture(m);
+  applyGlassWindowTexture(m, floorHeightM || 3);
   // En cours d'édition (aperçu quasi-transparent) on n'allume jamais les
   // fenêtres, même de nuit — ça n'a pas de sens sur un volume fantôme.
   m.emissiveIntensity = (!editing && typeof isNight!=='undefined' && isNight) ? GLASS_WINDOW_EMISSIVE_INTENSITY : 0;
@@ -4670,7 +4686,6 @@ let extensionGareMesh = null; // Object3D "Extension_Gare" — masqué par défa
 let polygonParts = [];    // toutes les pièces "polygone_implantation" (pour le bouton "Voir PLU")
 let plzMaterialPLU = null, plzMaterialNormal = null, showingPLU = false;
 let glassMaterial = null; // matériau "glass" du .glb, réutilisé pour les nouveaux bâtiments
-let glassWindowTexture = null; // texture procédurale "fenêtres allumées" (emissiveMap partagée)
 let glassEmissiveMaterials = []; // toutes les instances clonées de "glass" actuellement dans la scène (pour bascule jour/nuit)
 let buildZone = ilotOutlinePts.slice(0,-1).map(p=>({x:p.x, z:p.z})); // fallback tant que rien n'est chargé
 
@@ -7488,7 +7503,7 @@ function rebuildMesh(b){
       for(let f=band.from; f<=band.to; f++) bandHeight += floorHeightFor(usageAtFloor(b,f));
       const geo = new THREE.ExtrudeGeometry(shape, { depth: bandHeight, bevelEnabled:false, curveSegments:1 });
       geo.rotateX(-Math.PI/2);
-      const mat = glassMaterialFor(editing);
+      const mat = glassMaterialFor(editing, floorHeightFor(band.usage || DEFAULT_USAGE));
       b._glassMats.push(mat);
       glassEmissiveMaterials.push(mat);
       const mesh = new THREE.Mesh(geo, mat);
