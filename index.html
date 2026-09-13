@@ -1810,7 +1810,15 @@ function makeStaticNightWindowMaterial(baseMaterial, opts){
     // Variation de luminosité d'une baie à l'autre : à 0 (matériau "glass",
     // toutes les fenêtres allumées) on veut un rendu uniforme, pas un
     // clignotement aléatoire — sinon léger effet vivant (glass_fenetre / BATIMENTS_fenetre).
-    uWarmthRange: { value: opts.litProb >= 1 ? 0 : 0.35 }
+    uWarmthRange: { value: opts.litProb >= 1 ? 0 : 0.35 },
+    // Variation par ÉTAGE ENTIER (pas par baie) : luminosité et teinte
+    // légèrement différentes d'un étage à l'autre, comme de vrais bureaux
+    // dont l'éclairage/le mobilier varie par plateau. Plus marqué sur "glass"
+    // (toutes fenêtres allumées, sinon trop plat/uniforme) que sur les deux
+    // autres matériaux qui ont déjà de la variété baie par baie.
+    uFloorBright: { value: opts.floorBrightVar != null ? opts.floorBrightVar : (opts.litProb >= 1 ? 0.3 : 0.12) },
+    uFloorHue:    { value: opts.floorHueVar   != null ? opts.floorHueVar   : (opts.litProb >= 1 ? 0.5  : 0.2 ) },
+    uFloorCoolColor: { value: new THREE.Color(0.75, 0.85, 1.0) } // variante "blanc froid" (néon/bureau), mélangée à uWinColor par étage
   };
   m.onBeforeCompile = (shader)=>{
     Object.assign(shader.uniforms, uniforms);
@@ -1821,8 +1829,8 @@ function makeStaticNightWindowMaterial(baseMaterial, opts){
       .replace('#include <common>', `#include <common>
 varying vec3 vWorldPosNW;
 varying vec3 vNormalNW;
-uniform float uNightWin, uPitch, uFloorH, uWinW, uWinH, uLitProb, uWarmthRange;
-uniform vec3 uWinColor;
+uniform float uNightWin, uPitch, uFloorH, uWinW, uWinH, uLitProb, uWarmthRange, uFloorBright, uFloorHue;
+uniform vec3 uWinColor, uFloorCoolColor;
 float hash12NW(vec2 p){
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -1838,12 +1846,20 @@ float hash12NW(vec2 p){
   float r = hash12NW(cellId);
   float lit = step(r, uLitProb); // uLitProb = 1.0 => toujours allumé, pas d'aléatoire (matériau "glass")
   float warmth = 1.0 - uWarmthRange*0.5 + uWarmthRange*hash12NW(cellId + 17.0);
+  // Variation par étage entier : un seul hash par valeur de floorId (indépendant
+  // de la position le long du mur), donc tout un plateau partage la même légère
+  // dérive de luminosité/teinte — pas un scintillement baie par baie.
+  float floorId = floor(vWorldPosNW.y / uFloorH);
+  float floorBrightRnd = hash12NW(vec2(floorId, 91.7));
+  float floorHueRnd = hash12NW(vec2(floorId, 5.3));
+  float floorBrightness = 1.0 - uFloorBright*0.5 + uFloorBright*floorBrightRnd;
+  vec3 floorColor = mix(uWinColor, uFloorCoolColor, floorHueRnd*uFloorHue);
   vec2 winFrac = vec2(uWinW, uWinH) / cellSize;
   vec2 d = abs(cellUV - 0.5) - winFrac*0.5;
   float edge = max(d.x, d.y);
   float aa = max(fwidth(edge), 0.001);
   float inWindow = 1.0 - smoothstep(-aa, aa, edge);
-  totalEmissiveRadiance += uWinColor * uNightWin * lit * warmth * inWindow;
+  totalEmissiveRadiance += floorColor * uNightWin * lit * warmth * floorBrightness * inWindow;
 }`);
   };
   m.userData.nightWindowUniforms = uniforms;
