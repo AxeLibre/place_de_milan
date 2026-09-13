@@ -1659,30 +1659,202 @@ const GROUND_SIZE = 260; // metres, schematic default extent around the îlot
 // un matériau "verre" neutre (façade vitrée) plutôt que la couleur par usage —
 // pratique pour juger des volumes/masses sans être distrait par les couleurs.
 let legendEnabled = false;
-function glassMaterialFor(editing){
+
+// ============================================================
+// FENÊTRES ALLUMÉES LA NUIT — NOUVEAUX BÂTIMENTS (matériau "glass" cloné)
+// ============================================================
+// Au niveau du MATÉRIAU (pas de géométrie en plus, pas de mesh par fenêtre) :
+// une petite texture canvas générée une seule fois par hauteur d'étage
+// rencontrée, posée en emissiveMap et répétée via RepeatWrapping. Astuce clé :
+// ExtrudeGeometry mappe l'UV des faces latérales directement sur les
+// coordonnées MONDE (mètres), pas en 0..1 — donc texture.repeat réglé en
+// "1 / mètres" donne une échelle de fenêtres cohérente ET à l'échelle réelle
+// de la maquette, sans rien recalculer à la main par bâtiment.
+//
+// Échelle calée sur le matériau "glass" tel que modélisé dans
+// place_de_milan.glb : baies de 1 m de large, quasi pleine hauteur d'étage.
+// La hauteur de la tuile suit la hauteur de plancher RÉELLE de l'usage du
+// bâtiment (résidentiel 3m / hôtel 3.5m / bureaux, commerces, services 4m —
+// voir floorHeightFor) pour que les lignes de fenêtres tombent pile sur
+// chaque étage.
+const GLASS_BAY_WIDTH_M = 1;       // largeur d'une baie, cf. matériau "glass" du .glb (1m de large)
+const GLASS_BAYS_PER_TILE = 9;     // nb de baies (largeur) avant répétition — évite qu'un étage entier s'allume d'un bloc
+const GLASS_FLOORS_PER_TILE = 6;   // nb d'étages couverts avant que le motif ne se répète (variété)
+const GLASS_PX_PER_METER = 24;     // résolution du canvas — largement suffisant pour un emissiveMap
+const GLASS_WINDOW_EMISSIVE_INTENSITY = 1.6;
+const GLASS_WINDOW_LIT_PROB = 0.38; // proportion de baies allumées la nuit
+const glassWindowTextures = new Map(); // cache : hauteur d'étage (m, arrondie) -> CanvasTexture déjà générée
+let glassEmissiveMaterials = []; // clones "glass" actuellement dans la scène (pour bascule jour/nuit)
+
+function createGlassWindowTexture(floorHeightM){
+  const colsPerBay = GLASS_PX_PER_METER;
+  const cols = colsPerBay * GLASS_BAYS_PER_TILE;
+  const rowsPerFloor = Math.round(floorHeightM * GLASS_PX_PER_METER);
+  const rows = rowsPerFloor * GLASS_FLOORS_PER_TILE;
+  const canvas = document.createElement('canvas');
+  canvas.width = cols; canvas.height = rows;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,cols,rows);
+  for(let f=0; f<GLASS_FLOORS_PER_TILE; f++){
+    for(let bay=0; bay<GLASS_BAYS_PER_TILE; bay++){
+      if(Math.random() > GLASS_WINDOW_LIT_PROB) continue; // indépendant par baie ET par étage
+      const warmth = 0.65 + Math.random()*0.35;
+      ctx.fillStyle = `rgb(${Math.round(255*warmth)}, ${Math.round(214*warmth)}, ${Math.round(140*warmth)})`;
+      const x0 = bay*colsPerBay;
+      const padX = colsPerBay*0.06;
+      const padTop = rowsPerFloor*0.04, padBottom = rowsPerFloor*0.06;
+      const y0 = f*rowsPerFloor;
+      ctx.fillRect(x0+padX, y0+padTop, colsPerBay-2*padX, rowsPerFloor-padTop-padBottom);
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+  if('SRGBColorSpace' in THREE) tex.colorSpace = THREE.SRGBColorSpace;
+  tex.repeat.set(1/(GLASS_BAY_WIDTH_M*GLASS_BAYS_PER_TILE), 1/(floorHeightM*GLASS_FLOORS_PER_TILE));
+  return tex;
+}
+function getGlassWindowTexture(floorHeightM){
+  const key = floorHeightM.toFixed(2);
+  let tex = glassWindowTextures.get(key);
+  if(!tex){ tex = createGlassWindowTexture(floorHeightM); glassWindowTextures.set(key, tex); }
+  return tex;
+}
+function applyGlassWindowTexture(mat, floorHeightM){
+  mat.emissiveMap = getGlassWindowTexture(floorHeightM);
+  if(!mat.emissive || mat.emissive.getHex()===0) mat.emissive = new THREE.Color(0xfff2c2);
+  mat.emissiveIntensity = 0; // état par défaut (jour) ; basculé par applyGlassWindowEmissive()
+  return mat;
+}
+function glassMaterialFor(editing, floorHeightM){
   // Réutilise le VRAI matériau "glass" de la maquette (.glb) quand il est
   // disponible, plutôt qu'un matériau générique recréé à la main — mêmes
   // reflets/teinte que les vitrages déjà modélisés dans Blender. On clone
   // pour pouvoir ajuster l'opacité en mode édition sans affecter les autres
   // bâtiments (qui partagent sinon le même matériau de base).
+  let m;
   if(glassMaterial){
-    const m = glassMaterial.clone();
+    m = glassMaterial.clone();
     m.transparent = true;
     m.opacity = editing ? 0.2 : (m.opacity || 0.85);
-    return m;
+  } else {
+    m = new THREE.MeshPhysicalMaterial({
+      color: 0xaecbe0,
+      metalness: 0.1,
+      roughness: 0.12,
+      transmission: 0.55,
+      thickness: 0.6,
+      ior: 1.4,
+      reflectivity: 0.5,
+      clearcoat: 0.3,
+      transparent: true,
+      opacity: editing ? 0.2 : 0.85
+    });
   }
-  return new THREE.MeshPhysicalMaterial({
-    color: 0xaecbe0,
-    metalness: 0.1,
-    roughness: 0.12,
-    transmission: 0.55,
-    thickness: 0.6,
-    ior: 1.4,
-    reflectivity: 0.5,
-    clearcoat: 0.3,
-    transparent: true,
-    opacity: editing ? 0.2 : 0.85
+  applyGlassWindowTexture(m, floorHeightM || 3);
+  // En cours d'édition (aperçu quasi-transparent) on n'allume jamais les
+  // fenêtres, même de nuit — ça n'a pas de sens sur un volume fantôme.
+  m.emissiveIntensity = (!editing && typeof isNight!=='undefined' && isNight) ? GLASS_WINDOW_EMISSIVE_INTENSITY : 0;
+  return m;
+}
+
+// ============================================================
+// FENÊTRES ALLUMÉES LA NUIT — BÂTI EXISTANT (place_de_milan.glb)
+// ============================================================
+// Les matériaux "glass", "glass_fenetre" et "BATIMENTS_fenetre" du .glb sont
+// posés sur de GRANDS PANS DE FAÇADE (murs entiers), pas sur une géométrie
+// par fenêtre, et leurs UV sont un atlas 0..1 non proportionnel au monde —
+// donc ni la géométrie ni les UV ne permettent d'aligner une texture "par
+// mètre" comme pour les nouveaux bâtiments. Solution : un shader (onBeforeCompile)
+// qui calcule directement, par fragment, la position MONDE et en déduit une
+// grille de baies à l'échelle réelle (pitch/hauteur d'étage/taille de fenêtre
+// fournis en mètres) — aucune texture, aucune géométrie supplémentaire.
+// L'axe "le long du mur" est choisi via la normale (si le mur regarde plutôt
+// selon X, on avance le long de Z, et inversement) pour que la grille suive
+// n'importe quelle orientation de façade sans réglage par bâtiment.
+let staticWindowMaterials = []; // { material, uniforms } pour les 3 matériaux du bâti existant — bascule jour/nuit
+function makeStaticNightWindowMaterial(baseMaterial, opts){
+  const m = baseMaterial.clone();
+  const uniforms = {
+    uNightWin: { value: 0 },
+    uPitch:    { value: opts.pitch },
+    uFloorH:   { value: opts.floorH },
+    uWinW:     { value: opts.winW },
+    uWinH:     { value: opts.winH },
+    uLitProb:  { value: opts.litProb != null ? opts.litProb : GLASS_WINDOW_LIT_PROB }
+  };
+  m.onBeforeCompile = (shader)=>{
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPosNW;\nvarying vec3 vNormalNW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPosNW = (modelMatrix * vec4(position,1.0)).xyz;\nvNormalNW = normalize(mat3(modelMatrix) * normal);');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vWorldPosNW;
+varying vec3 vNormalNW;
+uniform float uNightWin, uPitch, uFloorH, uWinW, uWinH, uLitProb;
+float hash12NW(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+{
+  float alongWall = (abs(vNormalNW.x) > abs(vNormalNW.z)) ? vWorldPosNW.z : vWorldPosNW.x;
+  vec2 cellSize = vec2(uPitch, uFloorH);
+  vec2 cellCoord = vec2(alongWall, vWorldPosNW.y) / cellSize;
+  vec2 cellId = floor(cellCoord);
+  vec2 cellUV = fract(cellCoord);
+  float r = hash12NW(cellId);
+  float lit = step(r, uLitProb);
+  float warmth = 0.65 + 0.35*hash12NW(cellId + 17.0);
+  vec2 winFrac = vec2(uWinW, uWinH) / cellSize;
+  vec2 d = abs(cellUV - 0.5) - winFrac*0.5;
+  float edge = max(d.x, d.y);
+  float aa = max(fwidth(edge), 0.001);
+  float inWindow = 1.0 - smoothstep(-aa, aa, edge);
+  totalEmissiveRadiance += vec3(1.0, 0.86, 0.58) * uNightWin * lit * warmth * inWindow;
+}`);
+  };
+  m.userData.nightWindowUniforms = uniforms;
+  m.extensions = m.extensions || {};
+  m.extensions.derivatives = true; // requis par fwidth() dans le shader ci-dessus (WebGL1 ; sans effet en WebGL2)
+  m.needsUpdate = true;
+  staticWindowMaterials.push({ material: m, uniforms });
+  return m;
+}
+// Repère, dans `root`, tous les meshes utilisant les matériaux "glass",
+// "glass_fenetre" et "BATIMENTS_fenetre" du .glb, et remplace leur matériau
+// par un clone doté du shader ci-dessus — sans toucher à `glassMaterial`
+// (qui doit rester intact : c'est le patron dont part glassMaterialFor()
+// pour les NOUVEAUX bâtiments, avec son propre système de texture).
+function setupStaticWindowMaterials(root){
+  staticWindowMaterials = [];
+  const rawGlass = glassMaterial || findMaterialByName(root, 'glass');
+  const rawGlassFenetre = findMaterialByName(root, 'glass_fenetre');
+  const rawBatimentsFenetre = findMaterialByName(root, 'BATIMENTS_fenetre');
+  const replacements = new Map(); // matériau brut -> matériau "fenêtres" dédié au bâti existant
+  if(rawGlass) replacements.set(rawGlass, makeStaticNightWindowMaterial(rawGlass, {
+    pitch: 1, floorH: 3, winW: 0.9, winH: 2.7, litProb: GLASS_WINDOW_LIT_PROB // grandes baies vitrées 1m x 3m
+  }));
+  if(rawGlassFenetre) replacements.set(rawGlassFenetre, makeStaticNightWindowMaterial(rawGlassFenetre, {
+    pitch: 1, floorH: 3, winW: 0.75, winH: 1.5, litProb: GLASS_WINDOW_LIT_PROB // portrait 1.5x0.75, répété tous les 1m
+  }));
+  if(rawBatimentsFenetre) replacements.set(rawBatimentsFenetre, makeStaticNightWindowMaterial(rawBatimentsFenetre, {
+    pitch: 2, floorH: 2.5, winW: 0.75, winH: 1, litProb: GLASS_WINDOW_LIT_PROB // portrait 1x0.75, répété tous les 2m
+  }));
+  if(!replacements.size) return;
+  root.traverse(obj=>{
+    if(!obj.isMesh) return;
+    if(Array.isArray(obj.material)){
+      obj.material = obj.material.map(mm => replacements.get(mm) || mm);
+    } else if(replacements.has(obj.material)){
+      obj.material = replacements.get(obj.material);
+    }
   });
+}
+function applyStaticWindowEmissive(){
+  const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
+  staticWindowMaterials.forEach(({uniforms})=>{ uniforms.uNightWin.value = on ? GLASS_WINDOW_EMISSIVE_INTENSITY : 0; });
 }
 
 /* ============================================================
@@ -4733,6 +4905,8 @@ function clearSite(){
   siteRoot.clear();
   polygonMesh = null; hallMesh = null; quartierGroup = null;
   extensionGareMesh = null; polygonParts = []; plzMaterialPLU = null; plzMaterialNormal = null; glassMaterial = null;
+  glassEmissiveMaterials = [];
+  staticWindowMaterials = [];
   treeTemplate = null; // sera recapturé depuis la nouvelle maquette au prochain arbre planté
   roofSphereTemplate = null; // idem pour le gabarit "sphère" des coins de toit
   siteUpCorrected = false;
@@ -5052,6 +5226,7 @@ function onSiteLoaded(){
   extensionGareMesh = findByNameCI(siteRoot, 'Extension_Gare');
   if(extensionGareMesh) extensionGareMesh.visible = false; // masquée par défaut — bouton "Ajouter Extension Gare"
   glassMaterial = findMaterialByName(siteRoot, 'glass');
+  setupStaticWindowMaterials(siteRoot);
   const bldgMatRef = findMaterialByName(siteRoot, 'BATIMENTS');
   if(bldgMatRef && bldgMatRef.color) roofRimColor = bldgMatRef.color.getHex();
   const gazonMatRef = findMaterialByName(siteRoot, 'gazon');
@@ -6940,7 +7115,7 @@ function setupGrassPaintOverlay(parts){
     const size = 1024;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }); // computeGrassAreaM2() relit ce canvas régulièrement via getImageData
     ctx.clearRect(0,0,size,size); // rien de peint au départ : transparent partout
     const texture = new THREE.CanvasTexture(canvas);
     const mat = new THREE.MeshStandardMaterial({
@@ -7474,6 +7649,13 @@ function rebuildMesh(b){
     // — un décroché n'est qu'une tranche dont le contour est plus petit que le
     // socle, donc l'effet d'escalier apparaît automatiquement à la bonne
     // hauteur, sans rien de spécial à gérer ici.
+    // Ce rendu n'utilise pas le matériau "glass" : on purge les éventuels
+    // clones enregistrés pour ce bâtiment lors d'un rendu "glass" précédent
+    // (ex. bascule de la légende), sinon ils restent fantômes dans le registre.
+    if(b._glassMats && b._glassMats.length){
+      glassEmissiveMaterials = glassEmissiveMaterials.filter(m => !b._glassMats.includes(m));
+      b._glassMats = [];
+    }
     let yCursor = 0;
     for(let f=1; f<=b.floors; f++){
       const band = b.bands.find(bd=>f>=bd.from && f<=bd.to);
@@ -7520,6 +7702,13 @@ function rebuildMesh(b){
     // Légende désactivée + matériau "glass" : un bloc plein par TRANCHE (pas
     // par étage) — assez pour afficher l'effet d'escalier des décrochés sans
     // multiplier les faces internes inutiles au sein d'une même tranche.
+    // On purge d'abord les clones "glass" enregistrés lors d'un précédent
+    // rebuild de CE bâtiment (rebuildMesh est appelé en continu pendant une
+    // édition/drag) pour ne pas faire grossir glassEmissiveMaterials à l'infini.
+    if(b._glassMats && b._glassMats.length){
+      glassEmissiveMaterials = glassEmissiveMaterials.filter(m => !b._glassMats.includes(m));
+    }
+    b._glassMats = [];
     let yCursor = 0;
     b.bands.forEach((band, idx)=>{
       const footprint = footprintForBand(b, band);
@@ -7528,7 +7717,9 @@ function rebuildMesh(b){
       for(let f=band.from; f<=band.to; f++) bandHeight += floorHeightFor(usageAtFloor(b,f));
       const geo = new THREE.ExtrudeGeometry(shape, { depth: bandHeight, bevelEnabled:false, curveSegments:1 });
       geo.rotateX(-Math.PI/2);
-      const mat = glassMaterialFor(editing);
+      const mat = glassMaterialFor(editing, floorHeightFor(band.usage || DEFAULT_USAGE));
+      b._glassMats.push(mat);
+      glassEmissiveMaterials.push(mat);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.y = yCursor;
       mesh.castShadow = !editing; mesh.receiveShadow = true;
@@ -10225,7 +10416,7 @@ function applyDayAtHour(hourDecimal, opts){
   const frac = (hourDecimal - sunrise) / ((sunset - sunrise) || 1);
   const { top, bottom } = skyColorsForDayFrac(frac);
   paintSkyGradient('#'+top.getHexString(), '#'+bottom.getHexString());
-  if(opts.heavy){ applyVehicleLightState(); applyTrainWindowEmissive(); }
+  if(opts.heavy){ applyVehicleLightState(); applyTrainWindowEmissive(); applyGlassWindowEmissive(); applyStaticWindowEmissive(); }
   refreshSunPanelUI();
 }
 function applyNight(){
@@ -10233,6 +10424,8 @@ function applyNight(){
   ensureNightVisualEnvironment();
   applyVehicleLightState();
   applyTrainWindowEmissive();
+  applyGlassWindowEmissive();
+  applyStaticWindowEmissive();
   refreshSunPanelUI();
 }
 /* ------------------------------------------------------------
@@ -11209,6 +11402,16 @@ function applyTrainWindowEmissive(){
   if(!trainWindowMaterial) return;
   const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
   trainWindowMaterial.emissiveIntensity = on ? 0.5 : 0;
+}
+// Fenêtres allumées des NOUVEAUX bâtiments ("glass" cloné) : contrairement aux
+// phares/vitres de trains (un seul matériau partagé par toutes les instances),
+// chaque bâtiment/tranche a son PROPRE clone du matériau "glass" — on parcourt
+// donc le registre glassEmissiveMaterials pour (dés)allumer tout le monde d'un
+// coup. Pour le bâti EXISTANT du .glb, voir applyStaticWindowEmissive() (shader
+// dédié, pas de clone par bâtiment).
+function applyGlassWindowEmissive(){
+  const on = (typeof isNight!=='undefined' && isNight) || (window.isNight===true);
+  glassEmissiveMaterials.forEach(m=>{ m.emissiveIntensity = on ? GLASS_WINDOW_EMISSIVE_INTENSITY : 0; });
 }
 function loadTrainsFromGLB(){
   return new Promise((resolve)=>{
