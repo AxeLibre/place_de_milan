@@ -2978,7 +2978,6 @@ function drawSkylineRuler(){
    un zénithal) pour un éclairage homogène quelle que soit l'orientation.
    ------------------------------------------------------------ */
 let architectModeActive = false;
-let architectSavedState = null;
 let architectDir = 'nord';        // 'nord'|'sud'|'est'|'ouest' — axe des élévations et de l'axonométrie
 let architectViewMode = 'elevation'; // 'elevation' | 'axo' — ne concerne QUE l'image principale + l'extension gare.
                                       // La vue de haut n'est plus un état exclusif : elle est désormais TOUJOURS
@@ -3008,19 +3007,6 @@ function enterArchitectMode(){
   if(movingBuildingId) stopMoveBuilding();
   if(extPendingSlice) extCancelPendingSlice(); else if(extEditMode) extHideExtension();
   closeBldgEditWindow();
-  // Sauvegarde complète et indépendante de la caméra perspective/OrbitControls
-  // AVANT toute manipulation. Le Mode Architecte ne touche jamais `camera`/
-  // `controls` pendant son fonctionnement (seule la caméra orthographique
-  // partagée `orthoCamera`, dédiée aux rendus hors-écran, est manipulée) —
-  // cette sauvegarde/restauration explicite garantit un retour exact et
-  // stable, sans dépendre de togglePlanView().
-  architectSavedState = {
-    planViewWasActive: planViewActive,
-    camPos: camera.position.clone(),
-    camUp: camera.up.clone(),
-    target: controls.target.clone(),
-    zoom: camera.zoom,
-  };
   planViewActive = false;
   architectModeActive = true;
   document.body.classList.add('architect-mode');
@@ -3029,6 +3015,11 @@ function enterArchitectMode(){
   renderArchitectComposition();
   window.addEventListener('resize', scheduleArchitectRecompose);
 }
+// Vue par défaut du site (identique à la position de départ au chargement
+// de la page, voir plus haut) — c'est LA vue de référence utilisée pour
+// réinitialiser la caméra à la sortie du Mode Architecte (voir plus bas).
+const HOME_CAMERA_POS = new THREE.Vector3(140, 130, 170);
+const HOME_CAMERA_TARGET = new THREE.Vector3(0, 8, 0);
 function exitArchitectMode(){
   if(!architectModeActive) return;
   architectModeActive = false;
@@ -3036,16 +3027,21 @@ function exitArchitectMode(){
   architectCloseBar.classList.remove('show');
   btnArchitectMode.classList.remove('active');
   window.removeEventListener('resize', scheduleArchitectRecompose);
-  if(architectSavedState){
-    camera.position.copy(architectSavedState.camPos);
-    camera.up.copy(architectSavedState.camUp);
-    camera.zoom = architectSavedState.zoom;
-    camera.updateProjectionMatrix();
-    controls.target.copy(architectSavedState.target);
-    planViewActive = architectSavedState.planViewWasActive;
-    controls.update();
-  }
-  architectSavedState = null;
+  // RÉINITIALISATION (et non restauration) de la vue : essayer de rejouer
+  // exactement la position/cible/up/zoom d'avant l'entrée dans le Mode
+  // Architecte s'est révélé peu fiable en pratique (labels/hitbox de
+  // bâtiments décalés, maquette décentrée, orbite désaxée après coup —
+  // signe qu'un état de la caméra ou des controls restait corrompu malgré
+  // la restauration). On repart donc systématiquement sur la vue par
+  // défaut du site, connue pour être toujours saine, plutôt que de essayer
+  // de deviner ce qui a pu dériver pendant le passage en Mode Architecte.
+  camera.position.copy(HOME_CAMERA_POS);
+  camera.up.set(0,1,0);
+  camera.zoom = 1;
+  camera.updateProjectionMatrix();
+  controls.target.copy(HOME_CAMERA_TARGET);
+  planViewActive = false;
+  controls.update();
   // Filet de sécurité : composeArchitectSheet() restaure déjà tout ce qu'il
   // mute (voir son try/finally), mais si jamais une composition précédente
   // a planté avant que son propre `finally` ait pu s'exécuter, on garantit
