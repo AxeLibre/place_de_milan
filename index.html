@@ -3046,6 +3046,17 @@ function exitArchitectMode(){
     controls.update();
   }
   architectSavedState = null;
+  // Filet de sécurité : composeArchitectSheet() restaure déjà tout ce qu'il
+  // mute (voir son try/finally), mais si jamais une composition précédente
+  // a planté avant que son propre `finally` ait pu s'exécuter, on garantit
+  // ici que le rendu normal reprend dans un état sain — cible/viewport du
+  // renderer sur le plein canvas, et orthoCamera dans son orientation par
+  // défaut (elle peut avoir été laissée avec un "up" non vertical par la
+  // vue de haut de l'Architecte).
+  renderer.setRenderTarget(null);
+  renderer.setViewport(0,0,renderer.domElement.width, renderer.domElement.height);
+  orthoCamera.up.set(0,1,0);
+  controls.enabled = true;
 }
 btnArchitectMode.addEventListener('click', ()=> architectModeActive ? exitArchitectMode() : enterArchitectMode());
 btnArchitectClose.addEventListener('click', exitArchitectMode);
@@ -3897,6 +3908,17 @@ function composeArchitectSheet(ctx, W, H, scale){
   const prevFog = scene.fog;
   scene.fog = null; // ne pas perdre les arrière-plans dans le gris du fond (Réf. A)
 
+  // ATTENTION (bug corrigé) : tout ce qui suit mute des états PARTAGÉS de la
+  // scène (couleurs désaturées, visibilité piétons/véhicules/arbres,
+  // éclairage, cible et viewport du renderer WebGL...). Sans try/finally, la
+  // moindre exception levée pendant l'un des rendus (main/gare/fiches —
+  // d'autant plus probable maintenant qu'il y a 4 rendus 3D au lieu de 2, et
+  // des rects dont la largeur dépend d'un calcul de mise en page) laissait la
+  // scène corrompue en permanence après la sortie du Mode Architecte : c'est
+  // la cause des labels/hitbox de bâtiments désynchronisés du modèle 3D (ou
+  // du modèle qui semble "mal placé") rapportés après coup. La restauration
+  // doit donc TOUJOURS s'exécuter, qu'il y ait eu une erreur ou non.
+  try{
   // ---- Bandeau de titre plein largeur ----
   const HEADER_H = Math.round(52*scale);
   ctx.fillStyle = '#141a1e';
@@ -3939,11 +3961,13 @@ function composeArchitectSheet(ctx, W, H, scale){
   // choisi (élévation orientable ou axonométrie), à droite systématiquement
   // la vue de haut correspondante. Il y a assez de place à l'écran pour
   // les montrer toutes les deux en permanence, plus besoin d'un bouton
-  // dédié pour basculer sur la vue de haut. ----
+  // dédié pour basculer sur la vue de haut. Largeurs bornées à un minimum
+  // pour rester valides même sur une fenêtre étroite (jamais 0/négatif —
+  // `ctx.drawImage` avec une largeur ≤ 0 lève une exception). ----
   const mainGap = Math.round(PAD*0.7);
-  const mainLeftW = Math.round(mainRect.w*0.58);
+  const mainLeftW = Math.max(40*scale, Math.min(mainRect.w-40*scale, Math.round(mainRect.w*0.58)));
   const mainRectLeft = { x:mainRect.x, y:mainRect.y, w:mainLeftW, h:mainRect.h };
-  const mainRectRight = { x:mainRect.x+mainLeftW+mainGap, y:mainRect.y, w:mainRect.w-mainLeftW-mainGap, h:mainRect.h };
+  const mainRectRight = { x:mainRect.x+mainLeftW+mainGap, y:mainRect.y, w:Math.max(40*scale, mainRect.w-mainLeftW-mainGap), h:mainRect.h };
   const mainFramingLeft = drawArchitectMainView(ctx, mainRectLeft, mainBox, architectDir, architectViewMode, scale, sortedNew, indexOf, vehiclesWereVisible, 'ENSEMBLE — POLYGONE D\'IMPLANTATION');
   drawArchitectMainView(ctx, mainRectRight, mainBox, architectDir, 'haut', scale, sortedNew, indexOf, vehiclesWereVisible, 'VUE DE HAUT');
   const mainFraming = mainFramingLeft; // référence pour l'échelle/la flèche Nord du cartouche
@@ -3972,16 +3996,17 @@ function composeArchitectSheet(ctx, W, H, scale){
   // ---- Cartouche / légende (coin bas-droit) ----
   const titleRect = { x:mainRect.x+mainRect.w+PAD, y:mainRect.y+mainRect.h+PAD, w:RIGHT_W-PAD, h:BOTTOM_H-PAD };
   drawArchitectTitleBlock(ctx, titleRect, scale, { count:sortedNew.length }, mainFraming);
-
-  // ---- Restauration ----
-  scene.fog = prevFog;
-  architectRestoreUsageColors(usageColorState);
-  architectRestoreGrayscale(grayscaleStash);
-  pedestriansVisible = pedestriansWereVisible; applyAgentTypeVisibility();
-  architectRestoreLighting(lightState);
-  architectRestoreTrees(treeState);
-  renderer.setRenderTarget(null);
-  renderer.setViewport(0,0,renderer.domElement.width, renderer.domElement.height);
+  } finally {
+    // ---- Restauration (garantie, même en cas d'erreur ci-dessus) ----
+    scene.fog = prevFog;
+    architectRestoreUsageColors(usageColorState);
+    architectRestoreGrayscale(grayscaleStash);
+    pedestriansVisible = pedestriansWereVisible; applyAgentTypeVisibility();
+    architectRestoreLighting(lightState);
+    architectRestoreTrees(treeState);
+    renderer.setRenderTarget(null);
+    renderer.setViewport(0,0,renderer.domElement.width, renderer.domElement.height);
+  }
 }
 
 function architectPanelShadow(ctx, rect, scale){
@@ -4170,35 +4195,41 @@ function drawArchitectGarePanel(ctx, rect, scale){
   });
 
   const gap = Math.round(rect.w*0.015);
-  const leftW = Math.round((rect.w-gap)*0.56);
+  const leftW = Math.max(30*scale, Math.min(rect.w-gap-30*scale, Math.round((rect.w-gap)*0.56)));
   const rectLeft = { x:rect.x, y:rect.y, w:leftW, h:imgH };
-  const rectRight = { x:rect.x+leftW+gap, y:rect.y, w:rect.w-leftW-gap, h:imgH };
+  const rectRight = { x:rect.x+leftW+gap, y:rect.y, w:Math.max(30*scale, rect.w-leftW-gap), h:imgH };
   const modeLeft = architectViewMode; // 'elevation' | 'axo' — jamais 'haut', toujours affichée à droite en plus
 
-  [[rectLeft, modeLeft, 'Extension Gare'], [rectRight, 'haut', null]].forEach(([r, mode, onImgTxt])=>{
-    const res = renderArchitectPanelCanvas(box, architectDir, mode, r.w, r.h, 1.15);
-    ctx.drawImage(res.cnv, r.x, r.y, r.w, r.h);
-    if(mode==='elevation') architectDrawGroundMask(ctx, r, r.h, res.groundY);
-    ctx.strokeStyle = '#20262b'; ctx.lineWidth = 2*scale;
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-    // Titre directement sur l'image de gauche uniquement (en plus de la
-    // légende commune sous les deux images), sur fond noir semi-transparent.
-    if(onImgTxt){
-      ctx.font = `700 ${11*scale}px 'Space Grotesk', sans-serif`;
-      const onImgW = ctx.measureText(onImgTxt).width + 16*scale;
-      ctx.fillStyle = 'rgba(20,26,30,.78)';
-      ctx.fillRect(r.x+8*scale, r.y+8*scale, onImgW, 20*scale);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(onImgTxt, r.x+16*scale, r.y+22*scale);
-    }
-  });
-
-  savedMats.forEach(([m,w,c,e])=>{
-    m.wireframe = w;
-    if(c!==null) m.color.setHex(c);
-    if(e!==null) m.emissive.setHex(e);
-  });
-  globalRoot.visible = globalRootWasVisible;
+  // Restauration garantie (filaire + visibilité globalRoot) même si l'un des
+  // deux rendus lève une exception — sinon l'extension restait bloquée en
+  // filaire cyan et/ou la maquette élargie restait masquée après la sortie
+  // du Mode Architecte.
+  try{
+    [[rectLeft, modeLeft, 'Extension Gare'], [rectRight, 'haut', null]].forEach(([r, mode, onImgTxt])=>{
+      const res = renderArchitectPanelCanvas(box, architectDir, mode, r.w, r.h, 1.15);
+      ctx.drawImage(res.cnv, r.x, r.y, r.w, r.h);
+      if(mode==='elevation') architectDrawGroundMask(ctx, r, r.h, res.groundY);
+      ctx.strokeStyle = '#20262b'; ctx.lineWidth = 2*scale;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+      // Titre directement sur l'image de gauche uniquement (en plus de la
+      // légende commune sous les deux images), sur fond noir semi-transparent.
+      if(onImgTxt){
+        ctx.font = `700 ${11*scale}px 'Space Grotesk', sans-serif`;
+        const onImgW = ctx.measureText(onImgTxt).width + 16*scale;
+        ctx.fillStyle = 'rgba(20,26,30,.78)';
+        ctx.fillRect(r.x+8*scale, r.y+8*scale, onImgW, 20*scale);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(onImgTxt, r.x+16*scale, r.y+22*scale);
+      }
+    });
+  } finally {
+    savedMats.forEach(([m,w,c,e])=>{
+      m.wireframe = w;
+      if(c!==null) m.color.setHex(c);
+      if(e!==null) m.emissive.setHex(e);
+    });
+    globalRoot.visible = globalRootWasVisible;
+  }
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(rect.x, rect.y+imgH, rect.w, legendH);
