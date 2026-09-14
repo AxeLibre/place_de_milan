@@ -700,6 +700,25 @@
   }
   .welcome-step b{display:block;font-size:15px;margin-bottom:6px;color:var(--paper);}
   .welcome-step p{margin:0;font-size:13px;line-height:1.55;color:var(--muted);}
+  /* Démo animée du point 6 : les 5 boutons du menu bas-droit (À propos,
+     Aide, Capture, Enregistrer, Charger) s'allument un par un, à la vitesse
+     de 2 boutons par seconde (décalage de 0,5s entre chaque), en boucle. */
+  .welcome-buttons-demo{
+    display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
+    gap:10px;flex:none;padding:70px 10px;
+  }
+  .welcome-buttons-demo .wbd-btn{
+    height:34px;padding:0 13px 0 11px;border-radius:17px;
+    background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
+    display:flex;align-items:center;gap:7px;white-space:nowrap;
+    font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:12px;
+    animation:wbd-glow 2.5s ease-in-out infinite;
+  }
+  .welcome-buttons-demo .wbd-btn svg{width:16px;height:16px;stroke-width:2;flex-shrink:0;}
+  @keyframes wbd-glow{
+    0%, 8%, 100%{ border-color:#2a3946; color:var(--paper); box-shadow:none; transform:none; }
+    2%{ border-color:var(--accent); color:var(--accent); box-shadow:0 0 10px 2px rgba(46,232,255,.6); transform:translateY(-1px); }
+  }
   #welcome-dots{display:flex;align-items:center;justify-content:center;gap:9px;padding:14px 0 4px;}
   .welcome-dot{
     width:9px;height:9px;border-radius:50%;background:#2a3946;border:none;padding:0;cursor:pointer;
@@ -1261,15 +1280,15 @@
         <div><b>1. Dessinez un bâtiment</b><p>Cliquez sur « Nouveau bâtiment », puis tracez son emprise au sol (polygone ou rectangle) directement sur la place — la surface en m² s'affiche en direct au centre du tracé.</p></div>
       </div>
       <div class="welcome-step">
-        <img src="public/help-extension-gare.png" alt="" onerror="this.style.display='none'">
-        <div><b>2. Personnalisez l'extension du hall de gare</b><p>L'outil « Extension gare » permet de prolonger le hall existant par des tranches chaînables, dont vous pouvez déformer et ajuster librement la forme (quadrilatère) pour dessiner l'extension de votre choix.</p></div>
-      </div>
-      <div class="welcome-step">
         <div class="welcome-step-images">
           <img src="public/help-etages.png" alt="" onerror="this.style.display='none'">
           <img src="public/help-volume-superieur.png" alt="" onerror="this.style.display='none'">
         </div>
-        <div><b>3. Réglez les étages, les usages et les volumes</b><p>Dans le menu du bâtiment (qui reste modifiable à tout moment, même après création), ajustez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche. La hauteur de chaque étage s'adapte automatiquement à son usage, et le menu affiche en direct l'emprise au sol et la surface potentielle totale. Le bouton « + Volume supérieur », au sommet du bâtiment sélectionné, permet de tracer un nouveau décroché sur le toit (jusqu'à 30 % de débord max par rapport à l'étage du dessous) pour composer des silhouettes en gradins.</p></div>
+        <div><b>2. Réglez les étages, les usages et les volumes</b><p>Dans le menu du bâtiment (qui reste modifiable à tout moment, même après création), ajustez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche. La hauteur de chaque étage s'adapte automatiquement à son usage, et le menu affiche en direct l'emprise au sol et la surface potentielle totale. Le bouton « + Volume supérieur », au sommet du bâtiment sélectionné, permet de tracer un nouveau décroché sur le toit (jusqu'à 30 % de débord max par rapport à l'étage du dessous) pour composer des silhouettes en gradins.</p></div>
+      </div>
+      <div class="welcome-step">
+        <img src="public/help-extension-gare.png" alt="" onerror="this.style.display='none'">
+        <div><b>3. Personnalisez l'extension du hall de gare</b><p>L'outil « Extension gare » permet de prolonger le hall existant par des tranches chaînables, dont vous pouvez déformer et ajuster librement la forme (quadrilatère) pour dessiner l'extension de votre choix.</p></div>
       </div>
       <div class="welcome-step">
         <img src="public/help-outils.png" alt="" onerror="this.style.display='none'">
@@ -1284,7 +1303,13 @@
         <div><b>5. Explorez les vues : éclairage, skyline et mode architecte</b><p>Le panneau « Éclairage » permet de faire glisser le curseur pour choisir l'heure (avec passage en mode Nuit aux extrémités) et de changer de saison (solstices, équinoxe) pour des ombres exactes selon la position réelle du soleil à Lyon. Le bouton « Vue plan » bascule en vue orthographique du dessus. Dans le groupe « Rendu final » du ruban, le bouton « Skyline » affiche les élévations orthogonales techniques (Nord/Sud/Est/Ouest) de la maquette avec graduation de hauteur, et le bouton « Architecte » compose une planche plein écran : vue d'ensemble orientable (N/S/E/O ou vue de haut) entourée des fiches de chaque bâtiment (hauteur, étages, m² au sol et développés, usages).</p></div>
       </div>
       <div class="welcome-step">
-        <img src="public/help-sauvegarde.png" alt="" onerror="this.style.display='none'">
+        <div class="welcome-buttons-demo">
+          <div class="wbd-btn" style="animation-delay:0s"><i data-lucide="info"></i><span>À propos</span></div>
+          <div class="wbd-btn" style="animation-delay:.5s"><i data-lucide="help-circle"></i><span>Aide</span></div>
+          <div class="wbd-btn" style="animation-delay:1s"><i data-lucide="camera"></i><span>Capture</span></div>
+          <div class="wbd-btn" style="animation-delay:1.5s"><i data-lucide="save"></i><span>Enregistrer</span></div>
+          <div class="wbd-btn" style="animation-delay:2s"><i data-lucide="folder-open"></i><span>Charger</span></div>
+        </div>
         <div><b>6. Sauvegardez votre projet et exportez une image</b><p>Le bouton disquette enregistre votre projet (bâtiments, arbres, gazon, labels…) dans un fichier que vous pourrez recharger plus tard avec le bouton dossier. Le bouton appareil photo exporte une capture d'écran PNG de la vue actuelle — c'est l'aboutissement de votre travail.</p></div>
       </div>
     </div>
