@@ -691,6 +691,13 @@
     width:100%;height:280px;object-fit:contain;border-radius:8px;
     background:transparent;flex:none;
   }
+  /* Plusieurs outils illustrés dans une même étape : images côte à côte,
+     chacune plus basse que l'image unique pour garder l'étape lisible. */
+  .welcome-step-images{display:flex;gap:10px;flex:none;flex-wrap:wrap;}
+  .welcome-step-images img{
+    flex:1 1 0;min-width:120px;height:180px;width:auto;object-fit:contain;border-radius:8px;
+    background:transparent;
+  }
   .welcome-step b{display:block;font-size:15px;margin-bottom:6px;color:var(--paper);}
   .welcome-step p{margin:0;font-size:13px;line-height:1.55;color:var(--muted);}
   #welcome-dots{display:flex;align-items:center;justify-content:center;gap:9px;padding:14px 0 4px;}
@@ -1258,16 +1265,23 @@
         <div><b>2. Personnalisez l'extension du hall de gare</b><p>L'outil « Extension gare » permet de prolonger le hall existant par des tranches chaînables, dont vous pouvez déformer et ajuster librement la forme (quadrilatère) pour dessiner l'extension de votre choix.</p></div>
       </div>
       <div class="welcome-step">
-        <img src="public/help-etages.png" alt="" onerror="this.style.display='none'">
-        <div><b>3. Réglez les étages et les usages</b><p>Dans le menu du bâtiment (qui reste modifiable à tout moment, même après création), ajustez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche. La hauteur de chaque étage s'adapte automatiquement à son usage, et le menu affiche en direct l'emprise au sol et la surface potentielle totale.</p></div>
+        <div class="welcome-step-images">
+          <img src="public/help-etages.png" alt="" onerror="this.style.display='none'">
+          <img src="public/help-volume-superieur.png" alt="" onerror="this.style.display='none'">
+        </div>
+        <div><b>3. Réglez les étages, les usages et les volumes</b><p>Dans le menu du bâtiment (qui reste modifiable à tout moment, même après création), ajustez le nombre d'étages et répartissez les usages (résidentiel, bureaux, commerces, hôtel, services) par tranche. La hauteur de chaque étage s'adapte automatiquement à son usage, et le menu affiche en direct l'emprise au sol et la surface potentielle totale. Le bouton « + Volume supérieur », au sommet du bâtiment sélectionné, permet de tracer un nouveau décroché sur le toit (jusqu'à 30 % de débord max par rapport à l'étage du dessous) pour composer des silhouettes en gradins.</p></div>
       </div>
       <div class="welcome-step">
         <img src="public/help-outils.png" alt="" onerror="this.style.display='none'">
         <div><b>4. Habillez la place</b><p>Plantez des arbres, peignez du gazon, ajoutez des labels, et affichez le zonage PLU pour situer vos projets dans le contexte réglementaire.</p></div>
       </div>
       <div class="welcome-step">
-        <img src="public/help-eclairage.png" alt="" onerror="this.style.display='none'">
-        <div><b>5. Explorez jour/nuit et vue plan</b><p>Le panneau « Éclairage » permet de faire glisser le curseur pour choisir l'heure (avec passage en mode Nuit aux extrémités) et de changer de saison (solstices, équinoxe) pour des ombres exactes selon la position réelle du soleil à Lyon. Le bouton « Vue plan » bascule en vue orthographique du dessus.</p></div>
+        <div class="welcome-step-images">
+          <img src="public/help-eclairage.png" alt="" onerror="this.style.display='none'">
+          <img src="public/help-skyline.png" alt="" onerror="this.style.display='none'">
+          <img src="public/help-architecte.png" alt="" onerror="this.style.display='none'">
+        </div>
+        <div><b>5. Explorez les vues : éclairage, skyline et mode architecte</b><p>Le panneau « Éclairage » permet de faire glisser le curseur pour choisir l'heure (avec passage en mode Nuit aux extrémités) et de changer de saison (solstices, équinoxe) pour des ombres exactes selon la position réelle du soleil à Lyon. Le bouton « Vue plan » bascule en vue orthographique du dessus. Dans le groupe « Rendu final » du ruban, le bouton « Skyline » affiche les élévations orthogonales techniques (Nord/Sud/Est/Ouest) de la maquette avec graduation de hauteur, et le bouton « Architecte » compose une planche plein écran : vue d'ensemble orientable (N/S/E/O ou vue de haut) entourée des fiches de chaque bâtiment (hauteur, étages, m² au sol et développés, usages).</p></div>
       </div>
       <div class="welcome-step">
         <img src="public/help-sauvegarde.png" alt="" onerror="this.style.display='none'">
