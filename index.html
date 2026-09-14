@@ -288,7 +288,7 @@
 
   /* ---------- Vertical toolbar (left edge, SimCity-style) ---------- */
   #left-stack{
-    position:absolute;top:84px;left:16px;z-index:6;
+    position:absolute;top:112px;left:16px;z-index:6;
     display:flex;flex-direction:column;align-items:flex-start;gap:6px;
     overflow:visible;
   }
@@ -414,7 +414,7 @@
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
-    width:198px;flex-shrink:0;
+    width:214px;flex-shrink:0;
     background:rgba(24,36,48,.94);border:1px solid #2a3946;border-radius:10px;
     padding:10px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:flex;flex-direction:column;gap:6px;
@@ -880,6 +880,7 @@
   }
   .bldg-head input:focus{outline:none;}
   .bldg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .bldg-coupe-icon{width:20px;height:32px;flex-shrink:0;border-radius:2px;display:block;}
   .bldg-meta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);padding:0 10px 9px;}
   .bldg-body{padding:0 10px 12px;border-top:1px solid #1a242d;display:none;}
   .bldg-body.open{display:block;}
@@ -4140,6 +4141,33 @@ function architectShadeColor(hex, factor){
   const g = Math.min(255, Math.max(0, Math.round(((hex>>8)&255) * factor)));
   const bl = Math.min(255, Math.max(0, Math.round((hex&255) * factor)));
   return (r<<16)|(g<<8)|bl;
+}
+// Vignette "vue en coupe" pour la liste des bâtiments (remplace la pastille
+// de couleur unique) : même logique de silhouette réelle empilée par étage
+// que la fiche du mode architecte (architectBuildingCoupeData /
+// architectShadeColor), juste miniaturisée et sans cotation/nomenclature —
+// la vignette EST la légende (couleur = usage, comme le reste de l'appli).
+function drawBldgListCoupeIcon(canvas, b){
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0,0,w,h);
+  const coupe = architectBuildingCoupeData(b, 'sud');
+  const pxPerM = h / Math.max(1, coupe.totalH);
+  const barMaxW = w*0.88;
+  const pxPerMw = barMaxW / Math.max(1, coupe.maxSpan);
+  const cx = w/2;
+  coupe.floors.forEach(fl=>{
+    const fh = Math.max(1, fl.h*pxPerM);
+    const fy = h - (fl.y+fl.h)*pxPerM;
+    const fx = cx + fl.left*pxPerMw;
+    const fw = Math.max(2, (fl.right-fl.left)*pxPerMw);
+    const baseHex = USAGE_COLORS[fl.usage]!==undefined ? USAGE_COLORS[fl.usage] : 0x999999;
+    const shaded = architectShadeColor(baseHex, fl.f%2===0 ? 0.82 : 1.0);
+    ctx.fillStyle = `#${shaded.toString(16).padStart(6,'0')}`;
+    ctx.fillRect(fx, fy, fw, fh);
+  });
+  ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, w-1, h-1);
 }
 // Petit pictogramme d'emprise au sol (forme réelle du polygone du
 // bâtiment, à l'échelle) — donnée directement reconstructible depuis
@@ -9822,9 +9850,10 @@ function renderList(){
 
     const head = document.createElement('div');
     head.className = 'bldg-head';
-    const dot = document.createElement('div');
-    dot.className='bldg-dot';
-    dot.style.background = '#'+USAGE_COLORS[usageAtFloor(b, b.floors)].toString(16).padStart(6,'0');
+    const dot = document.createElement('canvas');
+    dot.className='bldg-coupe-icon';
+    dot.width = 40; dot.height = 64; // résolution 2x pour un rendu net
+    drawBldgListCoupeIcon(dot, b);
     const nameSpan = document.createElement('span');
     nameSpan.textContent = b.name;
     nameSpan.style.cssText = 'flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
