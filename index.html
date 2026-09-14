@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Place de Milan — Building Simulator</title>
+<title>Place de Milan — Atelier volumétrique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -293,7 +293,7 @@
     overflow:visible;
   }
   #toolbar-left{
-    flex-shrink:0;width:214px;
+    flex-shrink:0;width:244px;
     display:flex;flex-direction:column;gap:4px;
     background:rgba(24,36,48,.9);border:1px solid #2a3946;border-radius:8px;
     padding:6px;backdrop-filter:blur(6px);
@@ -414,7 +414,7 @@
   }
   #bldg-panel.show{display:flex;}
   #bldg-panel-list{
-    width:214px;flex-shrink:0;
+    width:244px;flex-shrink:0;
     background:rgba(24,36,48,.94);border:1px solid #2a3946;border-radius:10px;
     padding:10px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,.4);
     display:flex;flex-direction:column;gap:6px;
@@ -9840,7 +9840,9 @@ function updateBldgConnectorLine(){
 function renderList(){
   emptyNote.style.display = buildings.length ? 'none' : 'block';
   bldgList.innerHTML = '';
-  buildings.forEach(b=>{
+  // Triées par hauteur totale décroissante (le plus grand en haut de liste).
+  const sortedBuildings = buildings.slice().sort((a,b2)=> buildingTotalHeight(b2) - buildingTotalHeight(a));
+  sortedBuildings.forEach(b=>{
     // Liste compacte (à gauche de la fiche de modification) : juste
     // l'identification et un accès rapide — l'édition complète vit dans la
     // fiche à droite (voir renderBldgEditWindow), pour le bâtiment sélectionné.
@@ -9856,7 +9858,7 @@ function renderList(){
     drawBldgListCoupeIcon(dot, b);
     const nameSpan = document.createElement('span');
     nameSpan.textContent = b.name;
-    nameSpan.style.cssText = 'flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    nameSpan.style.cssText = 'flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;';
     const meta = document.createElement('span');
     meta.style.cssText = 'color:var(--muted);font-size:11px;font-family:IBM Plex Mono,monospace;';
     meta.textContent = `${b.floors} niv.`;
