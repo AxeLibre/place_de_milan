@@ -11509,15 +11509,74 @@ function updateDetectorSpeedControl(r, dt, headPos){
 // milieu/arrière) pour le tram.
 const WAGON_GAP = 0.4; // mètres entre deux caisses consécutives
 
-/* ---- Modèles réels (vehicules.glb + trains.glb) ------------------------ */
+/* ---- Modèles réels (vehicules.glb + trains.glb + people.glb) ----------- */
 const VEHICLES_GLB_URL = './vehicules.glb';
 const TRAINS_GLB_URL = './trains.glb';
+const PEOPLE_GLB_URL = './people.glb';
 let vehicleTemplates = null; // {bus, voiture, tramAvant, tramMilieu, tramArriere, trainAvant, trainMilieu, trainArriere} -> THREE.Object3D
 const vehicleBodyMaterials = {}; // type -> THREE.Material de carrosserie (couleur modifiable en direct)
-// Matériau/geometry de secours pour piétons (aucun modèle piéton fourni) et
+// Gabarit piéton low poly animé (people.glb) : objet vide "people" parent de
+// body/head/arm_l/arm_r/leg_l/leg_r, avec 4 clips d'animation (balancement
+// bras/jambes) et 5 matériaux nommés skin/hair/tshirt/pant/shoes — recolorés
+// aléatoirement par instance (voir instantiatePedestrianFromTemplate).
+let peopleTemplate = null;   // THREE.Object3D "people" (racine du rig), null si people.glb absent/invalide
+let peopleAnimClips = [];    // THREE.AnimationClip[] extraits de people.glb
+// Matériau/geometry de secours pour piétons (si people.glb ne charge pas) et
 // pour les véhicules si jamais vehicules.glb ne charge pas.
 const pedestrianGeo = new THREE.CapsuleGeometry(0.22, 0.9, 4, 8);
 const pedestrianMat = new THREE.MeshStandardMaterial({ color:ROUTE_TYPES.pieton.color, roughness:0.8 });
+
+// ---- Palettes de couleurs des piétons (people.glb) ----------------------
+// Teintes de peau, du plus clair au plus foncé ; chacune porte sa propre
+// petite palette de couleurs de cheveux (poids relatifs) pour rester
+// logique (pas de blond platine sur une peau très foncée, etc.) tout en
+// gardant de la variété dans chaque groupe.
+const PEDESTRIAN_SKIN_TONES = [
+  { hex:0xffe0bd, hair:[[0x2c1b12,4],[0x4a2f1c,3],[0xd6b370,3],[0xb5651d,2],[0x9a9a9a,1]] },
+  { hex:0xf1c27d, hair:[[0x2c1b12,4],[0x4a2f1c,3],[0xd6b370,2],[0xb5651d,2],[0x9a9a9a,1]] },
+  { hex:0xe0ac69, hair:[[0x1a1108,4],[0x2c1b12,3],[0x4a2f1c,3],[0xb5651d,1]] },
+  { hex:0xc68642, hair:[[0x1a1108,5],[0x2c1b12,4],[0x4a2f1c,2]] },
+  { hex:0x8d5524, hair:[[0x0d0704,5],[0x1a1108,4],[0x2c1b12,2]] },
+  { hex:0x5a3825, hair:[[0x0d0704,6],[0x1a1108,3]] }
+];
+// Tirage pondéré générique : accepte soit des paires [valeur,poids], soit
+// des objets {hex,weight}.
+function pedestrianPickWeighted(list){
+  const val = (e)=> Array.isArray(e) ? e[0] : e.hex;
+  const wgt = (e)=> Array.isArray(e) ? e[1] : e.weight;
+  const total = list.reduce((s,e)=> s+wgt(e), 0);
+  let r = Math.random()*total;
+  for(const e of list){ r -= wgt(e); if(r<=0) return val(e); }
+  return val(list[list.length-1]);
+}
+function pickPedestrianSkinAndHair(){
+  const tone = PEDESTRIAN_SKIN_TONES[Math.floor(Math.random()*PEDESTRIAN_SKIN_TONES.length)];
+  return { skin: tone.hex, hair: pedestrianPickWeighted(tone.hair) };
+}
+// T-shirts : dominante noir/blanc, avec un large éventail de couleurs sobres
+// à vives en appoint (poids relatifs).
+const PEDESTRIAN_TSHIRT_COLORS = [
+  [0x111111,6],[0xf2f2f2,6],[0x2c3e50,3],[0x7a1f1f,2],[0x1f4d3a,2],[0x445566,2],
+  [0x8a6d3b,2],[0x555555,3],[0xb03050,1],[0x2060a0,2],[0x603080,1],[0xc9a227,1],
+  [0x334455,2],[0x704214,1]
+];
+// Pantalons : jean (majorité, plusieurs teintes, comme le rendu actuel) +
+// variantes sobres (noir, gris foncé, beige), et très rarement assorti au
+// t-shirt (effet "ensemble").
+const PEDESTRIAN_PANT_COLORS = [
+  [0x2c3e60,4],[0x35506e,4],[0x1c2b40,4],[0x4a6a8a,3],[0x223047,4],
+  [0x111111,3],[0x2b2b2b,2],[0xd8c9a3,2]
+];
+function pickPedestrianPant(tshirtHex){
+  if(Math.random() < 0.05) return tshirtHex; // "ensemble" rare : pantalon = couleur du t-shirt
+  return pedestrianPickWeighted(PEDESTRIAN_PANT_COLORS);
+}
+// Chaussures : sobre en large majorité (noir/blanc/gris), quelques touches
+// flashy occasionnelles (rouge, bleu ciel, jaune fluo, orange).
+const PEDESTRIAN_SHOES_COLORS = [
+  [0x111111,6],[0xf2f2f2,6],[0x8a8f94,2],
+  [0xd41111,1],[0x39c6f0,1],[0xe8ff33,1],[0xff7a00,1]
+];
 
 function findMaterialByName(root, name){
   if(!root) return null;
@@ -11682,6 +11741,67 @@ function loadVehiclesFromGLB(){
     });
   });
 }
+function loadPeopleFromGLB(){
+  return new Promise((resolve)=>{
+    gltfLoader.load(PEOPLE_GLB_URL, (gltf)=>{
+      peopleTemplate = findByNameCI(gltf.scene, 'people');
+      peopleAnimClips = gltf.animations || [];
+      resolve();
+    }, undefined, ()=>{
+      // Fichier optionnel : on continue avec la capsule de secours (voir
+      // instantiateVehiclePart) si people.glb est absent ou invalide.
+      peopleTemplate = null;
+      resolve();
+    });
+  });
+}
+// Instancie un piéton à partir du gabarit people.glb : matériaux clonés PAR
+// INSTANCE (jamais partagés entre piétons — chacun doit pouvoir avoir sa
+// propre teinte de peau/cheveux/vêtements) et recolorés selon les palettes
+// ci-dessus. Un seul clone de matériau par catégorie et par piéton, même si
+// cette catégorie est utilisée sur plusieurs meshes (ex. "skin" sur les bras
+// ET la tête) — cohérence garantie sans multiplier les matériaux. Retourne
+// aussi le mixer d'animation (marche) prêt à jouer, déphasé aléatoirement
+// pour que les piétons d'une même voie ne marchent pas en cadence.
+function instantiatePedestrianFromTemplate(){
+  const obj = peopleTemplate.clone(true);
+  const matClones = {};   // uuid matériau d'origine -> clone (une fois par matériau réellement rencontré ici)
+  const byCategory = {};  // nom de matériau en minuscule ('skin'/'hair'/'tshirt'/'pant'/'shoes') -> clone
+  obj.traverse(o=>{
+    if(!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const newMats = mats.map(mm=>{
+      if(!mm) return mm;
+      if(!matClones[mm.uuid]){
+        const clone = mm.clone();
+        matClones[mm.uuid] = clone;
+        const key = (clone.name||'').toLowerCase().trim();
+        if(key && !byCategory[key]) byCategory[key] = clone;
+      }
+      return matClones[mm.uuid];
+    });
+    o.material = Array.isArray(o.material) ? newMats : newMats[0];
+  });
+
+  const { skin, hair } = pickPedestrianSkinAndHair();
+  const tshirt = pedestrianPickWeighted(PEDESTRIAN_TSHIRT_COLORS);
+  const pant = pickPedestrianPant(tshirt);
+  const shoes = pedestrianPickWeighted(PEDESTRIAN_SHOES_COLORS);
+  if(byCategory.skin)   byCategory.skin.color.setHex(skin);
+  if(byCategory.hair)   byCategory.hair.color.setHex(hair);
+  if(byCategory.tshirt) byCategory.tshirt.color.setHex(tshirt);
+  if(byCategory.pant)   byCategory.pant.color.setHex(pant);
+  if(byCategory.shoes)  byCategory.shoes.color.setHex(shoes);
+
+  let mixer = null;
+  if(peopleAnimClips.length){
+    mixer = new THREE.AnimationMixer(obj);
+    peopleAnimClips.forEach(clip=> mixer.clipAction(clip).play());
+    mixer.update(Math.random()*1.25); // déphasage aléatoire de la démarche
+  }
+  return { object: obj, mixer };
+}
 function instantiateVehiclePart(cfg, wagonIndex){
   const key = cfg.parts ? cfg.parts[wagonIndex] : cfg.part;
   const template = key && vehicleTemplates ? vehicleTemplates[key] : null;
@@ -11714,15 +11834,26 @@ function instantiateVehiclePart(cfg, wagonIndex){
     }
     return obj;
   }
-  // Boîte de secours (piéton, ou modèle manquant) — dimensions approximatives.
-  const isPieton = cfg===ROUTE_TYPES.pieton;
-  const geo = isPieton ? pedestrianGeo : new THREE.BoxGeometry(...cfg.fallbackScale);
-  let mat = isPieton ? pedestrianMat : vehicleBodyMaterials[cfg._fallbackKey];
-  if(!isPieton && !mat){
+  // Piéton : vrai modèle low poly animé (people.glb) si chargé, avec
+  // matériaux/couleurs randomisés par instance ; sinon repli sur la capsule
+  // générique (people.glb absent ou invalide).
+  if(cfg===ROUTE_TYPES.pieton){
+    if(peopleTemplate){
+      const { object, mixer } = instantiatePedestrianFromTemplate();
+      object.userData.mixer = mixer; // récupéré par createRoute() pour piloter la marche
+      return object;
+    }
+    const mesh = new THREE.Mesh(pedestrianGeo, pedestrianMat);
+    mesh.castShadow = true;
+    return mesh;
+  }
+  // Boîte de secours (modèle véhicule manquant) — dimensions approximatives.
+  let mat = vehicleBodyMaterials[cfg._fallbackKey];
+  if(!mat){
     mat = new THREE.MeshStandardMaterial({color:cfg.color, roughness:0.7});
     vehicleBodyMaterials[cfg._fallbackKey] = mat;
   }
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...cfg.fallbackScale), mat);
   mesh.castShadow = true;
   return mesh;
 }
@@ -11746,7 +11877,12 @@ function createRoute(points, type, name){
     for(let w=0;w<wagons;w++){
       const mesh = instantiateVehiclePart(cfg, w);
       vehicleGroup.add(mesh);
-      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.length+WAGON_GAP), wagonIndex: w, mesh });
+      // Piéton animé (people.glb) : mixer posé sur userData par
+      // instantiateVehiclePart, cadencé sur la vitesse propre de l'agent
+      // pour que la foulée suive la démarche (marcheurs plus rapides/lents).
+      const mixer = (mesh.userData && mesh.userData.mixer) || null;
+      if(mixer) mixer.timeScale = speed / cfg.speed;
+      agents.push({ t: baseT, speed, wagonOffset: w*(cfg.length+WAGON_GAP), wagonIndex: w, mesh, mixer });
     }
   }
 
@@ -11805,6 +11941,7 @@ function tickAgents(dt){
         m.position.addScaledVector(side, lateral);
       }
       m.lookAt(m.position.clone().add(tangent));
+      if(a.mixer) a.mixer.update(dt); // avance le cycle de marche (bras/jambes) du piéton
     });
   }
 }
@@ -12864,12 +13001,13 @@ function animate(){
 }
 animate();
 
-// Charge d'abord les modèles de véhicules (vehicules.glb) : toute création de
-// voie (démo ou routes.json) a besoin des gabarits chargés pour cloner de
-// vrais bus/trams/voitures au lieu de boîtes de secours. Le fichier est petit,
-// le délai est négligeable, et un échec de chargement ne bloque rien (repli
-// automatique sur les boîtes de secours, voir instantiateVehiclePart).
-Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB(), loadCraneFromGLB()]).then(()=>{
+// Charge d'abord les modèles de circulation (vehicules.glb, trains.glb,
+// people.glb) : toute création de voie (démo ou routes.json) a besoin des
+// gabarits chargés pour cloner de vrais bus/trams/voitures/piétons au lieu
+// de boîtes/capsule de secours. Les fichiers sont petits, le délai est
+// négligeable, et un échec de chargement ne bloque rien (repli automatique
+// sur les gabarits de secours, voir instantiateVehiclePart).
+Promise.all([loadVehiclesFromGLB(), loadTrainsFromGLB(), loadCraneFromGLB(), loadPeopleFromGLB()]).then(()=>{
   // Charge la vraie maquette si le fichier est présent à côté de index.html ;
   // sinon, bascule sur la maquette de démonstration procédurale (avec bâtiment
   // et voies d'exemple inclus dans buildDemoSite()) et affiche un diagnostic clair.
