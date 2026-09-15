@@ -1942,30 +1942,43 @@ float hash12NW(vec2 p){
 // pour les NOUVEAUX bâtiments, avec son propre système de texture).
 function setupStaticWindowMaterials(root){
   staticWindowMaterials = [];
-  const rawGlass = glassMaterial || findMaterialByName(root, 'glass');
-  const rawGlassFenetre = findMaterialByName(root, 'glass_fenetre');
-  const rawBatimentsFenetre = findMaterialByName(root, 'BATIMENTS_fenetre');
-  const rawGlassCarre = findMaterialByName(root, 'glass_carre');
+  // On récupère TOUTES les instances de chaque matériau (pas seulement la
+  // première) : un même nom de matériau peut correspondre à plusieurs objets
+  // matériau distincts dans le .glb — typiquement le bâti principal d'un
+  // côté et une pièce ajoutée séparément (comme "Extension_Gare") de l'autre,
+  // chacune avec son propre slot Blender même si le nom est identique. Sans
+  // ça, seule la première instance rencontrée recevait le shader de fenêtres
+  // illuminées et les autres restaient dans leur état brut (non éclairées).
+  const rawGlassAll = findAllMaterialsByName(root, 'glass');
+  if(glassMaterial && !rawGlassAll.includes(glassMaterial)) rawGlassAll.unshift(glassMaterial);
+  const rawGlassFenetreAll = findAllMaterialsByName(root, 'glass_fenetre');
+  const rawBatimentsFenetreAll = findAllMaterialsByName(root, 'BATIMENTS_fenetre');
+  const rawGlassCarreAll = findAllMaterialsByName(root, 'glass_carre');
   const replacements = new Map(); // matériau brut -> matériau "fenêtres" dédié au bâti existant
-  if(rawGlass) replacements.set(rawGlass, makeStaticNightWindowMaterial(rawGlass, {
+  function registerAll(rawList, opts){
+    if(!rawList.length) return;
+    const shaded = makeStaticNightWindowMaterial(rawList[0], opts); // un seul matériau shader partagé par toutes les instances de ce nom
+    rawList.forEach(raw => replacements.set(raw, shaded));
+  }
+  registerAll(rawGlassAll, {
     pitch: 1, floorH: 3, winW: 0.72, winH: 1.5, litProb: 1.0, // grandes baies vitrées — TOUTES allumées, plancher bien visible entre étages
     color: [1.0, 0.86, 0.58]
-  }));
-  if(rawGlassFenetre) replacements.set(rawGlassFenetre, makeStaticNightWindowMaterial(rawGlassFenetre, {
+  });
+  registerAll(rawGlassFenetreAll, {
     pitch: 1, floorH: 3, winW: 0.65, winH: 1.3, litProb: GLASS_WINDOW_LIT_PROB, // portrait, répété tous les 1m
     color: [1.0, 0.86, 0.58]
-  }));
-  if(rawBatimentsFenetre) replacements.set(rawBatimentsFenetre, makeStaticNightWindowMaterial(rawBatimentsFenetre, {
+  });
+  registerAll(rawBatimentsFenetreAll, {
     pitch: 2, floorH: 2.5, winW: 0.65, winH: 0.85, litProb: GLASS_WINDOW_LIT_PROB, // portrait, répété tous les 2m
     color: [1.0, 0.82, 0.5] // plus chaud que glass/glass_fenetre — anciennement la teinte des nouveaux bâtiments
-  }));
-  if(rawGlassCarre) replacements.set(rawGlassCarre, makeStaticNightWindowMaterial(rawGlassCarre, {
+  });
+  registerAll(rawGlassCarreAll, {
     // Grille à cellules carrées 3m x 3m, trame (partie opaque) de 0.5m d'épaisseur
     // => cellule illuminée de 3 - 0.5 = 2.5m de côté. Carré => même pas en largeur
     // qu'en hauteur (pitch = floorH = 3). 100% allumé.
     pitch: 3, floorH: 3, winW: 2.5, winH: 2.5, litProb: 1.0,
     color: [1.0, 1.0, 1.0] // blanc naturel
-  }));
+  });
   if(!replacements.size) return;
   root.traverse(obj=>{
     if(!obj.isMesh) return;
@@ -11537,6 +11550,37 @@ function findMaterialByName(root, name){
     console.warn(`[Place de Milan] Matériau "${name}" introuvable dans le .glb. Matériaux présents :`, [...new Set(allNames)].join(', '));
   }
   return found;
+}
+// Variante de findMaterialByName qui renvoie TOUTES les instances de matériau
+// correspondant au nom (pas seulement la première rencontrée). Nécessaire car
+// un export Blender/glTF peut créer plusieurs objets matériau distincts
+// portant le même nom (ex. un slot par mesh au lieu d'un matériau partagé) —
+// notamment entre le bâti principal et une pièce ajoutée séparément comme
+// "Extension_Gare". Avec findMaterialByName seule, seule la première instance
+// est remplacée par le shader de fenêtres illuminées ; les autres gardent
+// l'apparence brute (non éclairée) du .glb.
+function findAllMaterialsByName(root, name){
+  if(!root) return [];
+  const target = name.toLowerCase().trim();
+  const exact = new Set(), ci = new Set(), partial = new Set();
+  root.traverse(o=>{
+    if(!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach(mm=>{
+      if(!mm) return;
+      if(mm.name===name) exact.add(mm);
+      else {
+        const n = (mm.name||'').toLowerCase().trim();
+        if(n===target) ci.add(mm);
+        else if(n.includes(target)) partial.add(mm);
+      }
+    });
+  });
+  // Même priorité que findMaterialByName (exact > insensible à la casse >
+  // partiel), mais on garde TOUTES les instances du meilleur niveau trouvé.
+  if(exact.size) return [...exact];
+  if(ci.size) return [...ci];
+  return [...partial];
 }
 function applyVehicleLightStateTrainExtras(on){
   if(vehicleLightMaterials.blancTrain) vehicleLightMaterials.blancTrain.emissiveIntensity = on ? 3.0 : 0;
