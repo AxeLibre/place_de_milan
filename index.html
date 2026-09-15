@@ -12279,7 +12279,18 @@ function extDeformModuleToQuad(slice){
     pos.needsUpdate = true;
     g.computeVertexNormals();
     g.computeBoundingSphere();
-    const mat = material ? material.clone() : extMaterial();
+    // IMPORTANT : on RÉUTILISE directement le matériau baked (pas de .clone()
+    // ici). Les matériaux "fenêtres illuminées" (glass, glass_fenetre,
+    // BATIMENTS_fenetre, glass_carre — voir makeStaticNightWindowMaterial)
+    // injectent leur shader de grille de baies via `onBeforeCompile`, une
+    // fonction que THREE.Material.clone()/copy() NE COPIE PAS. Un
+    // .clone() ici produisait donc un matériau visuellement plat, sans
+    // aucune fenêtre allumée — exactement le souci observé sur la partie
+    // "glass_carre" de l'extension gare dessinée. Comme le shader calcule
+    // la grille à partir de la position MONDE (pas d'UV par instance), le
+    // matériau peut être partagé tel quel entre toutes les tranches sans
+    // aucun effet de bord.
+    const mat = material || extMaterial();
     const mesh = new THREE.Mesh(g, mat);
     mesh.castShadow = true; mesh.receiveShadow = true;
     group.add(mesh);
@@ -12291,6 +12302,16 @@ function extMaterial(){
   let src = null;
   if(hallMesh) hallMesh.traverse(o=>{ if(!src && o.isMesh && o.material) src = o.material; });
   if(src){
+    // Pas de .clone() si `src` est déjà un matériau "fenêtres illuminées"
+    // (voir makeStaticNightWindowMaterial) : son shader vit dans
+    // `onBeforeCompile`, une fonction que clone()/copy() ne recopie pas —
+    // cloner produirait un matériau plat sans effet de nuit. Comme ce
+    // matériau est partagé sans risque (shader basé sur la position monde,
+    // pas d'UV par instance), on ne clone que pour appliquer `side`, et
+    // uniquement quand ce n'est pas un matériau à shader partagé.
+    if(src.userData && src.userData.nightWindowUniforms){
+      return src;
+    }
     const m = src.clone();
     m.side = THREE.DoubleSide;
     return m;
