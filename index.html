@@ -51,6 +51,11 @@
   #brand-logo{height:57px;width:auto;max-width:none;flex:none;align-self:flex-start;display:block;filter:drop-shadow(0 1px 4px rgba(0,0,0,.85)) drop-shadow(0 0 10px rgba(0,0,0,.5));}
   #brand span{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#c3d0da;letter-spacing:.08em;text-transform:uppercase;text-shadow:0 1px 4px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.6);margin-top:2px;}
 
+  /* Le composant <iconify-icon> est un élément "inline" par défaut (comme
+     du texte), ce qui peut le décaler verticalement par rapport au reste
+     d'un bouton. On le force en boîte flex centrée, quelle que soit sa
+     taille (définie via les attributs width/height sur chaque balise). */
+  iconify-icon{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;}
   .tool-btn{
     font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:500;
     background:var(--ink-2);border:1px solid #2a3946;color:var(--paper);
@@ -1316,11 +1321,11 @@
       </div>
       <div class="welcome-step">
         <div class="welcome-buttons-demo">
-          <div class="wbd-btn" style="animation-delay:0s"><iconify-icon icon="fluent-emoji-flat:information"></iconify-icon><span>À propos</span></div>
-          <div class="wbd-btn" style="animation-delay:.5s"><iconify-icon icon="fluent-emoji-flat:red-question-mark"></iconify-icon><span>Aide</span></div>
-          <div class="wbd-btn" style="animation-delay:1s"><iconify-icon icon="fluent-emoji-flat:camera"></iconify-icon><span>Capture</span></div>
-          <div class="wbd-btn" style="animation-delay:1.5s"><iconify-icon icon="fluent-emoji-flat:floppy-disk"></iconify-icon><span>Enregistrer</span></div>
-          <div class="wbd-btn" style="animation-delay:2s"><iconify-icon icon="fluent-emoji-flat:open-file-folder"></iconify-icon><span>Charger</span></div>
+          <div class="wbd-btn" style="animation-delay:0s"><iconify-icon icon="fluent-emoji-flat:information" width="24" height="24"></iconify-icon><span>À propos</span></div>
+          <div class="wbd-btn" style="animation-delay:.5s"><iconify-icon icon="fluent-emoji-flat:red-question-mark" width="24" height="24"></iconify-icon><span>Aide</span></div>
+          <div class="wbd-btn" style="animation-delay:1s"><iconify-icon icon="fluent-emoji-flat:camera" width="24" height="24"></iconify-icon><span>Capture</span></div>
+          <div class="wbd-btn" style="animation-delay:1.5s"><iconify-icon icon="fluent-emoji-flat:floppy-disk" width="24" height="24"></iconify-icon><span>Enregistrer</span></div>
+          <div class="wbd-btn" style="animation-delay:2s"><iconify-icon icon="fluent-emoji-flat:open-file-folder" width="24" height="24"></iconify-icon><span>Charger</span></div>
         </div>
         <div><b>6. Sauvegardez votre projet et exportez une image</b><p>Le bouton disquette enregistre votre projet (bâtiments, arbres, gazon, labels…) dans un fichier que vous pourrez recharger plus tard avec le bouton dossier. Le bouton appareil photo exporte une capture d'écran PNG de la vue actuelle — c'est l'aboutissement de votre travail.</p></div>
       </div>
@@ -1362,14 +1367,14 @@
     <button id="architect-dir-sud" data-architect-dir="sud" title="Orientation Sud"><i data-lucide="panel-bottom"></i><span>Sud</span></button>
     <button id="architect-dir-est" data-architect-dir="est" title="Orientation Est"><i data-lucide="panel-right"></i><span>Est</span></button>
     <button id="architect-dir-ouest" data-architect-dir="ouest" title="Orientation Ouest"><i data-lucide="panel-left"></i><span>Ouest</span></button>
-    <button id="architect-dir-axo" data-architect-dir="axo" title="Vue axonométrique (perspective) — la vue de haut correspondante est toujours affichée en vis-à-vis sur l'image principale et l'extension gare"><iconify-icon icon="fluent-emoji-flat:package"></iconify-icon><span>Axonométrie</span></button>
+    <button id="architect-dir-axo" data-architect-dir="axo" title="Vue axonométrique (perspective) — la vue de haut correspondante est toujours affichée en vis-à-vis sur l'image principale et l'extension gare"><iconify-icon icon="fluent-emoji-flat:package" width="18" height="18"></iconify-icon><span>Axonométrie</span></button>
     <div id="architect-bar-sep"></div>
-    <button id="architect-toggle-labels" class="active" title="Afficher/masquer les labels sur l'image principale"><iconify-icon icon="fluent-emoji-flat:label"></iconify-icon><span>Labels</span></button>
-    <button id="architect-btn-export" title="Exporter la planche en PNG"><iconify-icon icon="fluent-emoji-flat:camera"></iconify-icon><span>Exporter</span></button>
+    <button id="architect-toggle-labels" class="active" title="Afficher/masquer les labels sur l'image principale"><iconify-icon icon="fluent-emoji-flat:label" width="18" height="18"></iconify-icon><span>Labels</span></button>
+    <button id="architect-btn-export" title="Exporter la planche en PNG"><iconify-icon icon="fluent-emoji-flat:camera" width="18" height="18"></iconify-icon><span>Exporter</span></button>
   </div>
   <canvas id="architect-canvas"></canvas>
   <div id="skyline-mode-bar">
-    <button class="active" id="btn-skyline-3d" data-skyline="" title="Vue 3D libre de la maquette globale (mode actuel)"><iconify-icon icon="fluent-emoji-flat:package"></iconify-icon><span>Maquette 3D</span></button>
+    <button class="active" id="btn-skyline-3d" data-skyline="" title="Vue 3D libre de la maquette globale (mode actuel)"><iconify-icon icon="fluent-emoji-flat:package" width="18" height="18"></iconify-icon><span>Maquette 3D</span></button>
     <button id="btn-skyline-nord" data-skyline="nord" title="Élévation technique — vue orthogonale depuis le Nord"><i data-lucide="panel-top"></i><span>Skyline Nord</span></button>
     <button id="btn-skyline-sud" data-skyline="sud" title="Élévation technique — vue orthogonale depuis le Sud"><i data-lucide="panel-bottom"></i><span>Skyline Sud</span></button>
     <button id="btn-skyline-est" data-skyline="est" title="Élévation technique — vue orthogonale depuis l'Est"><i data-lucide="panel-right"></i><span>Skyline Est</span></button>
@@ -1379,40 +1384,40 @@
   <div id="viewport">
     <div id="ribbon">
       <div id="brand"><img id="brand-logo" src="public/logo.png" alt="Place de Milan — Building Simulator" onerror="this.style.display='none'"><span>Atelier volumétrique · Lyon Part-Dieu</span></div>
-      <button class="tool-btn ghost admin-only" id="btn-load-glb"><iconify-icon icon="fluent-emoji-flat:outbox-tray"></iconify-icon><span class="tool-btn-label">Charger maquette (.glb)</span></button>
-      <button class="tool-btn ghost grp-trigger" id="btn-grp-camera" aria-haspopup="true" aria-expanded="false" title="Caméra : positions et déplacements de la vue (Vue plan, Mode piéton)"><iconify-icon icon="fluent-emoji-flat:movie-camera"></iconify-icon><span class="tool-btn-label">Caméra</span><i data-lucide="chevron-down" class="grp-chevron"></i></button>
+      <button class="tool-btn ghost admin-only" id="btn-load-glb"><iconify-icon icon="fluent-emoji-flat:outbox-tray" width="21" height="21"></iconify-icon><span class="tool-btn-label">Charger maquette (.glb)</span></button>
+      <button class="tool-btn ghost grp-trigger" id="btn-grp-camera" aria-haspopup="true" aria-expanded="false" title="Caméra : positions et déplacements de la vue (Vue plan, Mode piéton)"><iconify-icon icon="fluent-emoji-flat:movie-camera" width="21" height="21"></iconify-icon><span class="tool-btn-label">Caméra</span><i data-lucide="chevron-down" class="grp-chevron"></i></button>
       <button class="tool-btn ghost grp-trigger" id="btn-grp-display" aria-haspopup="true" aria-expanded="false" title="Affichage : ce qui est visible sur la maquette (Grille, PLU, Légendes, Éclairage, Options)"><i data-lucide="sliders-horizontal"></i><span class="tool-btn-label">Affichage</span><i data-lucide="chevron-down" class="grp-chevron"></i></button>
-      <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons, constructions en cours)"><iconify-icon icon="fluent-emoji-flat:pause-button"></iconify-icon><span class="tool-btn-label">Simulation</span></button>
+      <button class="tool-btn ghost" id="btn-sim-toggle" title="Mettre en pause / relancer la simulation (véhicules, piétons, constructions en cours)"><iconify-icon icon="fluent-emoji-flat:pause-button" width="21" height="21"></iconify-icon><span class="tool-btn-label">Simulation</span></button>
       <button class="tool-btn ghost grp-trigger" id="btn-grp-render" aria-haspopup="true" aria-expanded="false" title="Rendu final : modes de présentation plein écran (Global, Skyline, Mode Architecte)"><i data-lucide="presentation"></i><span class="tool-btn-label">Rendu final</span><i data-lucide="chevron-down" class="grp-chevron"></i></button>
       <div id="ribbon-sep"></div>
       <div id="bottom-left-menu">
-        <button id="btn-help" class="mini-fab" title="À propos"><iconify-icon icon="fluent-emoji-flat:information"></iconify-icon><span class="mini-fab-label">À propos</span></button>
-        <button id="btn-open-welcome" class="mini-fab" title="Comment fonctionne l'outil"><iconify-icon icon="fluent-emoji-flat:red-question-mark"></iconify-icon><span class="mini-fab-label">Aide</span></button>
-        <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><iconify-icon icon="fluent-emoji-flat:camera"></iconify-icon><span class="mini-fab-label">Capture</span></button>
-        <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><iconify-icon icon="fluent-emoji-flat:floppy-disk"></iconify-icon><span class="mini-fab-label">Enregistrer</span></button>
-        <button id="btn-load-json" class="mini-fab" title="Charger un projet"><iconify-icon icon="fluent-emoji-flat:open-file-folder"></iconify-icon><span class="mini-fab-label">Charger</span></button>
-        <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><iconify-icon icon="fluent-emoji-flat:round-pushpin"></iconify-icon><span class="mini-fab-label">Départ</span></button>
+        <button id="btn-help" class="mini-fab" title="À propos"><iconify-icon icon="fluent-emoji-flat:information" width="21" height="21"></iconify-icon><span class="mini-fab-label">À propos</span></button>
+        <button id="btn-open-welcome" class="mini-fab" title="Comment fonctionne l'outil"><iconify-icon icon="fluent-emoji-flat:red-question-mark" width="21" height="21"></iconify-icon><span class="mini-fab-label">Aide</span></button>
+        <button id="btn-export-png" class="mini-fab" title="Exporter l'image (PNG)"><iconify-icon icon="fluent-emoji-flat:camera" width="21" height="21"></iconify-icon><span class="mini-fab-label">Capture</span></button>
+        <button id="btn-save-json" class="mini-fab" title="Sauver le projet"><iconify-icon icon="fluent-emoji-flat:floppy-disk" width="21" height="21"></iconify-icon><span class="mini-fab-label">Enregistrer</span></button>
+        <button id="btn-load-json" class="mini-fab" title="Charger un projet"><iconify-icon icon="fluent-emoji-flat:open-file-folder" width="21" height="21"></iconify-icon><span class="mini-fab-label">Charger</span></button>
+        <button id="btn-save-depart" class="mini-fab admin-only" title="Enregistrer depart.json (bâtiments, arbres, labels — y compris les labels verrouillés)"><iconify-icon icon="fluent-emoji-flat:round-pushpin" width="21" height="21"></iconify-icon><span class="mini-fab-label">Départ</span></button>
       </div>
     </div>
     <div id="camera-group-popout" class="ribbon-popout">
       <button class="tool-btn ghost" id="btn-plan-view" title="Vue de dessus orthographique réelle (aucune perspective) : seule façon fiable de vérifier un alignement au sol sans être trompé par la perspective d'un bâtiment haut à proximité."><i data-lucide="square"></i><span class="tool-btn-label">Vue plan</span></button>
-      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + T/B haut-bas + flèches + ±). Souris : clic gauche glissé = regarder, molette = vitesse de croisière avant/arrière, clic molette = stop, clic droit glissé = translation. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><iconify-icon icon="fluent-emoji-flat:footprints"></iconify-icon><span class="tool-btn-label">Mode piéton</span></button>
+      <button class="tool-btn ghost" id="btn-pedestrian-mode" title="Mode caméra piéton : déplacement libre (WASD + T/B haut-bas + flèches + ±). Souris : clic gauche glissé = regarder, molette = vitesse de croisière avant/arrière, clic molette = stop, clic droit glissé = translation. CTRL pour ralentir/préciser, MAJ pour accélérer. Échap ou le bouton en haut pour quitter."><iconify-icon icon="fluent-emoji-flat:footprints" width="21" height="21"></iconify-icon><span class="tool-btn-label">Mode piéton</span></button>
     </div>
     <div id="display-group-popout" class="ribbon-popout">
       <button class="tool-btn ghost" id="btn-toggle-grid"><i data-lucide="grid-3x3"></i><span class="tool-btn-label">Grille</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-plu"><iconify-icon icon="fluent-emoji-flat:world-map"></iconify-icon><span class="tool-btn-label">Voir PLU</span></button>
-      <button class="tool-btn ghost" id="btn-toggle-legend"><iconify-icon icon="fluent-emoji-flat:artist-palette"></iconify-icon><span class="tool-btn-label">Légendes</span></button>
-      <button class="tool-btn ghost" id="btn-sun-panel"><iconify-icon icon="fluent-emoji-flat:sun"></iconify-icon><span class="tool-btn-label">Éclairage</span></button>
-      <button class="tool-btn ghost" id="btn-admin-panel" title="Options d'affichage (véhicules, piétons)"><iconify-icon icon="fluent-emoji-flat:gear"></iconify-icon><span class="tool-btn-label">Options d'affichage</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-plu"><iconify-icon icon="fluent-emoji-flat:world-map" width="21" height="21"></iconify-icon><span class="tool-btn-label">Voir PLU</span></button>
+      <button class="tool-btn ghost" id="btn-toggle-legend"><iconify-icon icon="fluent-emoji-flat:artist-palette" width="21" height="21"></iconify-icon><span class="tool-btn-label">Légendes</span></button>
+      <button class="tool-btn ghost" id="btn-sun-panel"><iconify-icon icon="fluent-emoji-flat:sun" width="21" height="21"></iconify-icon><span class="tool-btn-label">Éclairage</span></button>
+      <button class="tool-btn ghost" id="btn-admin-panel" title="Options d'affichage (véhicules, piétons)"><iconify-icon icon="fluent-emoji-flat:gear" width="21" height="21"></iconify-icon><span class="tool-btn-label">Options d'affichage</span></button>
     </div>
     <div id="render-group-popout" class="ribbon-popout">
-      <button class="tool-btn ghost" id="btn-global-view" title="Vue Globale : affiche la maquette élargie (global.glb) autour du site, éclairée en plein midi d'équinoxe, avec la même navigation libre que le mode piéton (WASD + souris). Impossible de passer sous la maquette. Échap ou le bouton en haut pour quitter."><iconify-icon icon="fluent-emoji-flat:globe-showing-europe-africa"></iconify-icon><span class="tool-btn-label">Global</span></button>
-      <button class="tool-btn ghost" id="btn-skyline-entry" title="Skyline : élévations orthographiques techniques (Nord/Sud/Est/Ouest) de la maquette élargie, avec graduation de hauteur. Échap ou le bouton en haut pour quitter."><iconify-icon icon="fluent-emoji-flat:cityscape"></iconify-icon><span class="tool-btn-label">Skyline</span></button>
-      <button class="tool-btn ghost" id="btn-architect-mode" title="Mode Architecte : planche de nomenclature plein écran — vue d'ensemble orthogonale du polygone d'implantation (orientable N/S/E/O ou vue de haut, avec/sans labels) entourée des fiches de chaque nouveau bâtiment (élévation orthogonale, hauteur, étages, m² au sol, m² développés, m² par usage) et de l'extension gare."><iconify-icon icon="fluent-emoji-flat:straight-ruler"></iconify-icon><span class="tool-btn-label">Architecte</span></button>
+      <button class="tool-btn ghost" id="btn-global-view" title="Vue Globale : affiche la maquette élargie (global.glb) autour du site, éclairée en plein midi d'équinoxe, avec la même navigation libre que le mode piéton (WASD + souris). Impossible de passer sous la maquette. Échap ou le bouton en haut pour quitter."><iconify-icon icon="fluent-emoji-flat:globe-showing-europe-africa" width="21" height="21"></iconify-icon><span class="tool-btn-label">Global</span></button>
+      <button class="tool-btn ghost" id="btn-skyline-entry" title="Skyline : élévations orthographiques techniques (Nord/Sud/Est/Ouest) de la maquette élargie, avec graduation de hauteur. Échap ou le bouton en haut pour quitter."><iconify-icon icon="fluent-emoji-flat:cityscape" width="21" height="21"></iconify-icon><span class="tool-btn-label">Skyline</span></button>
+      <button class="tool-btn ghost" id="btn-architect-mode" title="Mode Architecte : planche de nomenclature plein écran — vue d'ensemble orthogonale du polygone d'implantation (orientable N/S/E/O ou vue de haut, avec/sans labels) entourée des fiches de chaque nouveau bâtiment (élévation orthogonale, hauteur, étages, m² au sol, m² développés, m² par usage) et de l'extension gare."><iconify-icon icon="fluent-emoji-flat:straight-ruler" width="21" height="21"></iconify-icon><span class="tool-btn-label">Architecte</span></button>
     </div>
     <div id="status-line">Clic gauche : orbiter · Molette : zoom · Clic droit : déplacer</div>
     <div id="edit-banner">
-      <iconify-icon icon="fluent-emoji-flat:triangular-ruler"></iconify-icon>
+      <iconify-icon icon="fluent-emoji-flat:triangular-ruler" width="21" height="21"></iconify-icon>
       <span id="edit-banner-text">Modification du bâtiment en cours</span>
       <div id="edit-banner-actions">
         <button id="edit-banner-cancel" title="Annuler les changements de cette session d'édition"><i data-lucide="rotate-ccw"></i>Annuler</button>
@@ -1423,15 +1428,15 @@
     <div id="toolbar-left">
       <div class="tool-row">
         <button class="eye-btn" id="eye-btn-buildings" title="Afficher/masquer les bâtiments"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
-        <button class="tool-btn" id="btn-draw"><iconify-icon icon="fluent-emoji-flat:building-construction"></iconify-icon><span class="tool-btn-label">Nouveau bâtiment</span></button>
+        <button class="tool-btn" id="btn-draw"><iconify-icon icon="fluent-emoji-flat:building-construction" width="21" height="21"></iconify-icon><span class="tool-btn-label">Nouveau bâtiment</span></button>
       </div>
       <div class="tool-row">
         <button class="eye-btn" id="eye-btn-extgare" title="Afficher/masquer l'extension gare"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
-        <button class="tool-btn ghost" id="btn-toggle-extension-gare"><iconify-icon icon="fluent-emoji-flat:high-speed-train"></iconify-icon><span class="tool-btn-label">Extension Gare</span></button>
+        <button class="tool-btn ghost" id="btn-toggle-extension-gare"><iconify-icon icon="fluent-emoji-flat:high-speed-train" width="21" height="21"></iconify-icon><span class="tool-btn-label">Extension Gare</span></button>
       </div>
       <div class="tool-row">
         <button class="eye-btn" id="eye-btn-trees" title="Afficher/masquer les arbres"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
-        <button class="tool-btn ghost" id="btn-tree"><iconify-icon icon="fluent-emoji-flat:deciduous-tree"></iconify-icon><span class="tool-btn-label">Arbre</span></button>
+        <button class="tool-btn ghost" id="btn-tree"><iconify-icon icon="fluent-emoji-flat:deciduous-tree" width="21" height="21"></iconify-icon><span class="tool-btn-label">Arbre</span></button>
       </div>
       <div id="tree-mini-list">
         <span id="tree-count" style="display:none;"></span>
@@ -1440,12 +1445,12 @@
       </div>
       <div class="tool-row">
         <button class="eye-btn" id="eye-btn-grass" title="Afficher/masquer le gazon"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
-        <button class="tool-btn ghost" id="btn-paint-grass"><iconify-icon icon="fluent-emoji-flat:paintbrush"></iconify-icon><span class="tool-btn-label">Gazon</span></button>
+        <button class="tool-btn ghost" id="btn-paint-grass"><iconify-icon icon="fluent-emoji-flat:paintbrush" width="21" height="21"></iconify-icon><span class="tool-btn-label">Gazon</span></button>
       </div>
       <div class="tool-sep"></div>
       <div class="tool-row">
         <button class="eye-btn" id="eye-btn-labels" title="Afficher/masquer les labels"><i data-lucide="eye" class="icon-on"></i><i data-lucide="eye-off" class="icon-off"></i></button>
-        <button class="tool-btn ghost" id="btn-label"><iconify-icon icon="fluent-emoji-flat:round-pushpin"></iconify-icon><span class="tool-btn-label">Label</span></button>
+        <button class="tool-btn ghost" id="btn-label"><iconify-icon icon="fluent-emoji-flat:round-pushpin" width="21" height="21"></iconify-icon><span class="tool-btn-label">Label</span></button>
       </div>
     </div>
     <svg id="bldg-connector-svg">
@@ -1461,7 +1466,7 @@
     </svg>
     <div id="bldg-panel">
       <div id="bldg-panel-list">
-        <div id="bldg-panel-list-head"><iconify-icon icon="fluent-emoji-flat:office-building"></iconify-icon> Bâtiments</div>
+        <div id="bldg-panel-list-head"><iconify-icon icon="fluent-emoji-flat:office-building" width="19" height="19"></iconify-icon> Bâtiments</div>
         <div id="bldg-mini-empty">Aucun bâtiment pour l'instant.<br>Utilisez l'outil « Nouveau bâtiment » pour tracer son emprise au sol.</div>
         <div id="bldg-list"></div>
       </div>
@@ -1486,8 +1491,8 @@
       <button class="brush-btn" id="brush-large" title="Grand pinceau"><i data-lucide="circle" style="width:16px;height:16px;"></i></button>
     </div>
     <div id="label-mode-popout">
-      <button class="brush-btn active" id="label-mode-ground" title="Poser au sol"><iconify-icon icon="fluent-emoji-flat:round-pushpin"></iconify-icon></button>
-      <button class="brush-btn" id="label-mode-building" title="Coller sur un bâtiment (façade ou toit, socle ou volume supérieur)"><iconify-icon icon="fluent-emoji-flat:office-building"></iconify-icon></button>
+      <button class="brush-btn active" id="label-mode-ground" title="Poser au sol"><iconify-icon icon="fluent-emoji-flat:round-pushpin" width="19" height="19"></iconify-icon></button>
+      <button class="brush-btn" id="label-mode-building" title="Coller sur un bâtiment (façade ou toit, socle ou volume supérieur)"><iconify-icon icon="fluent-emoji-flat:office-building" width="19" height="19"></iconify-icon></button>
     </div>
     <div id="sun-panel">
       <button class="panel-x-btn" id="sun-panel-close" title="Fermer" style="position:absolute;top:8px;right:8px;z-index:2;"><i data-lucide="x"></i></button>
@@ -1500,20 +1505,20 @@
         <input type="range" id="sun-slider" min="0" max="100" step="0.5" value="50" title="Heure de la journée">
       </div>
       <div id="sun-slider-icons">
-        <iconify-icon icon="fluent-emoji-flat:crescent-moon" style="left:2%;"></iconify-icon>
-        <iconify-icon icon="fluent-emoji-flat:sunrise" style="left:15%;"></iconify-icon>
-        <iconify-icon icon="fluent-emoji-flat:sun" style="left:50%;"></iconify-icon>
-        <iconify-icon icon="fluent-emoji-flat:sunrise" style="left:85%;"></iconify-icon>
-        <iconify-icon icon="fluent-emoji-flat:crescent-moon" style="left:98%;"></iconify-icon>
+        <iconify-icon icon="fluent-emoji-flat:crescent-moon" style="left:2%;" width="18" height="18"></iconify-icon>
+        <iconify-icon icon="fluent-emoji-flat:sunrise" style="left:15%;" width="18" height="18"></iconify-icon>
+        <iconify-icon icon="fluent-emoji-flat:sun" style="left:50%;" width="18" height="18"></iconify-icon>
+        <iconify-icon icon="fluent-emoji-flat:sunrise" style="left:85%;" width="18" height="18"></iconify-icon>
+        <iconify-icon icon="fluent-emoji-flat:crescent-moon" style="left:98%;" width="18" height="18"></iconify-icon>
       </div>
       <div id="sun-panel-sep"></div>
       <div id="sun-season-row">
-        <button class="sun-season-btn" data-season="hiver" title="Solstice d'hiver"><iconify-icon icon="fluent-emoji-flat:snowflake"></iconify-icon><span>Solstice<br>d'hiver</span></button>
+        <button class="sun-season-btn" data-season="hiver" title="Solstice d'hiver"><iconify-icon icon="fluent-emoji-flat:snowflake" width="20" height="20"></iconify-icon><span>Solstice<br>d'hiver</span></button>
         <button class="sun-season-btn active" data-season="equinoxe" title="Équinoxe">
           <span class="icon-half-wrap"><i data-lucide="snowflake"></i><i data-lucide="sun"></i></span>
           <span>Équinoxe</span>
         </button>
-        <button class="sun-season-btn" data-season="ete" title="Solstice d'été"><iconify-icon icon="fluent-emoji-flat:sun"></iconify-icon><span>Solstice<br>d'été</span></button>
+        <button class="sun-season-btn" data-season="ete" title="Solstice d'été"><iconify-icon icon="fluent-emoji-flat:sun" width="20" height="20"></iconify-icon><span>Solstice<br>d'été</span></button>
       </div>
       <div id="night-warning"><span class="icon">⚠️</span><span id="night-warning-text">Le mode Nuit sollicite fortement le GPU (nombreux lampadaires et ombres) et un peu le CPU.</span></div>
     </div>
@@ -1527,7 +1532,7 @@
       <button class="vsel-btn" id="btn-select-all" title="Sélectionner tous les sommets"><i data-lucide="check-check"></i><span>Tout sélectionner</span></button>
       <button class="vsel-btn" id="btn-select-none" title="Désélectionner tous les sommets"><i data-lucide="x"></i><span>Tout désélectionner</span></button>
       <div class="vsel-sep"></div>
-      <button class="vsel-btn" id="btn-split-edge" title="Sélectionnez exactement 2 sommets adjacents (une façade) pour insérer un sommet à mi-chemin" disabled><iconify-icon icon="fluent-emoji-flat:scissors"></iconify-icon><span>Couper la façade en 2</span></button>
+      <button class="vsel-btn" id="btn-split-edge" title="Sélectionnez exactement 2 sommets adjacents (une façade) pour insérer un sommet à mi-chemin" disabled><iconify-icon icon="fluent-emoji-flat:scissors" width="19" height="19"></iconify-icon><span>Couper la façade en 2</span></button>
     </div>
     <div id="legend-window">
       <button class="panel-x-btn" id="legend-window-close" title="Fermer" style="position:absolute;top:8px;right:8px;z-index:2;"><i data-lucide="x"></i></button>
